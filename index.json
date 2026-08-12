@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "generated_at": "2026-08-12T07:13:45+00:00",
-  "commit": "0e3fd6bfce9aecc1afed1dfdf4e6ef9080a74270",
+  "generated_at": "2026-08-12T07:49:18+00:00",
+  "commit": "110fddfa713a3b5e37f09142b102fa3ae74b6534",
   "apps": [
     {
       "slug": "cog-range-viewer",
