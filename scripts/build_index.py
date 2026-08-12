@@ -25,7 +25,7 @@ SKIP_DIRS = {".git", ".github", "scripts"}
 
 REQUIRED_STR = ("name", "description")
 LIMITS = {"name": 60, "description": 200}
-CATEGORIES = {"geospatial", "productivity", "starters"}
+CATEGORIES = {"geospatial", "productivity", "starters", "local-ai"}
 
 
 def fail(errors: list[str], app: str, msg: str) -> None:

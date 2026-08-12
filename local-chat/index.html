@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Local LLM — Chat</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #16171a;
+    color: #e6e6e6;
+    display: flex;
+    height: 100vh;
+  }
+  #panel {
+    width: 320px;
+    flex-shrink: 0;
+    padding: 20px;
+    border-right: 1px solid #2a2b2f;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  h1 { font-size: 15px; margin: 0 0 4px; font-weight: 600; }
+  .sub { font-size: 12px; color: #9a9ba0; margin: -10px 0 6px; }
+  label { font-size: 12px; color: #b6b7bc; display: block; margin-bottom: 4px; }
+  select, textarea, input[type=number] {
+    width: 100%;
+    background: #1f2024;
+    border: 1px solid #33343a;
+    border-radius: 6px;
+    color: #e6e6e6;
+    padding: 8px;
+    font-size: 13px;
+    font-family: inherit;
+  }
+  textarea { resize: vertical; }
+  .row { display: flex; gap: 10px; }
+  .row > div { flex: 1; }
+  .hint { font-size: 11px; color: #6f7075; margin-top: 4px; }
+  input[type=range] { width: 100%; }
+  .rangeval { font-size: 11px; color: #9a9ba0; float: right; }
+  button {
+    background: #4c7dff;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 10px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button:disabled { background: #33343a; color: #77787d; cursor: default; }
+  button.secondary {
+    background: transparent;
+    border: 1px solid #33343a;
+    color: #c7c8cc;
+    font-weight: 500;
+  }
+  #advanced { border: 1px solid #2a2b2f; border-radius: 6px; padding: 0 12px; }
+  #advanced summary {
+    cursor: pointer; font-size: 12px; font-weight: 600;
+    color: #c7c8cc; padding: 10px 0; user-select: none;
+  }
+  #advanced .body { display: flex; flex-direction: column; gap: 14px; padding-bottom: 14px; }
+
+  #serverstate { font-size: 12px; color: #9a9ba0; white-space: pre-wrap; min-height: 16px; }
+  #serverstate.error { color: #ff8080; }
+  .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; }
+  .dot.ready { background: #4ade80; }
+  .dot.busy { background: #fbbf24; }
+  .dot.off { background: #55565b; }
+  .dot.bad { background: #ff8080; }
+
+
+  #main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  #transcript {
+    flex: 1; overflow-y: auto; padding: 24px 28px;
+    display: flex; flex-direction: column; gap: 18px;
+  }
+  .msg { max-width: 760px; }
+  .msg .body {
+    font-size: 14px; line-height: 1.62; white-space: pre-wrap;
+    word-wrap: break-word;
+  }
+  .msg.user { align-self: flex-end; }
+  .msg.user .body {
+    background: #23252b; border: 1px solid #2f3138;
+    border-radius: 10px; padding: 10px 13px;
+  }
+  .msg.assistant .body { color: #e6e6e6; }
+  /* The model's workings, not its answer — quieter than the reply, and folded
+     away once there is a reply to read. */
+  .think { margin-bottom: 8px; border-left: 2px solid #33343a; padding-left: 10px; }
+  .think summary {
+    cursor: pointer; font-size: 12px; color: #7a7b80;
+    user-select: none; list-style: none;
+  }
+  .think summary::before { content: "▸ "; }
+  .think[open] summary::before { content: "▾ "; }
+  .think .thinkbody {
+    margin-top: 6px; font-size: 12.5px; line-height: 1.55;
+    color: #8f9095; white-space: pre-wrap; word-wrap: break-word;
+  }
+  .msg.assistant.pending .body::after {
+    content: "▍"; color: #4c7dff; animation: blink 1s steps(2) infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+  #empty { margin: auto; color: #55565b; font-size: 13px; text-align: center; }
+
+  #composer {
+    border-top: 1px solid #2a2b2f; padding: 14px 20px;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  #input {
+    width: 100%; min-height: 62px; max-height: 220px; resize: none;
+    background: #1f2024; border: 1px solid #33343a; border-radius: 8px;
+    color: #e6e6e6; padding: 10px 12px; font-size: 14px;
+    font-family: inherit; line-height: 1.5;
+  }
+  #input:focus { outline: none; border-color: #4c7dff; }
+  #composerbar { display: flex; align-items: center; gap: 10px; }
+  #meta { flex: 1; font-size: 11px; color: #6f7075; }
+  #meta.error { color: #ff8080; }
+</style>
+</head>
+<body>
+
+<div id="panel">
+  <h1>Local LLM</h1>
+  <div class="sub">Runs entirely on this machine via MLX. No network after the model downloads.</div>
+
+  <div>
+    <label for="model">Model</label>
+    <select id="model"></select>
+    <div class="hint" id="modelnote"></div>
+  </div>
+
+  <div>
+    <div id="serverstate"></div>
+  </div>
+
+  <div class="row">
+    <div><button id="startbtn">Load model</button></div>
+    <div><button id="stopbtn" class="secondary">Unload</button></div>
+  </div>
+
+  <div>
+    <label for="mode">Mode</label>
+    <select id="mode">
+      <option value="chat">Chat — multi-turn conversation</option>
+      <option value="completion">Completion — continue raw text</option>
+    </select>
+    <div class="hint" id="modenote"></div>
+  </div>
+
+  <details id="advanced">
+    <summary>Settings</summary>
+    <div class="body">
+      <div>
+        <label for="system">System prompt <span class="hint">(chat mode)</span></label>
+        <textarea id="system" rows="3" placeholder="You are a helpful assistant."></textarea>
+      </div>
+      <div>
+        <label for="temp">Temperature <span class="rangeval" id="tempval"></span></label>
+        <input id="temp" type="range" min="0" max="1.5" step="0.05">
+      </div>
+      <div>
+        <label for="maxtok">Max tokens</label>
+        <input id="maxtok" type="number" min="16" max="8192" step="16">
+      </div>
+      <div><button id="clearbtn" class="secondary" style="width:100%">Clear conversation</button></div>
+    </div>
+  </details>
+</div>
+
+<div id="main">
+  <div id="transcript"><div id="empty">Load a model, then say something.</div></div>
+  <div id="composer">
+    <textarea id="input" placeholder="Message… (↵ to send, ⇧↵ for a new line)"></textarea>
+    <div id="composerbar">
+      <div id="meta"></div>
+      <button id="stopgen" class="secondary" style="display:none">Stop</button>
+      <button id="send">Send</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// A thin client. Everything slow — holding the model in memory, downloading it,
+// streaming tokens — belongs to fused-render now (SPEC §40), reached through
+// `fused.ai`. What is left here is a chat UI and one data file that remembers
+// the transcript.
+//
+// What that deleted: a long-lived MLX server process, a per-message streaming
+// worker, pid files and process groups, a bootstrap timeout, a curated model
+// list, an environment scrub for the packaged app's interpreter, a
+// `pyproject.toml` and a 1124-line `uv.lock`. None of it was about chatting,
+// and every app that wanted a local model had to write it again.
+const $ = (id) => document.getElementById(id);
+const CAPABILITY = "text-generation";
+const DEFAULTS = { mode: "chat", temp: "0.7", max_tokens: "1024", system: "" };
+
+let MODELS = [];          // the app's curated shortlist, from the server
+let conversation = [];    // committed turns, from disk
+let pending = null;       // {text} while a reply streams
+let runtimeTimer = null;
+
+const param = (k) => fused.params.get(k) ?? DEFAULTS[k] ?? "";
+// A URL param read as a number, or undefined. Undefined and not NaN: NaN
+// serializes to null and the server reads that as "not sent", which is the same
+// silence these two controls already had once — a hand-edited `?temp=warm`
+// should fall back to the model's own default, not look like a working slider.
+const num = (k) => {
+  const value = Number(param(k));
+  return Number.isFinite(value) ? value : undefined;
+};
+const selectedModel = () => $("model").value;
+
+// ---------- transcript ----------
+
+// A reasoning model narrates before it answers, inside <think>…</think>, and
+// that narration is not the reply — it is workings the model shows on the way.
+// Rendered verbatim it reads as the model rambling to itself and then starting
+// over, so it goes in a fold of its own, collapsed, above the answer.
+//
+// Split on the CLOSING tag, not with a tag-matching regex: while the reply is
+// still streaming the opening tag has arrived and the closing one has not, and
+// the honest reading of that is "everything so far is still thinking".
+const THINK_OPEN = /^\s*<think(?:ing)?>/i;
+const THINK_CLOSE = /<\/think(?:ing)?>/i;
+
+function splitThinking(text) {
+  const body = text || "";
+  if (!THINK_OPEN.test(body)) return { thinking: "", answer: body };
+  const close = body.search(THINK_CLOSE);
+  if (close === -1) {
+    // Still inside the block: no answer yet, and saying so beats showing the
+    // reasoning as though it were one.
+    return { thinking: body.replace(THINK_OPEN, ""), answer: "", open: true };
+  }
+  return {
+    thinking: body.slice(0, close).replace(THINK_OPEN, "").trim(),
+    answer: body.slice(close).replace(THINK_CLOSE, "").trim(),
+  };
+}
+
+const escape = (text) => {
+  const div = document.createElement("div");
+  div.textContent = text || "";
+  return div.innerHTML;
+};
+
+function renderTranscript() {
+  const el = $("transcript");
+  const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+  const items = conversation.slice();
+  if (pending) items.push({ role: "assistant", content: pending.text, pending: true });
+
+  if (!items.length) {
+    el.innerHTML = '<div id="empty">Pick a model and say something.</div>';
+    return;
+  }
+  el.innerHTML = items.map((m) => {
+    const cls = "msg " + m.role + (m.pending ? " pending" : "");
+    if (m.role !== "assistant") {
+      return `<div class="${cls}"><div class="body">${escape(m.content)}</div></div>`;
+    }
+    const { thinking, answer, open } = splitThinking(m.content);
+    // Open only while it is ALL there is to show — a fold that pops back shut
+    // the moment the answer starts is the right behaviour, because by then the
+    // answer is the thing you want to read.
+    const fold = thinking
+      ? `<details class="think"${open ? " open" : ""}>` +
+        `<summary>Thinking${open ? "…" : ""}</summary>` +
+        `<div class="thinkbody">${escape(thinking)}</div></details>`
+      : "";
+    return `<div class="${cls}">${fold}<div class="body">${escape(answer)}</div></div>`;
+  }).join("");
+  if (atBottom || pending) el.scrollTop = el.scrollHeight;
+}
+
+const setMeta = (text, isError) => {
+  $("meta").textContent = text || "";
+  $("meta").classList.toggle("error", !!isError);
+};
+
+// ---------- what the machine is holding ----------
+// One read of fused.ai.models.list() answers everything the old server_status
+// action did, for every page at once — and the download it describes has a row
+// in the shell's download manager whether or not this page is open. That is why
+// this app no longer reports jobs itself: the work is not its to report.
+
+function fmtBytes(n) {
+  if (!n) return "";
+  const gb = n / 1073741824;
+  return gb >= 1 ? gb.toFixed(1) + " GB" : Math.round(n / 1048576) + " MB";
+}
+
+function renderRuntime(rt) {
+  const el = $("serverstate");
+  const dot = (k) => `<span class="dot ${k}"></span>`;
+  const loaded = (rt.loaded || []).find((m) => m.capability === CAPABILITY);
+  const fetching = (rt.downloading || []).find((d) => d.capability === CAPABILITY);
+  const runner = (rt.runners || []).find((r) => r.capability === CAPABILITY);
+  const selected = selectedModel();
+
+  let busy = false;
+  el.classList.remove("error");
+  if (runner && !runner.available) {
+    el.classList.add("error");
+    el.innerHTML = dot("bad") + (runner.reason || "no text runner on this machine");
+  } else if (loaded && loaded.state === "error") {
+    el.classList.add("error");
+    el.innerHTML = dot("bad") + "Error: " + (loaded.error || "unknown");
+  } else if (loaded && loaded.state === "ready") {
+    const mem = fmtBytes(loaded.residentBytes);
+    el.innerHTML = dot("ready") +
+      (loaded.model === selected ? "Ready" : "Ready — but running " + loaded.model) +
+      (mem ? `\n${mem} resident` : "");
+  } else if (loaded) {
+    busy = true;
+    el.innerHTML = dot("busy") + (loaded.detail || loaded.state + "…");
+  } else if (fetching) {
+    busy = true;
+    el.innerHTML = dot("busy") + "Downloading " + fetching.model + "…";
+  } else {
+    el.innerHTML = dot("off") + "Not loaded";
+  }
+
+  const ready = !!loaded && loaded.state === "ready";
+  const matches = ready && loaded.model === selected;
+  $("startbtn").disabled = busy || matches || (runner && !runner.available);
+  $("startbtn").textContent = matches ? "Loaded" : (loaded ? "Switch model" : "Load model");
+  $("stopbtn").disabled = !loaded;
+  // Send stays enabled with nothing loaded: fused.ai starts the load itself
+  // and tells us which job to watch, so typing first is a legitimate way in.
+  $("send").disabled = !!pending || (runner && !runner.available);
+
+  clearTimeout(runtimeTimer);
+  if (busy) runtimeTimer = setTimeout(pollRuntime, 800);
+}
+
+async function pollRuntime() {
+  try {
+    renderRuntime(await fused.ai.models.list());
+  } catch (err) {
+    setMeta("could not read the model runtime: " + err.message, true);
+  }
+}
+
+// ---------- the model picker ----------
+// The shortlist is the SERVER's now (fused.ai.models.catalog()), the same one
+// the AI Models page shows — so a model curated in one place is offered in
+// both, and this app stopped carrying its own copy to drift.
+
+function renderControls() {
+  $("mode").value = param("mode");
+  $("system").value = param("system");
+  $("temp").value = param("temp");
+  $("tempval").textContent = param("temp");
+  $("maxtok").value = param("max_tokens");
+  if (param("model")) $("model").value = param("model");
+
+  const m = MODELS.find((x) => x.id === selectedModel());
+  $("modelnote").textContent = m
+    ? (m.size_gb ? `${m.size_gb} GB download · ` : "") + m.note
+    : "";
+  $("modenote").textContent = $("mode").value === "completion"
+    ? "Raw continuation of your text — no chat template, no history."
+    : "The conversation so far is sent with each turn.";
+  $("system").parentElement.style.opacity = $("mode").value === "completion" ? 0.45 : 1;
+}
+
+// ---------- load / unload ----------
+
+async function loadModel() {
+  const model = selectedModel();
+  if (!model) return;
+  try {
+    await fused.ai.models.load(model, { capability: CAPABILITY });
+    pollRuntime();
+  } catch (err) {
+    setMeta(err.message, true);
+  }
+}
+
+async function unloadModel() {
+  try {
+    // By CAPABILITY, not by the dropdown's value. One model is resident per
+    // capability and it need not be the one this page is showing — selecting B
+    // while A is loaded, or loading something from the AI Models page, both
+    // leave the two disagreeing. Unloading the selection then frees nothing and
+    // leaves the real resident model in memory, under a button that reported
+    // success.
+    renderRuntime(await fused.ai.models.unload({ capability: CAPABILITY }));
+  } catch (err) {
+    setMeta(err.message, true);
+  }
+}
+
+// ---------- sending ----------
+
+async function send() {
+  const text = $("input").value.trim();
+  if (!text || pending) return;
+  const mode = param("mode");
+  const raw = mode === "completion";
+
+  // The turn is committed BEFORE the reply: an answer that fails halfway should
+  // still leave the question in the transcript, because that is what happened.
+  if (!raw) await fused.runPython("./chat.py", { action: "append", role: "user", content: text }, { key: "store" });
+
+  $("input").value = "";
+  conversation.push({ role: "user", content: text });
+  pending = { text: "" };
+  $("stopgen").style.display = "";
+  setMeta("Thinking…");
+  renderTranscript();
+  renderRuntime(await fused.ai.models.list().catch(() => ({})));
+
+  const started = Date.now();
+  try {
+    const result = await fused.ai(text, {
+      model: selectedModel(),
+      raw: raw || undefined,
+      // Prior turns only — `text` is this turn and the API appends it. An
+      // assistant turn is sent WITHOUT its thinking: that was the model's
+      // workings on the way to an answer, not the answer, and feeding it back
+      // spends context on reasoning the model has already finished with. The
+      // transcript on disk keeps the whole thing, so the fold survives a reload.
+      history: raw ? undefined : conversation.slice(0, -1).map((m) => ({
+        role: m.role,
+        content: m.role === "assistant"
+          ? (splitThinking(m.content).answer || m.content)
+          : m.content,
+      })),
+      systemPrompt: raw ? undefined : (param("system") || undefined),
+      // The two controls on screen. They were displayed and persisted in the
+      // URL from the start and passed to nothing — sliders that changed the
+      // number under them and nothing about the answer.
+      temperature: num("temp"),
+      maxTokens: num("max_tokens"),
+      onChunk: (chunk) => { pending.text += chunk; renderTranscript(); },
+    });
+    const reply = result.text || pending.text;
+    finish();
+    conversation.push({ role: "assistant", content: reply });
+    if (!raw && reply) {
+      await fused.runPython("./chat.py", { action: "append", role: "assistant", content: reply }, { key: "store" });
+    }
+    const seconds = ((Date.now() - started) / 1000).toFixed(1);
+    setMeta(`${seconds}s` + (result.usage && result.usage.output_tokens ? ` · ${result.usage.output_tokens} tokens` : ""));
+    renderTranscript();
+  } catch (err) {
+    // A model that is not resident answers with the load it just started, so
+    // the honest reply is "it is coming", not "it failed".
+    if (err.type === "model_loading") {
+      // The question was never asked, so it must not stay asked. Committing the
+      // turn before the reply is right when a generation fails HALFWAY — the
+      // words happened — but nothing happened here: the model was not resident,
+      // the load just started, and no token was ever produced. Left in place,
+      // the turn becomes history for the next message, so the model is handed a
+      // question it never answered and the user retypes it into a duplicate.
+      // So the send is undone entirely and the text goes back in the composer,
+      // where it is the user's again.
+      conversation.pop();
+      if (!raw) {
+        await fused.runPython("./chat.py", { action: "drop", role: "user", content: text },
+                              { key: "store" });
+      }
+      $("input").value = text;
+      finish();
+      renderTranscript();
+      setMeta(err.message + " — watch the download manager, then send again");
+      pollRuntime();
+      return;
+    }
+    keepPartial();
+    setMeta(err.message || "generation failed", true);
+  }
+}
+
+// A cancelled or failed stream still produced words; they belong in the
+// transcript rather than disappearing with the error. Committed to disk only
+// for a chat — a raw completion is display-only here, as it always was, since
+// it is not a conversation to come back to.
+function keepPartial() {
+  const partial = pending && pending.text;
+  finish();
+  if (partial) {
+    conversation.push({ role: "assistant", content: partial });
+    if (param("mode") !== "completion") {
+      fused.runPython("./chat.py", { action: "append", role: "assistant", content: partial }, { key: "store" });
+    }
+  }
+  renderTranscript();
+}
+
+function finish() {
+  pending = null;
+  $("stopgen").style.display = "none";
+  $("send").disabled = false;
+  renderTranscript();
+}
+
+// Stops the generation, NOT the model — the next message answers immediately.
+const stopGeneration = () => fused.ai.cancel(CAPABILITY).catch(() => {});
+
+// ---------- wiring ----------
+
+const bindParam = (elId, key, ev = "change") =>
+  $(elId).addEventListener(ev, () => fused.params.set(key, String($(elId).value)));
+
+bindParam("mode", "mode");
+bindParam("system", "system", "input");
+bindParam("temp", "temp", "input");
+bindParam("maxtok", "max_tokens");
+bindParam("model", "model");
+
+$("model").addEventListener("change", pollRuntime);
+$("startbtn").addEventListener("click", loadModel);
+$("stopbtn").addEventListener("click", unloadModel);
+$("send").addEventListener("click", send);
+$("stopgen").addEventListener("click", stopGeneration);
+$("clearbtn").addEventListener("click", async () => {
+  await fused.runPython("./chat.py", { action: "clear" }, { key: "store" });
+  conversation = [];
+  renderTranscript();
+});
+
+$("input").addEventListener("keydown", (e) => {
+  if (e.key !== "Enter" || e.isComposing) return;
+  if (e.shiftKey || e.metaKey || e.ctrlKey || e.altKey) return;
+  e.preventDefault();
+  send();
+});
+$("input").addEventListener("input", () => {
+  $("input").style.height = "auto";
+  $("input").style.height = Math.min($("input").scrollHeight, 220) + "px";
+});
+
+fused.params.onChange(renderControls);
+
+(async function init() {
+  const [catalog, stored, runtime] = await Promise.all([
+    fused.ai.models.catalog(),
+    fused.runPython("./chat.py", { action: "load" }, { key: "store" }),
+    fused.ai.models.list(),
+  ]);
+  const group = (catalog.capabilities || []).find((c) => c.capability === CAPABILITY) || {};
+  MODELS = group.models || [];
+  conversation = stored.messages || [];
+
+  // Anything already resident is offered too, even if it is not on the
+  // shortlist — a model loaded from the AI Models page is usable here.
+  const ids = new Set(MODELS.map((m) => m.id));
+  for (const m of runtime.loaded || []) {
+    if (m.capability === CAPABILITY && !ids.has(m.model)) {
+      MODELS.push({ id: m.model, label: m.model, size_gb: null, note: "Already loaded." });
+    }
+  }
+  $("model").innerHTML = MODELS
+    .map((m) => `<option value="${m.id}">${m.label}${m.size_gb ? " — " + m.size_gb + " GB" : ""}</option>`)
+    .join("");
+  if (!fused.params.get("model")) fused.params.set("model", group.default || (MODELS[0] && MODELS[0].id) || "");
+
+  renderControls();
+  renderTranscript();
+  renderRuntime(runtime);
+})();
+</script>
+</body>
+</html>

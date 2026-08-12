@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>FLUX.2 Klein — Text to Image</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #16171a;
+    color: #e6e6e6;
+    display: flex;
+    height: 100vh;
+  }
+  #panel {
+    width: 340px;
+    flex-shrink: 0;
+    padding: 20px;
+    border-right: 1px solid #2a2b2f;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  h1 { font-size: 15px; margin: 0 0 4px; font-weight: 600; }
+  .sub { font-size: 12px; color: #9a9ba0; margin: -10px 0 6px; }
+  label { font-size: 12px; color: #b6b7bc; display: block; margin-bottom: 4px; }
+  textarea, input[type=text], input[type=number] {
+    width: 100%;
+    background: #1f2024;
+    border: 1px solid #33343a;
+    border-radius: 6px;
+    color: #e6e6e6;
+    padding: 8px;
+    font-size: 13px;
+    font-family: inherit;
+  }
+  textarea { resize: vertical; min-height: 70px; }
+  .row { display: flex; gap: 10px; }
+  .row > div { flex: 1; }
+  #advanced { border: 1px solid #2a2b2f; border-radius: 6px; padding: 0 12px; }
+  #advanced summary {
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+    color: #c7c8cc;
+    padding: 10px 0;
+    user-select: none;
+  }
+  #advanced .advanced-body { display: flex; flex-direction: column; gap: 14px; padding-bottom: 14px; }
+  .hint { font-size: 11px; color: #6f7075; margin-top: 4px; }
+  input[type=range] { width: 100%; }
+  .rangeval { font-size: 11px; color: #9a9ba0; float: right; }
+  button {
+    background: #4c7dff;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 10px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button:disabled { background: #33343a; color: #77787d; cursor: default; }
+  button.secondary {
+    background: transparent;
+    border: 1px solid #33343a;
+    color: #c7c8cc;
+    font-weight: 500;
+  }
+  #status {
+    font-size: 12px;
+    color: #9a9ba0;
+    min-height: 16px;
+  }
+  #status.error { color: #ff8080; white-space: pre-wrap; }
+  #jobinfo { font-size: 11px; color: #6f7075; word-break: break-all; white-space: pre-wrap; }
+  #main {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    position: relative;
+  }
+  #imgwrap {
+    max-width: 100%;
+    max-height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  #imgwrap img {
+    max-width: 100%;
+    max-height: calc(100vh - 48px);
+    border-radius: 8px;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.5);
+  }
+  #placeholder { color: #55565c; font-size: 13px; text-align: center; }
+  .spinner {
+    width: 28px; height: 28px;
+    border: 3px solid #33343a;
+    border-top-color: #4c7dff;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin: 0 auto 10px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+  <div id="panel">
+    <div>
+      <h1>Text to image</h1>
+      <div class="sub" id="subtitle">Text-to-image</div>
+    </div>
+
+    <div>
+      <label for="prompt">Prompt</label>
+      <textarea id="prompt" placeholder="A cat holding a sign that says hello world"></textarea>
+    </div>
+
+    <details id="advanced">
+      <summary>Advanced</summary>
+      <div class="advanced-body">
+        <div class="row">
+          <div>
+            <label for="width">Width <span class="rangeval" id="widthval"></span></label>
+            <input type="number" id="width" min="256" max="2048" step="64">
+          </div>
+          <div>
+            <label for="height">Height <span class="rangeval" id="heightval"></span></label>
+            <input type="number" id="height" min="256" max="2048" step="64">
+          </div>
+        </div>
+
+        <div>
+          <label for="steps">Steps <span class="rangeval" id="stepsval"></span></label>
+          <input type="range" id="steps" min="1" max="50" step="1">
+        </div>
+
+        <div>
+          <label for="guidance">Guidance scale <span class="rangeval" id="guidanceval"></span></label>
+          <input type="range" id="guidance" min="0" max="10" step="0.1">
+        </div>
+
+        <div>
+          <label for="seed">Seed</label>
+          <input type="number" id="seed" min="0" step="1">
+        </div>
+      </div>
+    </details>
+
+    <button id="go">Generate</button>
+    <button id="cancel" class="secondary" style="display:none;">Cancel</button>
+    <button id="rand" class="secondary">Randomize seed</button>
+
+    <div id="status"></div>
+    <div id="jobinfo"></div>
+  </div>
+
+  <div id="main">
+    <div id="imgwrap">
+      <div id="placeholder">Enter a prompt and click Generate.<br>First run downloads/loads the model and can take a while.</div>
+    </div>
+  </div>
+
+<script>
+// A thin client. Everything that made an image — torch, diffusers, a GGUF
+// checkpoint, a detached worker, a job directory, a status file, a progress
+// reporter — belongs to fused-render now (SPEC AI-9), reached through one call:
+//
+//   fused.ai.image({prompt, ...}) -> {path, url, seed, ...}
+//
+// That deleted worker.py (358 lines), generate.py (188), a pyproject.toml
+// declaring several GB of dependencies and a 1361-line uv.lock. It also deleted
+// this page's job reporting: the render is the server's work now, so the server
+// puts the row in the download manager and the ✕ there really stops it.
+//
+// The model is no longer named in this app either. `fused.ai.image` uses
+// whichever image model the app has curated, and the panel says which one.
+const el = id => document.getElementById(id);
+const promptEl = el("prompt"), widthEl = el("width"), heightEl = el("height"),
+      stepsEl = el("steps"), guidanceEl = el("guidance"), seedEl = el("seed"),
+      goBtn = el("go"), randBtn = el("rand"), cancelBtn = el("cancel"),
+      statusEl = el("status"), imgwrap = el("imgwrap");
+
+const DEFAULTS = { prompt: "", width: "1024", height: "1024", steps: "3", guidance: "1.0", seed: "0" };
+let watching = null;   // the job handle while a render runs
+
+const getParam = (k) => fused.params.get(k) || DEFAULTS[k];
+
+function reflectControls() {
+  promptEl.value = getParam("prompt");
+  widthEl.value = getParam("width");
+  heightEl.value = getParam("height");
+  stepsEl.value = getParam("steps");
+  guidanceEl.value = getParam("guidance");
+  seedEl.value = getParam("seed");
+  el("stepsval").textContent = stepsEl.value;
+  el("guidanceval").textContent = guidanceEl.value;
+}
+
+function setImage(url) {
+  imgwrap.innerHTML = "";
+  const img = document.createElement("img");
+  img.src = url;
+  imgwrap.appendChild(img);
+}
+
+function setStatusText(text, isError) {
+  statusEl.textContent = text;
+  statusEl.className = isError ? "error" : "";
+}
+
+const fmtEta = (s) => s == null ? "estimating…"
+  : s < 60 ? Math.max(1, Math.round(s)) + "s" : (s / 60).toFixed(1) + " min";
+
+// The job record IS the progress: done/total are denoising steps once the model
+// is resident, and bytes while its weights come down. Both already carry a
+// human sentence in `detail`, so this only has to draw it.
+function showProgress(job) {
+  setStatusText(job.detail || "Working…");
+  if (job.total && job.done !== null && job.unit !== "bytes") {
+    imgwrap.innerHTML = '<div id="placeholder"><div class="spinner"></div>' +
+      `Step ${job.done}/${job.total}</div>`;
+  }
+}
+
+function setSaved(result) {
+  el("jobinfo").textContent = `Saved to: ${result.path}\nSeed ${result.seed} · ` +
+    `${result.width}×${result.height} · ${result.steps} steps`;
+}
+
+async function generate() {
+  const prompt = promptEl.value.trim();
+  if (!prompt) { setStatusText("Enter a prompt first.", true); return; }
+
+  for (const [k, v] of Object.entries({
+    prompt, width: widthEl.value, height: heightEl.value,
+    steps: stepsEl.value, guidance: guidanceEl.value, seed: seedEl.value,
+  })) fused.params.set(k, String(v));
+
+  goBtn.disabled = true;
+  imgwrap.innerHTML = '<div id="placeholder"><div class="spinner"></div>Starting…</div>';
+  setStatusText("Starting…");
+  el("jobinfo").textContent = "";
+
+  try {
+    // Resolves when the PNG exists. The wait includes downloading and loading
+    // the model on a first run — this page no longer has to know that happened,
+    // only that it is taking a while and why.
+    const result = await fused.ai.image({
+      prompt,
+      width: Number(widthEl.value),
+      height: Number(heightEl.value),
+      steps: Number(stepsEl.value),
+      guidance: Number(guidanceEl.value),
+      // 0 has always meant "the seed I typed" here, and Randomize writes a real
+      // one — so it is passed through rather than left out.
+      seed: Number(seedEl.value),
+      // Cancel appears only once there is a job to cancel — a button that
+      // silently does nothing for the first second is worse than one that
+      // arrives a moment late.
+      onProgress: (job) => { watching = job; cancelBtn.style.display = ""; showProgress(job); },
+    });
+    setImage(result.url);
+    setSaved(result);
+    setStatusText("Done.");
+    // The server may have snapped the size or invented nothing at all; reflect
+    // what actually ran so a second Generate repeats THIS picture.
+    fused.params.set("seed", String(result.seed));
+    seedEl.value = result.seed;
+  } catch (err) {
+    if (err.type === "cancelled") {
+      setStatusText("Cancelled.");
+      imgwrap.innerHTML = '<div id="placeholder">Generation cancelled.</div>';
+    } else {
+      setStatusText(err.message || "Generation failed.", true);
+      imgwrap.innerHTML = '<div id="placeholder">Generation failed.</div>';
+    }
+  } finally {
+    goBtn.disabled = false;
+    cancelBtn.style.display = "none";
+    watching = null;
+  }
+}
+
+// The same ✕ the download manager shows, on the page that started it. Both
+// reach the same server-owned job, which really stops the render.
+async function cancel() {
+  if (!watching) return;
+  cancelBtn.disabled = true;
+  try {
+    await fused.watchJob(watching.id).cancel();
+  } finally {
+    cancelBtn.disabled = false;
+  }
+}
+
+goBtn.addEventListener("click", generate);
+cancelBtn.addEventListener("click", cancel);
+randBtn.addEventListener("click", () => {
+  seedEl.value = Math.floor(Math.random() * 1e9);
+  fused.params.set("seed", String(seedEl.value));
+});
+stepsEl.addEventListener("input", () => el("stepsval").textContent = stepsEl.value);
+guidanceEl.addEventListener("input", () => el("guidanceval").textContent = guidanceEl.value);
+
+reflectControls();
+
+// Which model this actually uses is the app's answer, not this page's — so it
+// is read rather than hardcoded, and a change to the catalog shows up here.
+fused.ai.models.catalog().then((catalog) => {
+  const group = (catalog.capabilities || []).find((c) => c.capability === "text-to-image");
+  if (!group) return;
+  if (group.default) el("subtitle").textContent = "Text-to-image · " + group.default;
+  if (!group.available && group.reason) setStatusText(group.reason, true);
+}, () => {});
+</script>
+</body>
+</html>

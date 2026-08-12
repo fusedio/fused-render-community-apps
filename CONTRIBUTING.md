@@ -46,10 +46,14 @@ unique (it's a directory name) and permanent — renaming a folder is a new app.
 | `author.name` | yes | display name |
 | `author.github` | no | GitHub username; should match the PR author |
 | `tags` | no | ≤ 5 lowercase strings; drive the marketplace filter chips |
-| `category` | yes | exactly one of `geospatial`, `productivity`, `starters` — unlike tags, each app has a single category |
+| `category` | yes | exactly one of `geospatial`, `productivity`, `starters`, `local-ai` — unlike tags, each app has a single category |
 | `version` | yes | semver, bump on changes |
 | `min_fused_render` | no | oldest fused-render version the app works on |
 | `requires_python` | yes | `true` if the app calls `fused.runPython` |
+
+`local-ai` is for apps built around fused-render's on-device model runtime —
+they call `fused.ai(...)` / `fused.ai.image(...)` (text-generation or
+text-to-image against a locally resident model) rather than a remote API.
 
 Unknown keys are ignored (forward-lenient).
 

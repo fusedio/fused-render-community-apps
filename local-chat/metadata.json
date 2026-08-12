@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "name": "Local Chat",
+  "description": "Chat with a language model that runs entirely on your machine via MLX — no network involved after the model downloads.",
+  "author": { "name": "Isaac" },
+  "tags": ["local-ai", "chat", "llm", "mlx"],
+  "category": "local-ai",
+  "version": "1.0.0",
+  "requires_python": true
+}
