@@ -1,11 +1,11 @@
 {
   "schema": 1,
-  "generated_at": "2026-08-12T07:49:18+00:00",
-  "commit": "110fddfa713a3b5e37f09142b102fa3ae74b6534",
+  "generated_at": "2026-08-12T08:16:15+00:00",
+  "commit": "9039554492a049a1995d4832cc95e5a7d7d20ef5",
   "apps": [
     {
       "slug": "cog-range-viewer",
-      "size_bytes": 67652,
+      "size_bytes": 941848,
       "schema": 1,
       "name": "COG Range Viewer",
       "description": "One photo, 316 MB, zero downloads: pan a huge cloud-optimized GeoTIFF and watch the exact HTTP byte-ranges the browser fetches, live.",
@@ -17,13 +17,13 @@
         "cog",
         "explainer"
       ],
-      "version": "1.0.0",
+      "version": "1.0.1",
       "requires_python": true,
-      "commit": "2cca2468307080dc5deaeb1131bd796f2767df51"
+      "commit": "9039554492a049a1995d4832cc95e5a7d7d20ef5"
     },
     {
       "slug": "disk-usage",
-      "size_bytes": 18816,
+      "size_bytes": 120732,
       "schema": 1,
       "name": "Disk Space Visualizer",
       "description": "Scan any folder level by level, see what eats your disk, preview files, and clean up safely (delete = move to Trash).",
@@ -35,13 +35,13 @@
         "cleanup",
         "macos"
       ],
-      "version": "1.0.0",
+      "version": "1.0.1",
       "requires_python": true,
-      "commit": "2cca2468307080dc5deaeb1131bd796f2767df51"
+      "commit": "9039554492a049a1995d4832cc95e5a7d7d20ef5"
     },
     {
       "slug": "invoice-generator",
-      "size_bytes": 67822,
+      "size_bytes": 129959,
       "schema": 1,
       "name": "Invoice Generator",
       "description": "Local invoice manager: clients, numbered invoice documents, FX reference rates, print-ready output. Pure-stdlib backend, all data as plain JSON on your disk.",
@@ -53,13 +53,13 @@
         "business",
         "invoices"
       ],
-      "version": "1.0.0",
+      "version": "1.0.1",
       "requires_python": true,
-      "commit": "2cca2468307080dc5deaeb1131bd796f2767df51"
+      "commit": "9039554492a049a1995d4832cc95e5a7d7d20ef5"
     },
     {
       "slug": "overture-explorer",
-      "size_bytes": 32500,
+      "size_bytes": 1526539,
       "schema": 1,
       "name": "Overture Map Explorer",
       "description": "Explore Overture Maps data anywhere on Earth: geocode a place, query places/buildings/roads from public S3 parquet via DuckDB, see stats on a Leaflet map.",
@@ -72,13 +72,13 @@
         "duckdb",
         "overture"
       ],
-      "version": "1.0.0",
+      "version": "1.0.1",
       "requires_python": true,
-      "commit": "2cca2468307080dc5deaeb1131bd796f2767df51"
+      "commit": "9039554492a049a1995d4832cc95e5a7d7d20ef5"
     },
     {
       "slug": "pano-viewer",
-      "size_bytes": 387919,
+      "size_bytes": 1549721,
       "schema": 1,
       "name": "Pano Viewer",
       "description": "360° panorama workbench: import, validate, and browse panoramas; view them as interactive spheres, cube maps, little planets, and more.",
@@ -90,13 +90,13 @@
         "360",
         "viewer"
       ],
-      "version": "1.0.0",
+      "version": "1.0.1",
       "requires_python": true,
-      "commit": "2cca2468307080dc5deaeb1131bd796f2767df51"
+      "commit": "9039554492a049a1995d4832cc95e5a7d7d20ef5"
     },
     {
       "slug": "sine-starter",
-      "size_bytes": 3746,
+      "size_bytes": 112904,
       "schema": 1,
       "name": "Sine Starter",
       "description": "The minimal fused-app: a slider, a Python main() that computes a sine wave, and a canvas plot. Copy it to start your own.",
@@ -107,9 +107,9 @@
         "starter",
         "example"
       ],
-      "version": "1.0.0",
+      "version": "1.0.1",
       "requires_python": true,
-      "commit": "2cca2468307080dc5deaeb1131bd796f2767df51"
+      "commit": "9039554492a049a1995d4832cc95e5a7d7d20ef5"
     }
   ]
 }
