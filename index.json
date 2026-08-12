@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "generated_at": "2026-08-12T16:18:56+00:00",
-  "commit": "750d9bdfb65d5d7d969b637cce7fca08773c631d",
+  "generated_at": "2026-08-12T16:20:05+00:00",
+  "commit": "538006e3921f3cf3cd3521ad6140698b9aec4ff8",
   "apps": [
     {
       "slug": "cog-range-viewer",
@@ -20,7 +20,7 @@
       "category": "geospatial",
       "version": "1.0.1",
       "requires_python": true,
-      "commit": "189590e369a49ef59c9c60d154ba87fd8eeecbc5"
+      "commit": "538006e3921f3cf3cd3521ad6140698b9aec4ff8"
     },
     {
       "slug": "disk-usage",
@@ -39,7 +39,7 @@
       "category": "productivity",
       "version": "1.0.1",
       "requires_python": true,
-      "commit": "189590e369a49ef59c9c60d154ba87fd8eeecbc5"
+      "commit": "538006e3921f3cf3cd3521ad6140698b9aec4ff8"
     },
     {
       "slug": "invoice-generator",
@@ -58,11 +58,11 @@
       "category": "productivity",
       "version": "1.0.1",
       "requires_python": true,
-      "commit": "189590e369a49ef59c9c60d154ba87fd8eeecbc5"
+      "commit": "538006e3921f3cf3cd3521ad6140698b9aec4ff8"
     },
     {
       "slug": "overture-explorer",
-      "size_bytes": 2583416,
+      "size_bytes": 1526248,
       "schema": 1,
       "name": "Overture Map Explorer",
       "description": "Explore Overture Maps data anywhere on Earth: geocode a place, query places/buildings/roads from public S3 parquet via DuckDB, see stats on a Leaflet map.",
@@ -78,7 +78,7 @@
       "category": "geospatial",
       "version": "1.0.1",
       "requires_python": true,
-      "commit": "189590e369a49ef59c9c60d154ba87fd8eeecbc5"
+      "commit": "538006e3921f3cf3cd3521ad6140698b9aec4ff8"
     },
     {
       "slug": "pano-viewer",
@@ -97,7 +97,7 @@
       "category": "geospatial",
       "version": "1.0.1",
       "requires_python": true,
-      "commit": "189590e369a49ef59c9c60d154ba87fd8eeecbc5"
+      "commit": "538006e3921f3cf3cd3521ad6140698b9aec4ff8"
     },
     {
       "slug": "sine-starter",
@@ -115,7 +115,7 @@
       "category": "starters",
       "version": "1.0.1",
       "requires_python": true,
-      "commit": "189590e369a49ef59c9c60d154ba87fd8eeecbc5"
+      "commit": "538006e3921f3cf3cd3521ad6140698b9aec4ff8"
     }
   ]
 }
