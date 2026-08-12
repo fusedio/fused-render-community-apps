@@ -1,0 +1,115 @@
+{
+  "schema": 1,
+  "generated_at": "2026-08-12T07:11:16+00:00",
+  "commit": "2cca2468307080dc5deaeb1131bd796f2767df51",
+  "apps": [
+    {
+      "slug": "cog-range-viewer",
+      "size_bytes": 67652,
+      "schema": 1,
+      "name": "COG Range Viewer",
+      "description": "One photo, 316 MB, zero downloads: pan a huge cloud-optimized GeoTIFF and watch the exact HTTP byte-ranges the browser fetches, live.",
+      "author": {
+        "name": "Max"
+      },
+      "tags": [
+        "geospatial",
+        "cog",
+        "explainer"
+      ],
+      "version": "1.0.0",
+      "requires_python": true,
+      "commit": "2cca2468307080dc5deaeb1131bd796f2767df51"
+    },
+    {
+      "slug": "disk-usage",
+      "size_bytes": 18816,
+      "schema": 1,
+      "name": "Disk Space Visualizer",
+      "description": "Scan any folder level by level, see what eats your disk, preview files, and clean up safely (delete = move to Trash).",
+      "author": {
+        "name": "Sina"
+      },
+      "tags": [
+        "system",
+        "cleanup",
+        "macos"
+      ],
+      "version": "1.0.0",
+      "requires_python": true,
+      "commit": "2cca2468307080dc5deaeb1131bd796f2767df51"
+    },
+    {
+      "slug": "invoice-generator",
+      "size_bytes": 67822,
+      "schema": 1,
+      "name": "Invoice Generator",
+      "description": "Local invoice manager: clients, numbered invoice documents, FX reference rates, print-ready output. Pure-stdlib backend, all data as plain JSON on your disk.",
+      "author": {
+        "name": "Aman"
+      },
+      "tags": [
+        "documents",
+        "business",
+        "invoices"
+      ],
+      "version": "1.0.0",
+      "requires_python": true,
+      "commit": "2cca2468307080dc5deaeb1131bd796f2767df51"
+    },
+    {
+      "slug": "overture-explorer",
+      "size_bytes": 32500,
+      "schema": 1,
+      "name": "Overture Map Explorer",
+      "description": "Explore Overture Maps data anywhere on Earth: geocode a place, query places/buildings/roads from public S3 parquet via DuckDB, see stats on a Leaflet map.",
+      "author": {
+        "name": "Fused team"
+      },
+      "tags": [
+        "maps",
+        "geospatial",
+        "duckdb",
+        "overture"
+      ],
+      "version": "1.0.0",
+      "requires_python": true,
+      "commit": "2cca2468307080dc5deaeb1131bd796f2767df51"
+    },
+    {
+      "slug": "pano-viewer",
+      "size_bytes": 387919,
+      "schema": 1,
+      "name": "Pano Viewer",
+      "description": "360° panorama workbench: import, validate, and browse panoramas; view them as interactive spheres, cube maps, little planets, and more.",
+      "author": {
+        "name": "Aman"
+      },
+      "tags": [
+        "images",
+        "360",
+        "viewer"
+      ],
+      "version": "1.0.0",
+      "requires_python": true,
+      "commit": "2cca2468307080dc5deaeb1131bd796f2767df51"
+    },
+    {
+      "slug": "sine-starter",
+      "size_bytes": 3746,
+      "schema": 1,
+      "name": "Sine Starter",
+      "description": "The minimal fused-app: a slider, a Python main() that computes a sine wave, and a canvas plot. Copy it to start your own.",
+      "author": {
+        "name": "Sina"
+      },
+      "tags": [
+        "starter",
+        "example"
+      ],
+      "version": "1.0.0",
+      "requires_python": true,
+      "commit": "2cca2468307080dc5deaeb1131bd796f2767df51"
+    }
+  ]
+}
