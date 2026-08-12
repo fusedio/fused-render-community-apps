@@ -8,6 +8,15 @@ Browse and install these from the **Community** page inside fused-render, or
 copy any folder into `~/Documents/Fused/community/` by hand — an app is just
 files.
 
+![The cog-range-viewer app previewed in the fused-render explorer](.github/images/cog-range-viewer.png)
+
+## A few of the apps
+
+| | |
+|---|---|
+| ![Overture Map Explorer — live DuckDB queries over Overture's public S3 parquet](.github/images/overture-explorer.png) | ![Disk usage treemap of a scanned directory](.github/images/disk-usage.png) |
+| ![Sine starter — minimal view with a frequency slider](.github/images/sine-starter.png) | |
+
 ## App layout
 
 ```
