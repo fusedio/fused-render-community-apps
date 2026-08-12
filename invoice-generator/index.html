@@ -1,0 +1,1118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Invoices</title>
+<style>
+  :root {
+    --bg: #f7f7f5; --card: #fff; --hair: #e4e4e0;
+    --ink: #1a1a18; --ink-2: #6b6b66; --ink-3: #9b9b94;
+    --accent: #185fa5; --hover: #f1f1ef;
+    --radius: 8px; --radius-lg: 12px;
+    --font: ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    font-family: var(--font); color: var(--ink); background: var(--bg);
+    font-size: 13px; height: 100vh; display: flex; flex-direction: column; overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+  button { font: inherit; cursor: pointer; color: inherit; }
+  .hidden { display: none !important; }
+  .spacer { flex: 1 1 auto; }
+  svg { pointer-events: none; }
+  .muted { color: var(--ink-3); }
+
+  .btn { display: inline-flex; align-items: center; gap: 6px; background: transparent; color: var(--ink);
+    border: 0.5px solid var(--hair); border-radius: var(--radius); padding: 6px 12px; }
+  .btn:hover:not(:disabled) { background: var(--hover); }
+  .btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .btn.primary:hover:not(:disabled) { background: #134c85; }
+  .btn.sm { padding: 3px 9px; font-size: 12px; }
+  .btn:disabled { opacity: .45; cursor: default; }
+  .btn svg { width: 14px; height: 14px; }
+  .icon-btn { border: none; background: none; padding: 5px; border-radius: 6px; color: var(--ink-2);
+    display: inline-flex; align-items: center; }
+  .icon-btn:hover:not(:disabled) { background: var(--hover); color: var(--ink); }
+  .icon-btn:disabled { opacity: .4; cursor: default; }
+  .icon-btn svg { width: 15px; height: 15px; }
+  .link-btn { border: none; background: none; color: var(--accent); padding: 4px 2px; text-align: left; }
+  .link-btn:hover:not(:disabled) { text-decoration: underline; }
+  .link-btn:disabled { opacity: .45; cursor: default; }
+
+  .pill { display: inline-flex; align-items: center; padding: 1px 9px; border-radius: 99px; font-size: 11.5px; }
+  .pill.draft { background: #faeeda; color: #854f0b; }
+  .pill.final { background: #eaf3de; color: #3b6d11; }
+
+  input, select, textarea { font: inherit; color: var(--ink); background: #fff;
+    border: 0.5px solid var(--hair); border-radius: var(--radius); padding: 6px 8px; width: 100%; }
+  input:focus, select:focus, textarea:focus { outline: 1.5px solid var(--accent); outline-offset: -1px; }
+  input:disabled, select:disabled, textarea:disabled { background: var(--bg); color: var(--ink-2); }
+  textarea { resize: vertical; }
+  label.f { display: block; font-size: 11.5px; color: var(--ink-2); }
+  label.f > input, label.f > select, label.f > textarea { margin-top: 3px; }
+
+  /* ---- library ---- */
+  #library { flex: 1 1 auto; min-height: 0; display: flex; }
+  #libSide { flex: 0 0 200px; background: var(--card); border-right: 0.5px solid var(--hair);
+    display: flex; flex-direction: column; padding: 14px 8px 10px; }
+  .wordmark { font-size: 15px; font-weight: 650; padding: 0 8px 12px; display: flex; align-items: center; gap: 7px; }
+  .wordmark svg { width: 17px; height: 17px; color: var(--accent); }
+  #clientList { flex: 1 1 auto; overflow-y: auto; display: flex; flex-direction: column; gap: 1px; }
+  .client-row { display: flex; align-items: center; gap: 6px; border: none; background: none; text-align: left;
+    padding: 6px 8px; border-radius: 6px; color: var(--ink-2); }
+  .client-row:hover { background: var(--hover); }
+  .client-row.on { background: #e9f0f8; color: var(--accent); font-weight: 600; }
+  .client-row .nm { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .client-row .ct { font-size: 11px; color: var(--ink-3); }
+  .side-empty { color: var(--ink-3); padding: 6px 8px; font-size: 12px; }
+  #libSide .foot { padding-top: 8px; border-top: 0.5px solid var(--hair); margin-top: 8px; }
+
+  #libMain { flex: 1 1 auto; min-width: 0; overflow-y: auto; padding: 26px 32px; }
+  .lib-head { display: flex; align-items: center; gap: 8px; margin-bottom: 18px; }
+  .lib-head h2 { margin: 0; font-size: 19px; font-weight: 650; }
+  .lib-head .ops { display: inline-flex; gap: 2px; }
+
+  .inv-table { width: 100%; border-collapse: collapse; background: var(--card);
+    border: 0.5px solid var(--hair); border-radius: var(--radius-lg); overflow: hidden; }
+  .inv-table th { text-align: left; font-size: 11.5px; font-weight: 500; color: var(--ink-2);
+    padding: 9px 14px; border-bottom: 0.5px solid var(--hair); }
+  .inv-table td { padding: 10px 14px; border-bottom: 0.5px solid var(--hair); }
+  .inv-table tbody tr { cursor: pointer; }
+  .inv-table tbody tr:hover { background: #fafaf8; }
+  .inv-table tbody tr:last-child td { border-bottom: none; }
+  .inv-table .num { font-weight: 600; }
+  .inv-table td.ops { text-align: right; white-space: nowrap; }
+  .inv-table td.ops .icon-btn { opacity: 0; }
+  .inv-table tr:hover td.ops .icon-btn { opacity: 1; }
+
+  .empty { text-align: center; color: var(--ink-2); padding: 90px 20px; }
+  .empty p { margin: 0 0 14px; }
+
+  /* ---- editor ---- */
+  #editor { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+  #etop { display: flex; align-items: center; gap: 10px; padding: 8px 14px; background: var(--card);
+    border-bottom: 0.5px solid var(--hair); flex: 0 0 auto; }
+  #numInput { width: 190px; font-weight: 600; }
+  #saveState { font-size: 12px; color: var(--ink-3); }
+  #ebody { flex: 1 1 auto; min-height: 0; display: flex; }
+  #form { flex: 0 0 44%; min-width: 380px; overflow-y: auto; padding: 16px;
+    display: flex; flex-direction: column; gap: 12px; border-right: 0.5px solid var(--hair); }
+  .card { background: var(--card); border: 0.5px solid var(--hair); border-radius: var(--radius-lg); padding: 12px; }
+  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .card-label { border: none; padding: 2px 0; font-size: 11.5px; color: var(--ink-2); font-weight: 600;
+    border-radius: 4px; background: transparent; }
+  .card-label:hover:not(:disabled) { background: var(--hover); }
+  .party { display: flex; flex-direction: column; gap: 7px; }
+  .kv { display: flex; flex-direction: column; gap: 5px; }
+  .kv-row { display: flex; gap: 5px; align-items: center; }
+  .kv-row input { min-width: 0; }
+  .kv-row .icon-btn { flex: 0 0 auto; }
+  .imgchip { display: flex; align-items: center; gap: 8px; }
+  .imgchip img { max-height: 34px; max-width: 110px; border: 0.5px solid var(--hair); border-radius: 6px;
+    background: #fff; padding: 2px; }
+
+  .items-head { display: flex; align-items: center; gap: 14px; margin-bottom: 8px; }
+  .sec-title { font-size: 12px; font-weight: 600; color: var(--ink-2); }
+  .items-head label { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--ink-2); }
+  .items-head input[type=checkbox] { width: auto; }
+  .itable { width: 100%; border-collapse: collapse; }
+  .itable th { text-align: left; font-size: 11px; font-weight: 500; color: var(--ink-3); padding: 2px 4px 4px; }
+  .itable td { padding: 2px 2px; vertical-align: middle; }
+  .itable td.amt { text-align: right; font-variant-numeric: tabular-nums; padding-right: 6px;
+    color: var(--ink-2); white-space: nowrap; }
+  .itable .c-qty { width: 58px; } .itable .c-rate { width: 88px; }
+  .itable .c-hsn { width: 76px; } .itable .c-unit { width: 66px; }
+  .itable .c-amt { width: 84px; text-align: right; } .itable .c-ops { width: 68px; }
+  .itable td.ops { white-space: nowrap; text-align: right; }
+  .itable td.ops .icon-btn { opacity: 0; padding: 3px; }
+  .itable tr:hover td.ops .icon-btn { opacity: 1; }
+
+  .trow { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 3px 0; }
+  .trow > span:first-child { color: var(--ink-2); font-size: 12px; }
+  .trow .tin { display: flex; gap: 5px; width: 170px; }
+  .trow .tin select { width: 72px; }
+  .trow > input { width: 170px; }
+  .tsum { border-top: 0.5px solid var(--hair); margin-top: 8px; padding-top: 8px; }
+  .tsum .srow { display: flex; justify-content: space-between; padding: 2px 0; color: var(--ink-2);
+    font-variant-numeric: tabular-nums; }
+  .tsum .srow.total { color: var(--ink); font-weight: 650; font-size: 14px; padding-top: 5px; }
+
+  details.disc { background: var(--card); border: 0.5px solid var(--hair); border-radius: var(--radius-lg); }
+  details.disc summary { padding: 10px 12px; font-size: 12px; font-weight: 600; color: var(--ink-2);
+    cursor: pointer; list-style: none; display: flex; align-items: center; gap: 6px; }
+  details.disc summary::before { content: "›"; color: var(--ink-3); transition: transform .12s; }
+  details.disc[open] summary::before { transform: rotate(90deg); }
+  details.disc .disc-body { padding: 0 12px 12px; display: flex; flex-direction: column; gap: 8px; }
+  .fx-row { display: flex; align-items: center; gap: 8px; }
+  .fx-row input[type=checkbox] { width: auto; }
+  .fx-row select { width: 110px; }
+  #fxLine { font-size: 12px; color: var(--ink-2); }
+
+  /* ---- preview ---- */
+  #previewPane { flex: 1 1 auto; min-width: 0; overflow: auto; padding: 24px; }
+  #pageWrap { margin: 0 auto; }
+  #page { position: relative; width: 210mm; min-height: 297mm; background: #fff; transform-origin: top left; --pv-scale: 1;
+    box-shadow: 0 2px 16px rgba(20, 20, 15, .13); padding: 14mm 15mm; font-size: calc(9.5pt * var(--pv-scale)); line-height: 1.5; }
+  .pv-pagemark { position: absolute; left: 0; right: 0; top: 297mm; border-top: 1.5px dashed #c0392b; pointer-events: none; }
+  .pv-pagemark::after { content: "Page 1 ends here — content below prints on a second page";
+    position: absolute; right: 0; top: 1.5mm; font-size: 7.5pt; color: #c0392b; background: #fff;
+    padding: 0.5mm 2mm; border: 0.5px solid #e4c0bd; border-radius: 4px; }
+  .pv-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8mm; margin-bottom: 7mm; }
+  .pv-logo { max-height: 18mm; max-width: 55mm; }
+  .pv-hr { text-align: right; margin-left: auto; }
+  .pv-title { font-size: calc(15pt * var(--pv-scale)); font-weight: 600; }
+  .pv-num { color: var(--ink-2); margin-top: 1mm; }
+  #page.theme-band .pv-head { background: var(--accent); color: #fff; margin: -14mm -15mm 7mm; padding: 8mm 15mm; }
+  #page.theme-band .pv-num { color: rgba(255,255,255,.85); }
+  .pv-meta { display: flex; gap: 10mm; margin-bottom: 6mm; }
+  .pv-k { color: var(--ink-3); font-size: calc(8pt * var(--pv-scale)); }
+  .pv-meta .pv-k { display: block; }
+  .pv-parties { display: flex; gap: 10mm; margin-bottom: 7mm; }
+  .pv-party { flex: 1 1 0; min-width: 0; }
+  .pv-lab { color: var(--ink-3); font-size: calc(8pt * var(--pv-scale)); margin-bottom: 1.5mm; }
+  .pv-name { font-weight: 600; }
+  .pv-items { width: 100%; border-collapse: collapse; margin-bottom: 4mm; font-size: calc(9pt * var(--pv-scale)); }
+  .pv-items th { text-align: left; color: var(--ink-2); font-weight: 500; font-size: calc(8pt * var(--pv-scale));
+    border-bottom: 0.5px solid #c9c9c4; padding: 1.5mm 2mm; }
+  .pv-items td { padding: 1.8mm 2mm; border-bottom: 0.5px solid var(--hair); vertical-align: top; }
+  .pv-items .r { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #page.theme-boxed .pv-items th, #page.theme-boxed .pv-items td { border: 0.5px solid #c9c9c4; }
+  .pv-totals { margin-left: auto; width: 68mm; font-size: calc(9pt * var(--pv-scale)); }
+  #page.theme-boxed .pv-totals { border: 0.5px solid #c9c9c4; padding: 1mm 0; }
+  .pv-trow { display: flex; justify-content: space-between; padding: 1mm 2mm; font-variant-numeric: tabular-nums; }
+  .pv-trow.total { border-top: 0.5px solid var(--ink); font-weight: 600; font-size: calc(10pt * var(--pv-scale)); margin-top: 1mm; padding-top: 2mm; }
+  #page.theme-boxed .pv-trow.total { border-top: 0.5px solid #c9c9c4; }
+  .pv-fx { text-align: right; color: var(--ink-2); font-size: calc(8pt * var(--pv-scale)); margin-top: 1.5mm; }
+  .pv-foot { margin-top: 9mm; }
+  .pv-sec { margin-top: 5mm; white-space: pre-wrap; }
+  .pv-sign { margin-top: 9mm; width: 60mm; margin-left: auto; text-align: center; }
+  .pv-sign img { max-height: 14mm; max-width: 50mm; }
+  .pv-sigline { border-top: 0.5px solid var(--ink-3); margin-top: 2mm; padding-top: 1mm;
+    font-size: calc(8pt * var(--pv-scale)); color: var(--ink-2); }
+
+  /* ---- modal / toast / boot ---- */
+  .modal-bg { position: fixed; inset: 0; background: rgba(26,26,24,.32); display: grid; place-items: center; z-index: 100; }
+  .modal { background: #fff; border-radius: var(--radius-lg); box-shadow: 0 8px 32px rgba(20,20,15,.2);
+    padding: 20px; width: 400px; max-width: 94vw; max-height: 90vh; overflow-y: auto; }
+  .modal.wide { width: 560px; }
+  .modal h3 { margin: 0 0 12px; font-size: 15px; }
+  .modal p { margin: 0 0 10px; color: var(--ink-2); line-height: 1.45; }
+  .modal label.f { margin-top: 10px; }
+  .modal .row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 18px; }
+  .set-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .chips-row { display: flex; gap: 24px; margin-top: 10px; }
+
+  #toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--ink);
+    color: #fff; padding: 9px 16px; border-radius: var(--radius); font-size: 13px; z-index: 200;
+    display: none; max-width: 70vw; box-shadow: 0 6px 20px rgba(20,20,15,.24); }
+  #toast.err { background: #8a2f2f; }
+  #boot { position: fixed; inset: 0; display: grid; place-items: center; color: var(--ink-3);
+    font-size: 14px; background: var(--bg); z-index: 300; text-align: center; line-height: 1.7; }
+
+  /* ---- print ---- */
+  @page { size: A4; margin: 0; }
+  @media print {
+    body { overflow: visible !important; height: auto !important; display: block !important; background: #fff; }
+    #library, #etop, #form, #modalHost, #toast, #boot { display: none !important; }
+    #editor, #ebody, #previewPane, #pageWrap { display: block !important; overflow: visible !important;
+      height: auto !important; width: auto !important; padding: 0 !important; margin: 0 !important; }
+    #page { transform: none !important; margin: 0 !important; box-shadow: none !important;
+      width: 210mm; min-height: 0 !important; }
+    .pv-pagemark { display: none !important; }
+  }
+</style>
+</head>
+<body>
+<div id="boot">Loading invoices…</div>
+
+<div id="library" class="hidden">
+  <aside id="libSide">
+    <div class="wordmark">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12v18l-2-1.5-2 1.5-2-1.5-2 1.5-2-1.5-2 1.5z"/><path d="M9 8h6"/><path d="M9 12h6"/></svg>
+      Invoices
+    </div>
+    <div id="clientList"></div>
+    <button class="link-btn" id="newClientBtn">+ New client</button>
+    <div class="foot">
+      <button class="btn sm" id="settingsBtn" style="width:100%;justify-content:flex-start">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        My details
+      </button>
+    </div>
+  </aside>
+  <main id="libMain"></main>
+</div>
+
+<div id="editor" class="hidden">
+  <div id="etop">
+    <button class="icon-btn" id="backBtn" title="Back to library">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>
+    </button>
+    <input id="numInput" spellcheck="false">
+    <button class="icon-btn" id="regenBtn" title="Use the next number">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v5h-5"/><path d="M21 13a9 9 0 1 1-3-7.7L21 8"/></svg>
+    </button>
+    <span class="pill draft" id="statusPill">Draft</span>
+    <button class="btn sm" id="statusBtn">Mark as final</button>
+    <span id="saveState"></span>
+    <span class="spacer"></span>
+    <button class="btn primary" id="pdfBtn">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+      Download PDF
+    </button>
+  </div>
+  <div id="ebody">
+    <div id="form"></div>
+    <div id="previewPane"><div id="pageWrap"><div id="page" class="theme-minimal"></div></div></div>
+  </div>
+</div>
+
+<div id="modalHost"></div>
+<div id="toast"></div>
+
+<script type="module">
+const PY = "./invoice.py";
+const $ = (id) => document.getElementById(id);
+
+const CURRENCIES = [
+  ["USD", "$"], ["EUR", "€"], ["GBP", "£"], ["INR", "₹"], ["JPY", "¥"], ["CNY", "¥"],
+  ["AUD", "A$"], ["CAD", "C$"], ["CHF", "CHF"], ["SGD", "S$"], ["HKD", "HK$"], ["NZD", "NZ$"],
+  ["SEK", "kr"], ["NOK", "kr"], ["DKK", "kr"], ["AED", "د.إ"], ["SAR", "﷼"], ["ZAR", "R"],
+  ["BRL", "R$"], ["MXN", "MX$"], ["KRW", "₩"], ["THB", "฿"], ["IDR", "Rp"], ["PLN", "zł"],
+];
+
+const state = {
+  clients: [], selClient: "",
+  client: "", routeId: "", doc: null,
+  pending: null,          // {client, doc} composed but unsaved
+};
+
+// ---------- plumbing ----------
+function py(params) {
+  const clean = {};
+  for (const [k, v] of Object.entries(params)) {
+    if (v === null || v === undefined) continue;
+    clean[k] = typeof v === "string" ? v : (typeof v === "number" || typeof v === "boolean") ? v : String(v);
+  }
+  return fused.runPython(PY, clean);
+}
+let toastTimer = 0;
+function toast(msg, err = false) {
+  const t = $("toast");
+  t.textContent = msg; t.className = err ? "err" : ""; t.style.display = "block";
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.style.display = "none"; }, err ? 6000 : 3200);
+}
+async function act(fn) {
+  try { await fn(); }
+  catch (err) { console.error(err); toast(err?.message || String(err), true); }
+}
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g,
+  (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const escML = (s) => esc(s).replace(/\n/g, "<br>");
+const asObj = (d) => typeof d === "string" ? JSON.parse(d) : d;
+
+function fmtMoney(n, cur) {
+  return new Intl.NumberFormat(undefined, { style: "currency", currency: cur || "USD" }).format(n || 0);
+}
+const curOpts = (sel) => {
+  const known = CURRENCIES.some(([c]) => c === sel);
+  return (known || !sel ? "" : `<option value="${esc(sel)}" selected>${esc(sel)}</option>`) +
+    CURRENCIES.map(([c, s]) => `<option value="${c}"${c === sel ? " selected" : ""}>${c} ${s}</option>`).join("");
+};
+
+function totals(d) {
+  const subtotal = d.items.reduce((s, it) => s + (+it.qty || 0) * (+it.rate || 0), 0);
+  const discount = d.discount.mode === "pct" ? subtotal * (+d.discount.value || 0) / 100 : (+d.discount.value || 0);
+  const taxable = subtotal - discount;
+  const tax = taxable * (+d.tax_pct || 0) / 100;
+  const total = taxable + tax + (+d.shipping || 0);
+  return { subtotal, discount, taxable, tax, total };
+}
+const getPath = (o, p) => p.split(".").reduce((x, k) => x[k], o);
+function setPath(o, p, v) {
+  const ks = p.split("."); const last = ks.pop();
+  ks.reduce((x, k) => x[k], o)[last] = v;
+}
+
+// ---------- modal helpers ----------
+function modal(html) {
+  const bg = document.createElement("div");
+  bg.className = "modal-bg";
+  bg.innerHTML = `<div class="modal">${html}</div>`;
+  $("modalHost").appendChild(bg);
+  bg.addEventListener("mousedown", (e) => { if (e.target === bg) close(null); });
+  function onKey(e) {
+    if (e.key === "Escape" && bg === $("modalHost").lastElementChild) { e.stopPropagation(); close(null); }
+  }
+  document.addEventListener("keydown", onKey, true);
+  let resolve;
+  const done = new Promise((r) => { resolve = r; });
+  function close(v) { document.removeEventListener("keydown", onKey, true); bg.remove(); resolve(v); }
+  return { el: bg.firstElementChild, done, close };
+}
+
+function dialog({ title, message = "", label = "", value = "", okText = "OK", danger = false, input = true }) {
+  const m = modal(`
+    <h3></h3>${message ? "<p></p>" : ""}
+    ${input ? `<input type="text" id="dlgInput" placeholder="${label.replace(/"/g, "&quot;")}">` : ""}
+    <div class="row">
+      <button class="btn" data-x="cancel">Cancel</button>
+      <button class="btn primary" data-x="ok" ${danger ? 'style="background:#8a2f2f;border-color:#8a2f2f"' : ""}></button>
+    </div>`);
+  m.el.querySelector("h3").textContent = title;
+  if (message) m.el.querySelector("p").textContent = message;
+  m.el.querySelector("[data-x=ok]").textContent = okText;
+  const inp = m.el.querySelector("#dlgInput");
+  if (inp) { inp.value = value; inp.focus(); inp.select(); }
+  m.el.addEventListener("click", (e) => {
+    const x = e.target.closest("[data-x]");
+    if (!x) return;
+    m.close(x.dataset.x === "ok" ? (inp ? inp.value.trim() : true) : null);
+  });
+  m.el.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.target.closest("textarea")) m.close(inp ? inp.value.trim() : true);
+    if (e.key === "Escape") m.close(null);
+  });
+  return m.done;
+}
+
+// ---------- shared editors ----------
+function kvEditor(host, list, onChange) {
+  host.innerHTML = "";
+  list.forEach((row, i) => {
+    const div = document.createElement("div");
+    div.className = "kv-row";
+    div.innerHTML = `<input placeholder="Label"><input placeholder="Value">
+      <button class="icon-btn" title="Remove"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>`;
+    const [l, v] = div.querySelectorAll("input");
+    l.value = row.label || ""; v.value = row.value || "";
+    l.addEventListener("input", () => { row.label = l.value; onChange(); });
+    v.addEventListener("input", () => { row.value = v.value; onChange(); });
+    div.querySelector("button").addEventListener("click", () => {
+      list.splice(i, 1); kvEditor(host, list, onChange); onChange();
+    });
+    host.appendChild(div);
+  });
+  const add = document.createElement("button");
+  add.className = "link-btn"; add.textContent = "+ Add row";
+  add.addEventListener("click", () => { list.push({ label: "", value: "" }); kvEditor(host, list, onChange); onChange(); });
+  host.appendChild(add);
+}
+
+function pickImage() {
+  return new Promise((resolve) => {
+    const inp = document.createElement("input");
+    inp.type = "file"; inp.accept = "image/*";
+    inp.onchange = () => {
+      const f = inp.files[0];
+      if (!f) return resolve("");
+      const rd = new FileReader();
+      rd.onload = () => {
+        const img = new Image();
+        img.onload = () => {
+          const k = Math.min(1, 600 / Math.max(img.width, img.height));
+          const c = document.createElement("canvas");
+          c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+          c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+          resolve(c.toDataURL("image/png"));
+        };
+        img.src = rd.result;
+      };
+      rd.readAsDataURL(f);
+    };
+    inp.click();
+  });
+}
+
+function imageChip(host, obj, key, label, onChange) {
+  const mk = (txt) => {
+    const b = document.createElement("button");
+    b.className = "btn sm"; b.textContent = txt;
+    return b;
+  };
+  const render = () => {
+    host.innerHTML = "";
+    if (obj[key]) {
+      const img = document.createElement("img");
+      img.src = obj[key];
+      host.appendChild(img);
+      const rep = mk("Replace"), rem = mk("Remove");
+      rep.addEventListener("click", () => act(async () => {
+        const d = await pickImage();
+        if (d) { obj[key] = d; render(); onChange(); }
+      }));
+      rem.addEventListener("click", () => { obj[key] = ""; render(); onChange(); });
+      host.append(rep, rem);
+    } else {
+      const add = mk("Add " + label);
+      add.addEventListener("click", () => act(async () => {
+        const d = await pickImage();
+        if (d) { obj[key] = d; render(); onChange(); }
+      }));
+      host.appendChild(add);
+    }
+  };
+  render();
+}
+
+// ---------- autosave ----------
+let saveTimer = 0, saving = false, savePending = false;
+const setSaveState = (txt) => { $("saveState").textContent = txt; };
+function scheduleSave() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => { saveTimer = 0; doSave(); }, 600);
+}
+function flushSave() {
+  if (saveTimer) { clearTimeout(saveTimer); saveTimer = 0; doSave(); }
+}
+async function doSave() {
+  const doc = state.doc, client = state.client;
+  if (!doc) return;
+  if (saving) { savePending = true; return; }
+  saving = true;
+  setSaveState("Saving…");
+  try {
+    const res = await py({ action: "save_invoice", client, doc: JSON.stringify(doc) });
+    if (state.doc === doc) {
+      doc.modified = res.modified;
+      setSaveState("Saved");
+      if (state.routeId === "new") {
+        state.routeId = doc.id;
+        history.replaceState(null, "", `#/edit/${encodeURIComponent(client)}/${doc.id}`);
+      }
+    }
+  } catch (err) {
+    if (state.doc === doc)
+      setSaveState(/number/i.test(err?.message || "") ? "Number already used" : "Save failed — retrying");
+  }
+  saving = false;
+  if (savePending) { savePending = false; doSave(); }
+}
+function onDocChange() {
+  scheduleSave();
+  renderTotals();
+  schedulePreview();
+}
+
+// ---------- routing ----------
+function showView(name) {
+  $("library").classList.toggle("hidden", name !== "library");
+  $("editor").classList.toggle("hidden", name !== "editor");
+}
+async function route() {
+  const m = (location.hash || "#/").match(/^#\/edit\/([^/]+)\/([^/]+)$/);
+  if (m) return openEditor(decodeURIComponent(m[1]), decodeURIComponent(m[2]));
+  return openLibrary();
+}
+window.addEventListener("hashchange", () => act(route));
+
+// ---------- library ----------
+async function openLibrary() {
+  flushSave();
+  state.doc = null; state.client = ""; state.routeId = "";
+  showView("library");
+  const r = await py({ action: "list_clients" });
+  state.clients = r.clients || [];
+  if (!state.clients.some((c) => c.slug === state.selClient))
+    state.selClient = state.clients[0]?.slug || "";
+  renderClients();
+  await renderLibMain();
+}
+
+function renderClients() {
+  const list = $("clientList");
+  list.innerHTML = "";
+  if (!state.clients.length) {
+    list.innerHTML = `<div class="side-empty">No clients yet</div>`;
+    return;
+  }
+  for (const c of state.clients) {
+    const b = document.createElement("button");
+    b.className = "client-row" + (c.slug === state.selClient ? " on" : "");
+    b.innerHTML = `<span class="nm"></span><span class="ct">${c.invoice_count}</span>`;
+    b.querySelector(".nm").textContent = c.name;
+    b.addEventListener("click", () => act(async () => {
+      state.selClient = c.slug;
+      renderClients();
+      await renderLibMain();
+    }));
+    list.appendChild(b);
+  }
+}
+
+async function renderLibMain() {
+  const main = $("libMain");
+  if (!state.clients.length) {
+    main.innerHTML = `<div class="empty"><p>Add your first client to start invoicing.</p>
+      <button class="btn primary" id="firstClientBtn">Add your first client</button></div>`;
+    main.querySelector("#firstClientBtn").addEventListener("click", newClient);
+    return;
+  }
+  const client = state.clients.find((c) => c.slug === state.selClient);
+  main.innerHTML = `
+    <div class="lib-head">
+      <h2 id="clientName"></h2>
+      <span class="ops">
+        <button class="icon-btn" id="renameBtn" title="Rename client">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
+        </button>
+        <button class="icon-btn" id="delClientBtn" title="Delete client">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg>
+        </button>
+      </span>
+      <span class="spacer"></span>
+      <button class="btn primary" id="newInvBtn">New invoice</button>
+    </div>
+    <div id="invHost"></div>`;
+  const h2 = main.querySelector("#clientName");
+  h2.textContent = client.name;
+  const rename = () => act(async () => {
+    const name = await dialog({ title: "Rename client", value: client.name, okText: "Rename" });
+    if (!name || name === client.name) return;
+    await py({ action: "rename_client", client: client.slug, name });
+    await openLibrary();
+  });
+  h2.addEventListener("dblclick", rename);
+  main.querySelector("#renameBtn").addEventListener("click", rename);
+  main.querySelector("#delClientBtn").addEventListener("click", () => act(async () => {
+    const n = client.invoice_count;
+    const ok = await dialog({
+      title: `Delete ${client.name}?`, input: false, danger: true, okText: "Delete",
+      message: n ? `This removes the client and its ${n} invoice${n === 1 ? "" : "s"}.`
+        : "This removes the client. It has no invoices.",
+    });
+    if (!ok) return;
+    await py({ action: "delete_client", client: client.slug });
+    state.selClient = "";
+    await openLibrary();
+  }));
+  main.querySelector("#newInvBtn").addEventListener("click", () => act(async () => {
+    const r = await py({ action: "new_invoice", client: client.slug });
+    state.pending = { client: client.slug, doc: asObj(r.doc) };
+    location.hash = `#/edit/${encodeURIComponent(client.slug)}/new`;
+  }));
+  const r = await py({ action: "list_invoices", client: client.slug });
+  renderInvTable(main.querySelector("#invHost"), client, r.invoices || []);
+}
+
+function renderInvTable(host, client, invoices) {
+  if (!invoices.length) {
+    host.innerHTML = `<div class="empty"><p>No invoices yet.</p>
+      <button class="btn" id="emptyNewBtn">New invoice</button></div>`;
+    host.querySelector("#emptyNewBtn").addEventListener("click", () =>
+      document.querySelector("#newInvBtn").click());
+    return;
+  }
+  const table = document.createElement("table");
+  table.className = "inv-table";
+  table.innerHTML = `<thead><tr><th>Number</th><th>Issued</th><th>Total</th><th>Status</th><th></th></tr></thead><tbody></tbody>`;
+  const tbody = table.querySelector("tbody");
+  for (const inv of invoices) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td class="num"></td><td class="muted"></td><td></td>
+      <td><span class="pill ${inv.status === "final" ? "final" : "draft"}">${inv.status === "final" ? "Final" : "Draft"}</span></td>
+      <td class="ops">
+        <button class="icon-btn" data-op="dup" title="Duplicate">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+        </button>
+        <button class="icon-btn" data-op="del" title="Delete">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg>
+        </button>
+      </td>`;
+    tr.children[0].textContent = inv.number;
+    tr.children[1].textContent = inv.issue_date;
+    tr.children[2].textContent = fmtMoney(inv.total, inv.currency);
+    tr.addEventListener("click", (e) => {
+      const op = e.target.closest("[data-op]");
+      if (op) {
+        if (op.dataset.op === "dup") act(async () => {
+          const r = await py({ action: "duplicate_invoice", client: client.slug, id: inv.id });
+          state.pending = { client: client.slug, doc: asObj(r.doc) };
+          location.hash = `#/edit/${encodeURIComponent(client.slug)}/new`;
+        });
+        else act(async () => {
+          const ok = await dialog({ title: `Delete ${inv.number}?`, input: false, danger: true, okText: "Delete",
+            message: "The invoice file is removed." });
+          if (!ok) return;
+          await py({ action: "delete_invoice", client: client.slug, id: inv.id });
+          await openLibrary();
+        });
+        return;
+      }
+      location.hash = `#/edit/${encodeURIComponent(client.slug)}/${inv.id}`;
+    });
+    tbody.appendChild(tr);
+  }
+  host.innerHTML = "";
+  host.appendChild(table);
+}
+
+function newClient() {
+  act(async () => {
+    const name = await dialog({ title: "New client", label: "Client name", okText: "Create" });
+    if (!name) return;
+    const r = await py({ action: "create_client", name });
+    state.selClient = r.slug;
+    await openLibrary();
+  });
+}
+$("newClientBtn").addEventListener("click", newClient);
+
+// ---------- settings ----------
+async function openSettings() {
+  const s = asObj((await py({ action: "get_settings" })).settings);
+  const m = modal(`
+    <h3>My details</h3>
+    <div class="set-grid">
+      <label class="f">Name<input id="stName"></label>
+      <label class="f">Email<input id="stEmail"></label>
+      <label class="f">Phone<input id="stPhone"></label>
+      <label class="f">Home currency<select id="stCur">${curOpts(s.home_currency)}</select></label>
+    </div>
+    <label class="f">Address<textarea id="stAddr" rows="2"></textarea></label>
+    <label class="f">Custom fields</label>
+    <div class="kv" id="stCustom"></div>
+    <div class="chips-row">
+      <div><label class="f">Logo</label><div class="imgchip" id="stLogo"></div></div>
+      <div><label class="f">Signature</label><div class="imgchip" id="stSig"></div></div>
+    </div>
+    <label class="f">Default terms<textarea id="stTerms" rows="2"></textarea></label>
+    <label class="f">Payment details</label>
+    <div class="kv" id="stPay"></div>
+    <div class="row">
+      <button class="btn" data-x="cancel">Cancel</button>
+      <button class="btn primary" data-x="ok">Save</button>
+    </div>`);
+  m.el.classList.add("wide");
+  const q = (sel) => m.el.querySelector(sel);
+  q("#stName").value = s.billed_by.name || "";
+  q("#stEmail").value = s.billed_by.email || "";
+  q("#stPhone").value = s.billed_by.phone || "";
+  q("#stAddr").value = s.billed_by.address || "";
+  q("#stTerms").value = s.default_terms || "";
+  kvEditor(q("#stCustom"), s.billed_by.custom, () => {});
+  kvEditor(q("#stPay"), s.payment, () => {});
+  imageChip(q("#stLogo"), s, "logo", "logo", () => {});
+  imageChip(q("#stSig"), s, "signature", "signature", () => {});
+  q("[data-x=cancel]").addEventListener("click", () => m.close(null));
+  q("[data-x=ok]").addEventListener("click", () => act(async () => {
+    s.billed_by.name = q("#stName").value;
+    s.billed_by.email = q("#stEmail").value;
+    s.billed_by.phone = q("#stPhone").value;
+    s.billed_by.address = q("#stAddr").value;
+    s.home_currency = q("#stCur").value;
+    s.default_terms = q("#stTerms").value;
+    await py({ action: "save_settings", settings: JSON.stringify(s) });
+    toast("Details saved");
+    m.close(true);
+  }));
+  return m.done;
+}
+$("settingsBtn").addEventListener("click", () => act(openSettings));
+
+// ---------- editor ----------
+async function openEditor(client, id) {
+  showView("editor");
+  state.client = client; state.routeId = id;
+  let doc;
+  if (id === "new") {
+    if (state.pending && state.pending.client === client) {
+      doc = state.pending.doc;
+      state.pending = null;
+    } else {
+      doc = asObj((await py({ action: "new_invoice", client })).doc);
+    }
+  } else {
+    doc = asObj((await py({ action: "load_invoice", client, id })).doc);
+  }
+  state.doc = doc;
+  setSaveState(id === "new" ? "" : "Saved");
+  buildForm();
+  updateTopbar();
+  schedulePreview();
+  if (doc.fx && doc.fx.quote) lazyFx(doc);
+}
+
+// Refresh a carried-over fx rate on load; best-effort.
+function lazyFx(doc) {
+  py({ action: "fx_rate", base: doc.currency, quote: doc.fx.quote }).then((r) => {
+    if (state.doc !== doc) return;
+    doc.fx = { quote: doc.fx.quote, rate: r.rate, date: r.date };
+    renderFxLine();
+    schedulePreview();
+    if (state.routeId !== "new") scheduleSave();
+  }).catch(() => {});
+}
+
+function updateTopbar() {
+  const d = state.doc;
+  if (!d) return;
+  const fin = d.status === "final";
+  $("numInput").value = d.number || "";
+  $("numInput").disabled = fin;
+  $("regenBtn").disabled = fin;
+  const pill = $("statusPill");
+  pill.className = "pill " + (fin ? "final" : "draft");
+  pill.textContent = fin ? "Final" : "Draft";
+  $("statusBtn").textContent = fin ? "Mark as draft" : "Mark as final";
+}
+
+$("backBtn").addEventListener("click", () => { location.hash = "#/"; });
+$("numInput").addEventListener("input", () => {
+  if (!state.doc) return;
+  state.doc.number = $("numInput").value;
+  onDocChange();
+});
+$("regenBtn").addEventListener("click", () => act(async () => {
+  const r = await py({ action: "new_invoice", client: state.client });
+  state.doc.number = asObj(r.doc).number;
+  $("numInput").value = state.doc.number;
+  onDocChange();
+}));
+$("statusBtn").addEventListener("click", () => {
+  const d = state.doc;
+  if (!d) return;
+  d.status = d.status === "final" ? "draft" : "final";
+  buildForm();
+  updateTopbar();
+  onDocChange();
+});
+$("pdfBtn").addEventListener("click", () => {
+  const prev = document.title;
+  document.title = state.doc?.number || "invoice";
+  window.print();
+  document.title = prev;
+});
+
+// ---------- editor form ----------
+function partyCardHTML(side, withLogo) {
+  return `<div class="card party">
+    <input class="card-label" data-path="labels.${side}" spellcheck="false">
+    ${withLogo ? `<div class="imgchip" id="logoChip"></div>` : ""}
+    <input data-path="${side}.name" placeholder="Name">
+    <input data-path="${side}.email" placeholder="Email">
+    <input data-path="${side}.phone" placeholder="Phone">
+    <textarea data-path="${side}.address" rows="2" placeholder="Address"></textarea>
+    <div class="kv" data-kvpath="${side}.custom"></div>
+  </div>`;
+}
+
+function buildForm() {
+  const doc = state.doc;
+  const form = $("form");
+  form.innerHTML = `
+    <div class="grid3">
+      <label class="f">Issue date<input type="date" data-path="issue_date"></label>
+      <label class="f">Due date<input type="date" data-path="due_date"></label>
+      <label class="f">PO<input data-path="po" placeholder="Optional"></label>
+      <label class="f">Currency<select data-path="currency">${curOpts(doc.currency)}</select></label>
+      <label class="f">Theme<select data-path="theme">
+        <option value="minimal">Minimal</option><option value="band">Band</option><option value="boxed">Boxed</option>
+      </select></label>
+      <label class="f">Text size<select data-path="text_scale" data-num>
+        <option value="0.9">Compact</option><option value="1">Normal</option>
+        <option value="1.15">Large</option><option value="1.3">Extra large</option>
+      </select></label>
+    </div>
+    <div class="two-col">
+      ${partyCardHTML("billed_by", true)}
+      ${partyCardHTML("billed_to", false)}
+    </div>
+    <div class="card">
+      <div class="items-head">
+        <span class="sec-title">Items</span>
+        <span class="spacer"></span>
+        <label><input type="checkbox" data-path="item_columns.hsn">HSN</label>
+        <label><input type="checkbox" data-path="item_columns.unit">Unit</label>
+      </div>
+      <table class="itable" id="itemsTable"><thead></thead><tbody></tbody></table>
+      <button class="link-btn" id="addItemBtn">+ Add item</button>
+    </div>
+    <div class="card">
+      <div class="trow"><span>Discount</span><span class="tin">
+        <select data-path="discount.mode"><option value="pct">%</option><option value="flat">Flat</option></select>
+        <input type="number" min="0" step="any" data-path="discount.value" data-num>
+      </span></div>
+      <div class="trow"><span>Tax %</span><input type="number" min="0" step="any" data-path="tax_pct" data-num></div>
+      <div class="trow"><span>Shipping</span><input type="number" min="0" step="any" data-path="shipping" data-num></div>
+      <div class="tsum" id="totalsSum"></div>
+    </div>
+    <details class="disc"${doc.notes ? " open" : ""}><summary>Notes</summary>
+      <div class="disc-body"><textarea data-path="notes" rows="3"></textarea></div></details>
+    <details class="disc"${doc.terms ? " open" : ""}><summary>Terms</summary>
+      <div class="disc-body"><textarea data-path="terms" rows="3"></textarea></div></details>
+    <details class="disc"${(doc.payment || []).some((r) => r.label || r.value) ? " open" : ""}><summary>Payment details</summary>
+      <div class="disc-body"><div class="kv" data-kvpath="payment"></div></div></details>
+    <details class="disc"${doc.signature ? " open" : ""}><summary>Signature</summary>
+      <div class="disc-body"><div class="imgchip" id="sigChip"></div></div></details>
+    <details class="disc"${doc.fx ? " open" : ""}><summary>Currency reference</summary>
+      <div class="disc-body">
+        <div class="fx-row">
+          <input type="checkbox" id="fxOn">
+          <span>Show a converted total in</span>
+          <select id="fxQuote">${curOpts(doc.fx?.quote || (doc.currency === "INR" ? "USD" : "INR"))}</select>
+        </div>
+        <div id="fxLine"></div>
+      </div></details>`;
+
+  form.querySelectorAll("[data-path]").forEach((el) => {
+    const v = getPath(doc, el.dataset.path);
+    if (el.type === "checkbox") el.checked = !!v;
+    else el.value = v ?? "";
+  });
+  form.querySelectorAll("[data-kvpath]").forEach((el) =>
+    kvEditor(el, getPath(doc, el.dataset.kvpath), onDocChange));
+  imageChip(form.querySelector("#logoChip"), doc, "logo", "logo", onDocChange);
+  imageChip(form.querySelector("#sigChip"), doc, "signature", "signature", onDocChange);
+  form.querySelector("#addItemBtn").addEventListener("click", addItem);
+  form.querySelector("#fxOn").checked = !!doc.fx;
+  form.querySelector("#fxOn").addEventListener("change", () => act(refreshFx));
+  form.querySelector("#fxQuote").addEventListener("change", () => act(refreshFx));
+  renderItems();
+  renderTotals();
+  renderFxLine();
+  if (doc.status === "final")
+    form.querySelectorAll("input, select, textarea, button").forEach((el) => { el.disabled = true; });
+}
+
+$("form").addEventListener("input", (e) => {
+  const el = e.target, p = el.dataset.path;
+  if (!p || !state.doc) return;
+  let v = el.type === "checkbox" ? el.checked : el.value;
+  if ("num" in el.dataset) v = +v || 0;
+  setPath(state.doc, p, v);
+  if (p.startsWith("item_columns")) renderItems();
+  if (p === "currency" && state.doc.fx) { act(refreshFx); return; }
+  onDocChange();
+});
+$("form").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && e.target.closest("#itemsTable")) {
+    e.preventDefault();
+    addItem();
+  }
+});
+
+function addItem() {
+  if (!state.doc || state.doc.status === "final") return;
+  state.doc.items.push({ desc: "", qty: 1, rate: 0, hsn: "", unit: "" });
+  renderItems();
+  const rows = $("itemsTable").querySelectorAll("tbody tr");
+  rows[rows.length - 1]?.querySelector("input")?.focus();
+  onDocChange();
+}
+
+function renderItems() {
+  const doc = state.doc;
+  const cols = doc.item_columns || {};
+  const table = $("itemsTable");
+  table.querySelector("thead").innerHTML = `<tr>
+    <th>Description</th>${cols.hsn ? '<th class="c-hsn">HSN</th>' : ""}
+    <th class="c-qty">Qty</th>${cols.unit ? '<th class="c-unit">Unit</th>' : ""}
+    <th class="c-rate">Rate</th><th class="c-amt">Amount</th><th class="c-ops"></th></tr>`;
+  const tbody = table.querySelector("tbody");
+  tbody.innerHTML = "";
+  doc.items.forEach((it, i) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td><input data-f="desc"></td>
+      ${cols.hsn ? '<td><input data-f="hsn"></td>' : ""}
+      <td><input type="number" min="0" step="any" data-f="qty"></td>
+      ${cols.unit ? '<td><input data-f="unit"></td>' : ""}
+      <td><input type="number" min="0" step="any" data-f="rate"></td>
+      <td class="amt"></td>
+      <td class="ops">
+        <button class="icon-btn" data-o="up" title="Move up"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"/></svg></button>
+        <button class="icon-btn" data-o="down" title="Move down"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>
+        <button class="icon-btn" data-o="del" title="Remove"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+      </td>`;
+    tr.querySelectorAll("[data-f]").forEach((inp) => {
+      const f = inp.dataset.f;
+      inp.value = it[f] ?? "";
+      inp.addEventListener("input", () => {
+        it[f] = (f === "qty" || f === "rate") ? (+inp.value || 0) : inp.value;
+        onDocChange();
+      });
+    });
+    tr.querySelector("[data-o=up]").addEventListener("click", () => moveItem(i, -1));
+    tr.querySelector("[data-o=down]").addEventListener("click", () => moveItem(i, 1));
+    tr.querySelector("[data-o=del]").addEventListener("click", () => {
+      doc.items.splice(i, 1);
+      renderItems();
+      onDocChange();
+    });
+    tbody.appendChild(tr);
+  });
+  if (doc.status === "final")
+    table.querySelectorAll("input, button").forEach((el) => { el.disabled = true; });
+}
+
+function moveItem(i, d) {
+  const items = state.doc.items, j = i + d;
+  if (j < 0 || j >= items.length) return;
+  [items[i], items[j]] = [items[j], items[i]];
+  renderItems();
+  onDocChange();
+}
+
+function renderTotals() {
+  const doc = state.doc;
+  if (!doc) return;
+  const t = totals(doc);
+  const money = (n) => fmtMoney(n, doc.currency);
+  const rows = [["Subtotal", t.subtotal]];
+  if (t.discount) rows.push(["Discount", -t.discount]);
+  if (t.tax) rows.push(["Tax", t.tax]);
+  if (+doc.shipping) rows.push(["Shipping", +doc.shipping]);
+  $("totalsSum").innerHTML =
+    rows.map(([l, n]) => `<div class="srow"><span>${l}</span><span>${money(n)}</span></div>`).join("") +
+    `<div class="srow total"><span>Total</span><span>${money(t.total)}</span></div>`;
+  $("itemsTable").querySelectorAll("tbody tr").forEach((tr, i) => {
+    const it = doc.items[i];
+    if (it) tr.querySelector(".amt").textContent = money((+it.qty || 0) * (+it.rate || 0));
+  });
+  renderFxLine();
+}
+
+const fmtRate = (r) => (+r).toFixed(+r >= 1 ? 2 : 4);
+function fxText(doc) {
+  const t = totals(doc);
+  return `≈ ${fmtMoney(t.total * doc.fx.rate, doc.fx.quote)} at 1 ${doc.currency} = ` +
+    `${fmtRate(doc.fx.rate)} ${doc.fx.quote} (frankfurter.app, ${doc.fx.date})`;
+}
+function renderFxLine() {
+  const el = $("form").querySelector("#fxLine");
+  if (!el) return;
+  const doc = state.doc;
+  el.textContent = doc?.fx?.rate ? fxText(doc) : "";
+}
+async function refreshFx() {
+  const doc = state.doc;
+  const on = $("form").querySelector("#fxOn").checked;
+  const quote = $("form").querySelector("#fxQuote").value;
+  if (!on || quote === doc.currency) {
+    doc.fx = null;
+    renderFxLine();
+    onDocChange();
+    return;
+  }
+  const r = await py({ action: "fx_rate", base: doc.currency, quote });
+  doc.fx = { quote, rate: r.rate, date: r.date };
+  renderFxLine();
+  onDocChange();
+}
+
+// ---------- preview ----------
+const A4_PX = 297 / 25.4 * 96;   // A4 height in CSS px; #page grows past this only on overflow
+let rafPending = false;
+function schedulePreview() {
+  if (rafPending) return;
+  rafPending = true;
+  requestAnimationFrame(() => { rafPending = false; renderPreview(); });
+}
+
+function pvParty(label, p) {
+  const lines = [];
+  if (p.name) lines.push(`<div class="pv-name">${esc(p.name)}</div>`);
+  if (p.address) lines.push(`<div>${escML(p.address)}</div>`);
+  if (p.email) lines.push(`<div>${esc(p.email)}</div>`);
+  if (p.phone) lines.push(`<div>${esc(p.phone)}</div>`);
+  for (const r of p.custom || [])
+    if (r.label || r.value) lines.push(`<div><span class="pv-k">${esc(r.label)}</span> ${esc(r.value)}</div>`);
+  if (!lines.length) return "";
+  return `<div class="pv-party"><div class="pv-lab">${esc(label)}</div>${lines.join("")}</div>`;
+}
+
+function renderPreview() {
+  const doc = state.doc;
+  const page = $("page");
+  if (!doc) { page.innerHTML = ""; return; }
+  const t = totals(doc);
+  const money = (n) => fmtMoney(n, doc.currency);
+  const cols = doc.item_columns || {};
+
+  const meta = [];
+  if (doc.issue_date) meta.push(["Issue date", doc.issue_date]);
+  if (doc.due_date) meta.push(["Due date", doc.due_date]);
+  if (doc.po) meta.push(["PO", doc.po]);
+
+  const itemRows = doc.items.map((it) => `<tr>
+    <td>${escML(it.desc)}</td>
+    ${cols.hsn ? `<td>${esc(it.hsn)}</td>` : ""}
+    <td class="r">${esc(it.qty)}</td>
+    ${cols.unit ? `<td>${esc(it.unit)}</td>` : ""}
+    <td class="r">${money(+it.rate || 0)}</td>
+    <td class="r">${money((+it.qty || 0) * (+it.rate || 0))}</td>
+  </tr>`).join("");
+
+  const totalRows = [`<div class="pv-trow"><span>Subtotal</span><span>${money(t.subtotal)}</span></div>`];
+  if (t.discount) totalRows.push(`<div class="pv-trow"><span>Discount${doc.discount.mode === "pct" ? ` (${doc.discount.value}%)` : ""}</span><span>−${money(t.discount)}</span></div>`);
+  if (t.tax) totalRows.push(`<div class="pv-trow"><span>Tax (${doc.tax_pct}%)</span><span>${money(t.tax)}</span></div>`);
+  if (+doc.shipping) totalRows.push(`<div class="pv-trow"><span>Shipping</span><span>${money(+doc.shipping)}</span></div>`);
+  totalRows.push(`<div class="pv-trow total"><span>Total</span><span>${money(t.total)}</span></div>`);
+
+  const foot = [];
+  const pay = (doc.payment || []).filter((r) => r.label || r.value);
+  if (pay.length) foot.push(`<div class="pv-sec"><div class="pv-lab">Payment details</div>` +
+    pay.map((r) => `<div><span class="pv-k">${esc(r.label)}</span> ${esc(r.value)}</div>`).join("") + `</div>`);
+  if (doc.notes) foot.push(`<div class="pv-sec"><div class="pv-lab">Notes</div>${escML(doc.notes)}</div>`);
+  if (doc.terms) foot.push(`<div class="pv-sec"><div class="pv-lab">Terms</div>${escML(doc.terms)}</div>`);
+  if (doc.signature || doc.billed_by.name)
+    foot.push(`<div class="pv-sign">${doc.signature ? `<img src="${esc(doc.signature)}" alt="">` : ""}` +
+      `<div class="pv-sigline">${esc(doc.billed_by.name) || "&nbsp;"}</div></div>`);
+
+  page.className = "theme-" + (doc.theme || "minimal");
+  page.style.setProperty("--pv-scale", doc.text_scale || 1);
+  page.innerHTML = `
+    <div class="pv-head">
+      ${doc.logo ? `<img class="pv-logo" src="${esc(doc.logo)}" alt="">` : "<div></div>"}
+      <div class="pv-hr"><div class="pv-title">Invoice</div><div class="pv-num">${esc(doc.number)}</div></div>
+    </div>
+    ${meta.length ? `<div class="pv-meta">${meta.map(([k, v]) => `<div><span class="pv-k">${k}</span>${esc(v)}</div>`).join("")}</div>` : ""}
+    <div class="pv-parties">
+      ${pvParty(doc.labels?.billed_by || "Billed by", doc.billed_by)}
+      ${pvParty(doc.labels?.billed_to || "Billed to", doc.billed_to)}
+    </div>
+    <table class="pv-items">
+      <thead><tr><th>Description</th>${cols.hsn ? "<th>HSN</th>" : ""}<th class="r">Qty</th>${cols.unit ? "<th>Unit</th>" : ""}<th class="r">Rate</th><th class="r">Amount</th></tr></thead>
+      <tbody>${itemRows}</tbody>
+    </table>
+    <div class="pv-totals">${totalRows.join("")}</div>
+    ${doc.fx?.rate ? `<div class="pv-fx">${esc(fxText(doc))}</div>` : ""}
+    ${foot.length ? `<div class="pv-foot">${foot.join("")}</div>` : ""}`;
+  if (page.offsetHeight > A4_PX + 2) {
+    const mark = document.createElement("div");
+    mark.className = "pv-pagemark";
+    page.appendChild(mark);
+  }
+  fitPreview();
+}
+
+function fitPreview() {
+  const pane = $("previewPane"), page = $("page"), wrap = $("pageWrap");
+  const scale = Math.min(1.4, (pane.clientWidth - 48) / page.offsetWidth);
+  page.style.transform = `scale(${scale})`;
+  wrap.style.width = page.offsetWidth * scale + "px";
+  wrap.style.height = page.offsetHeight * scale + "px";
+}
+new ResizeObserver(() => { if (state.doc) fitPreview(); }).observe($("previewPane"));
+
+// ---------- boot ----------
+async function boot() {
+  try {
+    try { await py({ action: "health" }); }
+    catch { await py({ action: "health" }); }   // one retry: engine warm-up
+    await route();
+    $("boot").remove();
+  } catch (err) {
+    console.error(err);
+    $("boot").textContent = `Invoice generator failed to start: ${err?.message || err}`;
+  }
+}
+boot();
+</script>
+</body>
+</html>

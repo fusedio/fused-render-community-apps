@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Disk Space Visualizer</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 20px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: #e8eaed; background: #131417;
+    display: flex; flex-direction: column; gap: 12px; height: 100vh;
+  }
+  #topbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  #crumbs { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; font-size: 13px; }
+  #crumbs a { color: #5b9dff; cursor: pointer; text-decoration: none; }
+  #crumbs a:hover { text-decoration: underline; }
+  #crumbs .sep { color: #5f6368; }
+  #diskbar { margin-left: auto; font-size: 12px; color: #9aa0a6; display: flex; align-items: center; gap: 8px; }
+  #diskfill { width: 160px; height: 8px; border-radius: 4px; background: #2a2d33; overflow: hidden; }
+  #diskfill div { height: 100%; background: #8a5a2b; }
+  #status { font-size: 12px; color: #9aa0a6; min-height: 15px; display: flex; align-items: center; gap: 8px; }
+  #spinner {
+    width: 12px; height: 12px; border-radius: 50%;
+    border: 2px solid #2a2d33; border-top-color: #5b9dff;
+    animation: spin 0.7s linear infinite; display: none;
+  }
+  #spinner.on { display: inline-block; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #main { display: flex; gap: 12px; flex: 1; min-height: 0; }
+  #treemap { flex: 1; border: 1px solid #2a2d33; border-radius: 8px; background: #1b1d21; }
+  #treemap rect { stroke: #131417; stroke-width: 1.5; cursor: pointer; }
+  #treemap rect { transition: filter 0.12s; }
+  #treemap rect:hover { filter: brightness(1.25) saturate(1.15); }
+  #treemap text { pointer-events: none; font-size: 18px; fill: #e8eaed; }
+  #treemap .size { fill: #c8cace; opacity: 0.75; font-size: 15px; }
+  #side {
+    width: 300px; border: 1px solid #2a2d33; border-radius: 8px; background: #1b1d21;
+    padding: 14px; font-size: 13px; overflow-y: auto; display: none;
+  }
+  #side h3 { margin: 0 0 8px; font-size: 13px; word-break: break-all; }
+  #side dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; }
+  #side dt { color: #9aa0a6; }
+  #side dd { margin: 0; word-break: break-all; }
+  #side pre {
+    background: #131417; border-radius: 6px; padding: 8px; font-size: 11px;
+    max-height: 260px; overflow: auto; white-space: pre-wrap; word-break: break-all;
+  }
+  button {
+    border: none; border-radius: 6px; padding: 7px 14px; font-size: 13px; cursor: pointer;
+    background: #2a2d33; color: #e8eaed;
+  }
+  #deleteBtn { background: #b3261e; color: #fff; margin-top: 10px; width: 100%; }
+  #deleteBtn:hover { background: #d93025; }
+  #tip {
+    position: fixed; display: none; pointer-events: none; z-index: 10;
+    background: #24262b; border: 1px solid #3a3d44; border-radius: 6px;
+    padding: 4px 8px; font-size: 12px; color: #c8cace; white-space: nowrap;
+  }
+  input#pathInput {
+    background: #1b1d21; border: 1px solid #2a2d33; border-radius: 6px;
+    color: #e8eaed; padding: 6px 10px; font-size: 13px; width: 320px;
+  }
+</style>
+</head>
+<body>
+  <div id="topbar">
+    <input id="pathInput" placeholder="~/Desktop (press Enter to scan)" />
+    <button id="upBtn" title="parent directory">↑ Up</button>
+    <button id="rescanBtn">⟳ Rescan</button>
+    <div id="diskbar"><div id="diskfill"><div></div></div><span id="diskText"></span></div>
+  </div>
+  <div id="crumbs"></div>
+  <div id="status"><span id="spinner"></span><span id="statusText"></span></div>
+  <div id="main">
+    <svg id="treemap"></svg>
+    <div id="side"></div>
+  </div>
+  <div id="tip"></div>
+
+<script>
+  const svg = document.getElementById("treemap");
+  const side = document.getElementById("side");
+  const statusEl = document.getElementById("statusText");
+  const spinner = document.getElementById("spinner");
+  const crumbsEl = document.getElementById("crumbs");
+  const pathInput = document.getElementById("pathInput");
+
+  const COLORS = ["#2e4560","#6b4521","#2d543a","#493a61","#6b5a28",
+                  "#29525d","#613232","#45494f","#614242","#3d5745"];
+  const FILE_COLOR = "#2b2e33";
+
+  let current = null;   // last scan result
+
+  const fmt = b => {
+    if (b >= 1e9) return (b / 1e9).toFixed(2) + " GB";
+    if (b >= 1e6) return (b / 1e6).toFixed(1) + " MB";
+    if (b >= 1e3) return (b / 1e3).toFixed(0) + " KB";
+    return b + " B";
+  };
+
+  function currentPath() { return fused.params.get("path") || "~/Desktop"; }
+
+  // --- squarified treemap ---
+  function squarify(items, x, y, w, h, out) {
+    if (!items.length) return;
+    let row = [], rest = items.slice();
+    const total = items.reduce((s, i) => s + i.size, 0);
+    const area = w * h;
+    const scale = area / total;
+    let best = Infinity;
+    while (rest.length) {
+      row.push(rest[0]);
+      const worst = worstRatio(row, Math.min(w, h), scale);
+      if (worst > best && row.length > 1) { row.pop(); break; }
+      best = worst; rest.shift();
+    }
+    const rowArea = row.reduce((s, i) => s + i.size, 0) * scale;
+    if (w >= h) {
+      const rw = rowArea / h;
+      let cy = y;
+      for (const it of row) {
+        const ih = it.size * scale / rw;
+        out.push({ ...it, x, y: cy, w: rw, h: ih });
+        cy += ih;
+      }
+      squarify(rest, x + rw, y, w - rw, h, out);
+    } else {
+      const rh = rowArea / w;
+      let cx = x;
+      for (const it of row) {
+        const iw = it.size * scale / rh;
+        out.push({ ...it, x: cx, y, w: iw, h: rh });
+        cx += iw;
+      }
+      squarify(rest, x, y + rh, w, h - rh, out);
+    }
+  }
+  function worstRatio(row, side, scale) {
+    const s = row.reduce((a, i) => a + i.size, 0) * scale;
+    const rw = s / side;
+    let worst = 0;
+    for (const i of row) {
+      const l = i.size * scale / rw;
+      worst = Math.max(worst, rw / l, l / rw);
+    }
+    return worst;
+  }
+
+  function render() {
+    const W = svg.clientWidth, H = svg.clientHeight;
+    svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+    svg.innerHTML = "";
+    if (!current) return;
+    const items = current.children.filter(c => c.size > 0);
+    if (!items.length) { statusEl.textContent = "empty directory"; return; }
+    const rects = [];
+    squarify(items, 0, 0, W, H, rects);
+    let html = "";
+    rects.forEach((r, i) => {
+      if (r.w < 1 || r.h < 1) return;
+      const color = r.dir ? COLORS[i % COLORS.length] : FILE_COLOR;
+      html += `<g data-i="${current.children.indexOf(r) >= 0 ? current.children.findIndex(c => c.path === r.path) : i}">` +
+        `<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" fill="${color}"></rect>`;
+      if (r.w > 95 && r.h > 50) {
+        html += `<text x="${r.x + 8}" y="${r.y + 24}">${esc(clip(r.name, r.w / 11))}</text>` +
+                `<text class="size" x="${r.x + 8}" y="${r.y + 44}">${fmt(r.size)}</text>`;
+      }
+      html += `</g>`;
+    });
+    svg.innerHTML = html;
+    svg.querySelectorAll("g").forEach(g => {
+      const item = current.children[+g.dataset.i];
+      if (!item) return;
+      g.addEventListener("mousemove", e => showTip(item, e));
+      g.addEventListener("mouseleave", () => { tip.style.display = "none"; });
+      g.addEventListener("click", () => {
+        if (item.dir) fused.params.set("path", item.path);
+        else showPreview(item.path);
+      });
+    });
+  }
+  const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
+  const clip = (s, n) => s.length > n ? s.slice(0, Math.max(1, n - 1)) + "…" : s;
+
+  function renderCrumbs(path) {
+    const parts = path.split("/").filter(Boolean);
+    let acc = "", html = `<a data-p="/">/</a>`;
+    for (const p of parts) {
+      acc += "/" + p;
+      html += `<span class="sep">›</span><a data-p="${esc(acc)}">${esc(p)}</a>`;
+    }
+    crumbsEl.innerHTML = html;
+    crumbsEl.querySelectorAll("a").forEach(a =>
+      a.addEventListener("click", () => fused.params.set("path", a.dataset.p)));
+  }
+
+  async function scan(refresh) {
+    const path = currentPath();
+    statusEl.textContent = `scanning ${path} …`;
+    spinner.classList.add("on");
+    side.style.display = "none";
+    let res;
+    try {
+      res = await fused.runPython("./disk.py", { action: "scan", path, refresh: refresh ? "1" : "" });
+    } finally {
+      spinner.classList.remove("on");
+    }
+    if (res.error) { statusEl.textContent = "⚠ " + res.error; return; }
+    current = res;
+    pathInput.value = res.path;
+    renderCrumbs(res.path);
+    const pct = (res.disk.used / res.disk.total * 100).toFixed(0);
+    document.querySelector("#diskfill div").style.width = pct + "%";
+    document.getElementById("diskText").textContent =
+      `${fmt(res.disk.free)} free of ${fmt(res.disk.total)}`;
+    statusEl.textContent = `${res.path} — ${fmt(res.total)} in ${res.children.length} items` +
+      (res.truncated ? ` (+${res.truncated} more hidden)` : "") +
+      (res.cached ? " · cached, ⟳ to refresh" : "");
+    render();
+  }
+
+  const tip = document.getElementById("tip");
+  function showTip(item, e) {
+    const pct = current.total ? (item.size / current.total * 100).toFixed(1) : "?";
+    tip.innerHTML = `<div>${esc(item.name)}</div><div style="color:#9aa0a6">${fmt(item.size)} (${pct}%)</div>`;
+    tip.style.display = "block";
+    const r = tip.getBoundingClientRect();
+    let x = e.clientX + 14, y = e.clientY + 14;
+    if (x + r.width > window.innerWidth - 8) x = e.clientX - r.width - 14;
+    if (y + r.height > window.innerHeight - 8) y = e.clientY - r.height - 14;
+    tip.style.left = Math.max(8, x) + "px";
+    tip.style.top = Math.max(8, y) + "px";
+  }
+
+  async function showPreview(path) {
+    const info = await fused.runPython("./disk.py", { action: "preview", path });
+    if (info.error) { statusEl.textContent = "⚠ " + info.error; return; }
+    let html = `<h3>${esc(info.path.split("/").pop())}</h3><dl>` +
+      `<dt>size</dt><dd>${fmt(info.size)}</dd>` +
+      `<dt>modified</dt><dd>${info.mtime}</dd>` +
+      `<dt>owner</dt><dd>${esc(info.owner)}</dd>` +
+      `<dt>mode</dt><dd>${info.mode}</dd></dl>`;
+    if (info.entries) html += `<p>${info.entry_count} entries</p><pre>${esc(info.entries.join("\n"))}</pre>`;
+    if (info.head) html += `<pre>${esc(info.head)}</pre>`;
+    html += `<button id="deleteBtn">🗑 Move to Trash</button>`;
+    side.innerHTML = html;
+    side.style.display = "block";
+    document.getElementById("deleteBtn").addEventListener("click", () => del(info.path));
+  }
+
+  async function del(path) {
+    if (!confirm(`Move to Trash?\n\n${path}`)) return;
+    const res = await fused.runPython("./disk.py", { action: "delete", path });
+    if (res.error) { statusEl.textContent = "⚠ " + res.error; return; }
+    statusEl.textContent = `🗑 moved to ${res.trashed_to}`;
+    side.style.display = "none";
+    scan();
+  }
+
+  pathInput.addEventListener("keydown", e => {
+    if (e.key === "Enter") fused.params.set("path", pathInput.value.trim() || "~/Desktop");
+  });
+  document.getElementById("upBtn").addEventListener("click", () => {
+    if (!current) return;
+    const parent = current.path.replace(/\/[^/]+$/, "") || "/";
+    fused.params.set("path", parent);
+  });
+  document.getElementById("rescanBtn").addEventListener("click", () => scan(true));
+  window.addEventListener("resize", render);
+  fused.params.onChange(scan);
+  scan();
+</script>
+</body>
+</html>

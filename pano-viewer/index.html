@@ -1,0 +1,888 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Pano Viewer</title>
+<style>
+  :root {
+    --bg: #fafafa; --panel: #ffffff; --panel2: #f4f4f5; --edge: #e4e4e7;
+    --text: #18181b; --dim: #71717a; --accent: #18181b; --accent2: #3f3f46;
+    --ok: #16a34a; --warn: #d97706; --bad: #dc2626;
+    --shadow-sm: 0 1px 2px rgba(0,0,0,.05);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg); color: var(--text); overflow: hidden;
+    font: 13px/1.45 "InterVar", Inter, ui-sans-serif, system-ui, -apple-system,
+      "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  #app { display: flex; flex-direction: column; height: 100vh; }
+
+  /* ---------- top bar ---------- */
+  #topbar {
+    display: flex; align-items: center; gap: 8px; padding: 7px 12px;
+    background: var(--panel); border-bottom: 1px solid var(--edge); flex: none;
+  }
+  #topbar .logo { font-weight: 700; letter-spacing: 2px; font-size: 13px;
+    color: var(--accent2); margin-right: 6px; white-space: nowrap; }
+  .btn {
+    background: var(--panel); color: var(--text); border: 1px solid var(--edge);
+    border-radius: 6px; padding: 5px 11px; cursor: pointer; font: inherit;
+    white-space: nowrap; box-shadow: var(--shadow-sm); font-weight: 500;
+  }
+  .btn:hover { background: var(--panel2); border-color: #d4d4d8; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fafafa; }
+  .btn.primary:hover { background: var(--accent2); border-color: var(--accent2); }
+  #topbar .spacer { flex: 1; }
+
+  /* ---------- dropdown menus & popovers ---------- */
+  .dd { position: relative; }
+  .dd .menu, .dd .pop {
+    position: absolute; top: calc(100% + 6px); left: 0; z-index: 60;
+    background: var(--panel); border: 1px solid var(--edge);
+    border-radius: 9px; box-shadow: 0 8px 28px rgba(0,0,0,.13); padding: 5px;
+  }
+  .dd .menu { min-width: 200px; }
+  .dd .menu button {
+    display: flex; justify-content: space-between; align-items: center;
+    gap: 20px; width: 100%; border: 0; background: none; text-align: left;
+    padding: 6px 10px; border-radius: 6px; font: inherit; color: var(--text);
+    cursor: pointer; white-space: nowrap;
+  }
+  .dd .menu button:hover { background: var(--panel2); }
+  .dd .menu .hint { color: var(--dim); font-size: 11px;
+    font-family: ui-monospace, monospace; }
+  .dd .menu .chk { display: inline-block; width: 15px; color: var(--accent); }
+  .caret { opacity: .6; font-size: 10px; margin-left: 2px; }
+  #procLabel { font-weight: 600; }
+  .tinput {
+    background: var(--panel); border: 1px solid var(--edge); color: var(--text);
+    border-radius: 6px; padding: 5px 8px; font: inherit;
+  }
+  .tinput:focus { outline: 2px solid #a1a1aa; outline-offset: 1px; }
+  #urlpop { display: flex; gap: 6px; width: 440px; }
+  #urlpop input { flex: 1; }
+  #fbrowse { width: 450px; padding: 8px; }
+  #fbrowse .bar { display: flex; gap: 6px; margin-bottom: 6px; }
+  #fbrowse .bar input { flex: 1; }
+  #fblist { max-height: 360px; overflow-y: auto; border-top: 1px solid var(--edge);
+    padding-top: 5px; }
+  .fbrow { display: flex; align-items: center; gap: 8px; padding: 5px 9px;
+    border-radius: 6px; cursor: pointer; }
+  .fbrow:hover { background: var(--panel2); }
+  .fbrow .sz { margin-left: auto; color: var(--dim); font-size: 11px;
+    font-family: ui-monospace, monospace; white-space: nowrap; }
+  .fbempty { color: var(--dim); padding: 10px; text-align: center; }
+  /* !important so the hidden attribute beats #urlpop's display:flex */
+  .dd .menu[hidden], .dd .pop[hidden] { display: none !important; }
+
+  /* ---------- layout ---------- */
+  #mid { display: flex; flex: 1; min-height: 0; }
+  #sidebar {
+    width: 272px; flex: none; background: var(--panel);
+    border-right: 1px solid var(--edge); display: flex; flex-direction: column;
+  }
+  #sidebar h3 { font-size: 11px; text-transform: uppercase; letter-spacing: 1px;
+    color: var(--dim); padding: 10px 12px 6px; }
+  #assets { flex: 1; overflow-y: auto; padding: 0 8px 8px; }
+  .card {
+    border: 1px solid var(--edge); border-radius: 8px; margin-bottom: 8px;
+    background: var(--panel); cursor: pointer; overflow: hidden;
+    position: relative; box-shadow: var(--shadow-sm);
+  }
+  .card:hover { border-color: #d4d4d8; }
+  .card.sel { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .card img.thumb { width: 100%; display: block; background: var(--panel2); min-height: 40px; }
+  .card .meta { padding: 6px 8px; }
+  .card .nm { font-size: 12px; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; }
+  .card .dims { font-size: 10.5px; color: var(--dim); margin-top: 2px;
+    font-family: ui-monospace, monospace; }
+  .badge { display: inline-block; font-size: 9.5px; padding: 1px 6px;
+    border-radius: 4px; margin-right: 4px; vertical-align: 1px;
+    text-transform: uppercase; letter-spacing: .4px; }
+  .badge.kind { background: var(--panel2); color: #3f3f46; border: 1px solid var(--edge); }
+  .badge.fmt { background: var(--panel); color: var(--dim); border: 1px solid var(--edge); }
+  .badge.bad { background: #fef2f2; color: var(--bad); border: 1px solid #fecaca; }
+  .card.invalid img.thumb { opacity: .45; }
+  .card .x {
+    position: absolute; top: 5px; right: 5px; width: 20px; height: 20px;
+    border-radius: 5px; border: 1px solid var(--edge);
+    background: rgba(255,255,255,.92); color: #52525b;
+    cursor: pointer; display: none; line-height: 1;
+  }
+  .card:hover .x { display: block; }
+  .card .x:hover { background: var(--bad); border-color: var(--bad); color: #fff; }
+  .card .mkeq {
+    position: absolute; top: 5px; right: 30px; border: 1px solid var(--edge);
+    height: 20px; border-radius: 5px; background: rgba(255,255,255,.92);
+    color: #3f3f46; cursor: pointer; display: none; font-size: 10px; padding: 0 6px;
+  }
+  .card:hover .mkeq { display: block; }
+  .card .mkeq:hover { background: var(--accent); border-color: var(--accent); color: #fff; }
+  #sidefoot { padding: 8px 12px; border-top: 1px solid var(--edge);
+    color: var(--dim); font-size: 11px; }
+
+  /* ---------- viewer ---------- */
+  #main { flex: 1; min-width: 0; display: flex; flex-direction: column;
+    position: relative; }
+  #stage { flex: 1; min-height: 0; position: relative; background:
+    radial-gradient(ellipse at center, #fafafa 0%, #ececee 100%); }
+  #pano360 { position: absolute; inset: 0; display: none; }
+  #imgwrap { position: absolute; inset: 0; display: none; overflow: auto;
+    text-align: center; }
+  #imgwrap .inner { display: flex; align-items: center; justify-content: center;
+    min-height: 100%; padding: 18px; }
+  #imgview { max-width: 100%; max-height: calc(100vh - 170px);
+    box-shadow: 0 6px 28px rgba(0,0,0,.14); border-radius: 6px;
+    border: 1px solid var(--edge);
+    user-select: none; -webkit-user-drag: none; }
+  #imgview.grabbable { cursor: grab; }
+  #imgview.grabbing { cursor: grabbing; }
+  #facegrid { display: none; position: absolute; inset: 0; overflow: auto;
+    padding: 18px; }
+  #facegrid .grid { display: grid; grid-template-columns: repeat(3, 1fr);
+    gap: 12px; max-width: 1100px; margin: 0 auto; }
+  #facegrid figure { background: var(--panel); border: 1px solid var(--edge);
+    border-radius: 8px; overflow: hidden; box-shadow: var(--shadow-sm); }
+  #facegrid img { width: 100%; display: block; }
+  #facegrid figcaption { display: flex; justify-content: space-between;
+    padding: 5px 9px; font-size: 11px; color: var(--dim); }
+  #facegrid a { color: var(--text); text-decoration: underline; }
+  #empty { position: absolute; inset: 0; display: none; align-items: center;
+    justify-content: center; color: var(--dim); flex-direction: column; gap: 10px; }
+  #spin {
+    position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+    background: rgba(255,255,255,.95); border: 1px solid var(--edge);
+    padding: 5px 14px; border-radius: 20px; color: var(--text);
+    display: none; z-index: 30; font-size: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.08);
+  }
+  #warnband {
+    position: absolute; top: 12px; left: 12px; z-index: 25; display: none;
+    background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c;
+    padding: 5px 12px; border-radius: 8px; font-size: 12px; max-width: 60%;
+  }
+
+  /* ---------- controls panel ---------- */
+  #ctrl {
+    position: absolute; right: 14px; top: 14px; z-index: 20; width: 230px;
+    background: rgba(255,255,255,.92); border: 1px solid var(--edge);
+    border-radius: 10px; padding: 12px; display: none; backdrop-filter: blur(4px);
+    box-shadow: 0 4px 18px rgba(0,0,0,.08);
+  }
+  #ctrl h4 { font-size: 11px; text-transform: uppercase; letter-spacing: 1px;
+    color: var(--dim); margin-bottom: 8px; }
+  .row { margin-bottom: 9px; }
+  .row label { display: flex; justify-content: space-between; font-size: 11px;
+    color: var(--dim); margin-bottom: 3px; }
+  .row label output { color: var(--text); font-family: ui-monospace, monospace; }
+  .row input[type=range] { width: 100%; accent-color: var(--accent); }
+  .row select {
+    width: 100%; background: var(--panel); color: var(--text);
+    border: 1px solid var(--edge); border-radius: 5px; padding: 3px 6px; font: inherit;
+  }
+  #ctrl .hint { font-size: 10.5px; color: var(--dim); margin-top: 4px; }
+
+  /* ---------- status bar ---------- */
+  #status {
+    flex: none; display: flex; gap: 16px; align-items: center;
+    background: var(--panel); border-top: 1px solid var(--edge);
+    padding: 5px 12px; font-size: 11.5px; color: var(--dim);
+    font-family: ui-monospace, monospace; white-space: nowrap; overflow: hidden;
+  }
+  #status .ok { color: var(--ok); }
+  #status .warn { color: var(--warn); }
+
+  /* ---------- overlays ---------- */
+  #toasts { position: fixed; bottom: 40px; right: 16px; z-index: 100;
+    display: flex; flex-direction: column; gap: 8px; }
+  .toast { background: var(--panel); border: 1px solid var(--edge);
+    border-left: 3px solid var(--accent); padding: 8px 14px; border-radius: 8px;
+    max-width: 380px; font-size: 12px; box-shadow: 0 4px 20px rgba(0,0,0,.12); }
+  .toast.err { border-left-color: var(--bad); }
+  #help {
+    position: fixed; inset: 0; z-index: 90; background: rgba(0,0,0,.35);
+    display: none; align-items: center; justify-content: center;
+  }
+  #help .box { background: var(--panel); border: 1px solid var(--edge);
+    border-radius: 12px; padding: 22px 26px; width: 430px;
+    box-shadow: 0 10px 40px rgba(0,0,0,.18); }
+  #help h2 { font-size: 15px; margin-bottom: 12px; color: var(--text); }
+  #help table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  #help td { padding: 4px 0; color: var(--dim); }
+  #help td:first-child { width: 130px; }
+  #help kbd { background: var(--panel2); border: 1px solid var(--edge);
+    border-radius: 4px; padding: 1px 7px; font-family: ui-monospace, monospace;
+    color: var(--text); font-size: 11px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="topbar">
+    <span class="logo">◐ PANO VIEWER</span>
+    <div class="dd">
+      <button class="btn primary" id="btnImport" title="Import panoramas">⬆ Import <span class="caret">▾</span></button>
+      <div class="menu" id="importMenu" hidden>
+        <button data-act="files"><span>Upload files…</span><span class="hint">i</span></button>
+        <button data-act="url"><span>From URL…</span></button>
+        <button data-act="browse"><span>Browse computer…</span></button>
+      </div>
+      <div class="pop" id="urlpop" hidden>
+        <input id="urlinput" class="tinput" placeholder="https://example.com/panorama.jpg" spellcheck="false">
+        <button class="btn" id="urlgo">Import</button>
+      </div>
+      <div class="pop" id="fbrowse" hidden>
+        <div class="bar">
+          <input id="fbpath" class="tinput" spellcheck="false" placeholder="/path/to/folder">
+          <button class="btn" id="fbgo">Go</button>
+        </div>
+        <div class="bar">
+          <select id="fbsort" class="tinput">
+            <option value="name">Sort: name</option>
+            <option value="size">Sort: size</option>
+            <option value="mtime">Sort: modified</option>
+          </select>
+          <button class="btn" id="fbdir" title="toggle sort direction">↑ asc</button>
+        </div>
+        <div id="fblist"></div>
+      </div>
+    </div>
+    <div class="dd">
+      <button class="btn" id="btnProc" title="Projection / processing mode">Processing: <b id="procLabel"></b> <span class="caret">▾</span></button>
+      <div class="menu" id="procMenu" hidden></div>
+    </div>
+    <input type="file" id="file" accept="image/*,.tif,.tiff,.webp" multiple hidden>
+    <span class="spacer"></span>
+    <button class="btn" id="btnDl" title="Download current view (d)">⬇ Save view</button>
+    <button class="btn" id="btnHelp" title="Keyboard shortcuts (?)">?</button>
+  </div>
+
+  <div id="mid">
+    <div id="sidebar">
+      <h3>Library</h3>
+      <div id="assets"></div>
+      <div id="sidefoot"></div>
+    </div>
+    <div id="main">
+      <div id="stage">
+        <div id="pano360"></div>
+        <div id="imgwrap"><div class="inner"><img id="imgview" draggable="false"></div></div>
+        <div id="facegrid"><div class="grid"></div></div>
+        <div id="empty"><div style="font-size:40px">◐</div><div>Import a panoramic image to begin</div></div>
+        <div id="spin">converting…</div>
+        <div id="warnband"></div>
+        <div id="ctrl"></div>
+      </div>
+      <div id="status"><span id="st-asset"></span><span id="st-view"></span><span id="st-msg"></span></div>
+    </div>
+  </div>
+</div>
+
+<div id="toasts"></div>
+<div id="help"><div class="box">
+  <h2>Keyboard shortcuts</h2>
+  <table>
+    <tr><td><kbd>↑</kbd> / <kbd>↓</kbd>&nbsp; <kbd>k</kbd> / <kbd>j</kbd></td><td>previous / next image</td></tr>
+    <tr><td><kbd>1</kbd> … <kbd>8</kbd></td><td>switch projection view</td></tr>
+    <tr><td><kbd>i</kbd></td><td>import files</td></tr>
+    <tr><td><kbd>d</kbd></td><td>download current view</td></tr>
+    <tr><td><kbd>?</kbd></td><td>toggle this help</td></tr>
+    <tr><td colspan="2" style="padding-top:10px">Perspective / fisheye: drag the image to look around, scroll to zoom FOV.</td></tr>
+  </table>
+</div></div>
+
+<script>
+(async function boot() {
+  if (typeof fused === "undefined") {
+    document.body.innerHTML = "<p style='padding:2em;font-family:sans-serif'>Open this file inside fused-render (http://127.0.0.1:8765/view/&lt;path to index.html&gt;).</p>";
+    return;
+  }
+  const HTML_PATH = new URLSearchParams(location.search).get("path") || "";
+  const BASE_DIR = HTML_PATH.slice(0, HTML_PATH.lastIndexOf("/") + 1);
+  const assetUrl = (rel) => fused.rawUrl(BASE_DIR + rel);
+  const py = (params) => fused.runPython("./pano.py", params);
+
+  const fontCss = document.createElement("style");
+  fontCss.textContent = `@font-face{font-family:"InterVar";` +
+    `src:url("${assetUrl("vendor/inter-var.woff2")}") format("woff2");` +
+    `font-weight:100 900;font-style:normal;font-display:swap;}`;
+  document.head.appendChild(fontCss);
+
+  await Promise.all([
+    new Promise((ok, bad) => { const l = document.createElement("link");
+      l.rel = "stylesheet"; l.href = assetUrl("vendor/pannellum.css");
+      l.onload = ok; l.onerror = () => bad(new Error("pannellum.css failed"));
+      document.head.appendChild(l); }),
+    new Promise((ok, bad) => { const s = document.createElement("script");
+      s.src = assetUrl("vendor/pannellum.js");
+      s.onload = ok; s.onerror = () => bad(new Error("pannellum.js failed"));
+      document.head.appendChild(s); }),
+  ]);
+
+  // ------------------------------------------------------------- constants
+  const MODES = [
+    { id: "view360",      label: "360° View" },
+    { id: "original",     label: "Original" },
+    { id: "cube_dice",    label: "Cube Cross" },
+    { id: "cube_horizon", label: "Cube Strip" },
+    { id: "cube_faces",   label: "Cube Faces" },
+    { id: "perspective",  label: "Perspective" },
+    { id: "little_planet",label: "Little Planet" },
+    { id: "fisheye180",   label: "Fisheye 180°" },
+  ];
+  const KIND_LABEL = { equirect: "equirect", equirect_180: "180°",
+    cube_dice: "cube cross", cube_horizon: "cube strip", flat: "not pano" };
+  const DEFAULTS = { fov: "90", yaw: "0", pitch: "0", roll: "0", zoom: "1",
+    psize: "1280x720", csize: "1024", face: "0" };
+
+  // ------------------------------------------------------------- state
+  let assets = [];
+  let viewer = null;           // pannellum instance
+  let viewerKey = "";          // asset id + url the viewer was built for
+  let renderSeq = 0;           // stale-response guard
+  let lastView = null;         // {path,w,h,ms,cached} of current converted view
+  let logTimer = null;
+
+  const $ = (id) => document.getElementById(id);
+  const els = {
+    assets: $("assets"), pano: $("pano360"),
+    imgwrap: $("imgwrap"), img: $("imgview"), faces: $("facegrid"),
+    empty: $("empty"), spin: $("spin"), warn: $("warnband"), ctrl: $("ctrl"),
+    stAsset: $("st-asset"), stView: $("st-view"), stMsg: $("st-msg"),
+    foot: $("sidefoot"),
+  };
+  const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+  const P = {
+    get: (k) => fused.params.get(k) ?? DEFAULTS[k],
+    set: (k, v) => { v = String(v);
+      if (fused.params.get(k) !== v) fused.params.set(k, v); },
+    num: (k) => parseFloat(fused.params.get(k) ?? DEFAULTS[k]),
+  };
+  const mode = () => {
+    const m = fused.params.get("mode");
+    return MODES.some((x) => x.id === m) ? m : "view360";
+  };
+  const selId = () => parseInt(fused.params.get("asset") || "0", 10);
+  const selAsset = () => assets.find((a) => a.id === selId()) || null;
+
+  function toast(msg, err) {
+    const t = document.createElement("div");
+    t.className = "toast" + (err ? " err" : "");
+    t.textContent = msg;
+    $("toasts").appendChild(t);
+    setTimeout(() => t.remove(), err ? 7000 : 3500);
+  }
+  function logEvent(kind, detail) {   // fire-and-forget UI event log
+    clearTimeout(logTimer);
+    logTimer = setTimeout(() => {
+      py({ action: "log", kind, detail: JSON.stringify(detail) }).catch(() => {});
+    }, 800);
+  }
+
+  // ------------------------------------------------------------- sidebar
+  function renderSidebar() {
+    els.assets.innerHTML = "";
+    for (const a of assets) {
+      const card = document.createElement("div");
+      card.className = "card" + (a.id === selId() ? " sel" : "") +
+        (a.valid ? "" : " invalid");
+      const badges = `<span class="badge ${a.valid ? "kind" : "bad"}">` +
+        `${KIND_LABEL[a.kind] || a.kind}</span>` +
+        `<span class="badge fmt">${a.orig_format}</span>`;
+      card.innerHTML =
+        `<img class="thumb" loading="lazy" src="${assetUrl(a.thumb_path)}">` +
+        `<div class="meta"><div class="nm" title="${a.name}">${a.name}</div>` +
+        `<div class="dims">${a.width}×${a.height} &nbsp;${badges}</div></div>` +
+        `<button class="x" title="delete">×</button>` +
+        (a.kind.startsWith("cube") ?
+          `<button class="mkeq" title="materialize as equirectangular asset (c2e)">→ equirect</button>` : "");
+      card.addEventListener("click", () => selectAsset(a.id));
+      card.querySelector(".x").addEventListener("click", async (e) => {
+        e.stopPropagation();
+        if (!confirm(`Delete ${a.name}?`)) return;
+        try {
+          await py({ action: "delete", asset_id: String(a.id) });
+          assets = assets.filter((x) => x.id !== a.id);
+          if (selId() === a.id && assets.length) P.set("asset", assets[0].id);
+          renderSidebar(); draw(true);
+        } catch (err) { toast(err.message, true); }
+      });
+      const mk = card.querySelector(".mkeq");
+      if (mk) mk.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        busy(true, "converting cube → equirect…");
+        try {
+          const r = await py({ action: "to_equirect", asset_id: String(a.id) });
+          assets.push(r.asset);
+          P.set("asset", r.asset.id);
+          renderSidebar(); draw(true);
+          toast(`created ${r.asset.name}`);
+        } catch (err) { toast(err.message, true); }
+        busy(false);
+      });
+      els.assets.appendChild(card);
+    }
+    els.foot.textContent = `${assets.length} image${assets.length === 1 ? "" : "s"}`;
+  }
+
+  function selectAsset(id) {
+    if (id === selId()) return;
+    P.set("asset", id);
+    const a = assets.find((x) => x.id === id);
+    if (a) logEvent("select", { id, name: a.name });
+  }
+  function navAsset(step) {
+    if (!assets.length) return;
+    const i = assets.findIndex((a) => a.id === selId());
+    const j = Math.min(assets.length - 1, Math.max(0, (i < 0 ? 0 : i + step)));
+    selectAsset(assets[j].id);
+  }
+
+  // ------------------------------------------------------------- menus
+  function closeMenus() {
+    document.querySelectorAll(".dd .menu, .dd .pop")
+      .forEach((m) => { m.hidden = true; });
+  }
+  function toggleMenu(el) {
+    const wasHidden = el.hidden;
+    closeMenus();
+    el.hidden = !wasHidden;
+    return !el.hidden;
+  }
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest(".dd")) closeMenus();
+  });
+
+  // Processing dropdown: label shows the active mode, menu lists them all
+  function renderModes() {
+    $("procLabel").textContent = MODES.find((x) => x.id === mode()).label;
+    const menu = $("procMenu");
+    menu.innerHTML = "";
+    MODES.forEach((m, i) => {
+      const b = document.createElement("button");
+      b.innerHTML = `<span><span class="chk">${m.id === mode() ? "✓" : ""}</span>` +
+        `${m.label}</span><span class="hint">${i + 1}</span>`;
+      b.addEventListener("click", () => { closeMenus(); setMode(m.id); });
+      menu.appendChild(b);
+    });
+  }
+  function setMode(m) {
+    if (m === mode()) return;
+    P.set("mode", m);
+    logEvent("mode", { mode: m });
+  }
+
+  // ------------------------------------------------------------- controls
+  function slider(key, label, min, max, step, fmt) {
+    const v = P.get(key);
+    return `<div class="row"><label>${label}<output id="o-${key}">` +
+      `${fmt ? fmt(v) : v}</output></label>` +
+      `<input type="range" data-p="${key}" min="${min}" max="${max}" ` +
+      `step="${step}" value="${v}"></div>`;
+  }
+  function sizeSelect(key, label, options) {
+    const v = P.get(key);
+    return `<div class="row"><label>${label}</label><select data-p="${key}">` +
+      options.map((o) => `<option value="${o[0]}"${String(o[0]) === v ? " selected" : ""}>${o[1]}</option>`).join("") +
+      `</select></div>`;
+  }
+  function renderControls() {
+    const m = mode();
+    let html = "";
+    if (m === "perspective") {
+      html = `<h4>Perspective (e2p)</h4>` +
+        slider("fov", "FOV °", 20, 175, 1) +
+        slider("yaw", "Yaw °", -180, 180, 1) +
+        slider("pitch", "Pitch °", -90, 90, 1) +
+        slider("roll", "Roll °", -180, 180, 1) +
+        sizeSelect("psize", "Output size", [["1024x576", "1024 × 576"],
+          ["1280x720", "1280 × 720"], ["1920x1080", "1920 × 1080"],
+          ["1080x1080", "1080 × 1080"]]) +
+        `<div class="hint">drag image to look · scroll to zoom</div>`;
+    } else if (m === "little_planet") {
+      html = `<h4>Little planet</h4>` +
+        slider("zoom", "Zoom", 0.2, 3, 0.05) +
+        slider("roll", "Rotate °", -180, 180, 1) +
+        sizeSelect("csize", "Output size", [["512", "512 px"], ["1024", "1024 px"], ["2048", "2048 px"]]);
+    } else if (m === "fisheye180") {
+      html = `<h4>Fisheye 180°</h4>` +
+        slider("yaw", "Yaw °", -180, 180, 1) +
+        slider("pitch", "Pitch °", -90, 90, 1) +
+        sizeSelect("csize", "Output size", [["512", "512 px"], ["1024", "1024 px"], ["2048", "2048 px"]]) +
+        `<div class="hint">drag image to look around</div>`;
+    } else if (m === "cube_dice" || m === "cube_horizon" || m === "cube_faces") {
+      html = `<h4>${m === "cube_faces" ? "Cube faces (e2c)" : "Cubemap (e2c)"}</h4>` +
+        sizeSelect("face", "Face size", [["0", "auto (source/4)"], ["256", "256 px"],
+          ["512", "512 px"], ["1024", "1024 px"]]);
+    }
+    els.ctrl.style.display = html ? "block" : "none";
+    els.ctrl.innerHTML = html;
+    els.ctrl.querySelectorAll("[data-p]").forEach((el) => {
+      el.addEventListener("input", () => {
+        P.set(el.dataset.p, el.value);
+        const o = $("o-" + el.dataset.p);
+        if (o) o.textContent = el.value;
+      });
+    });
+  }
+
+  // ------------------------------------------------------------- viewer
+  function show(which) {
+    els.pano.style.display = which === "pano" ? "block" : "none";
+    els.imgwrap.style.display = which === "img" ? "block" : "none";
+    els.faces.style.display = which === "faces" ? "block" : "none";
+    els.empty.style.display = which === "empty" ? "flex" : "none";
+  }
+  function busy(on, msg) {
+    els.spin.style.display = on ? "block" : "none";
+    if (msg) els.spin.textContent = msg;
+  }
+  function setViewStatus(text, extra) {
+    els.stView.textContent = text || "";
+    els.stMsg.innerHTML = extra || "";
+  }
+
+  function destroyViewer() {
+    if (viewer) { try { viewer.destroy(); } catch (e) {} viewer = null; viewerKey = ""; }
+  }
+
+  async function draw360(a) {
+    show("pano");
+    let panoRel = a.display_path;
+    if (a.kind === "cube_dice" || a.kind === "cube_horizon") {
+      // cube layouts must be reprojected to equirect for the sphere viewer
+      busy(true, "reprojecting cube → equirect…");
+      try {
+        const r = await py({ action: "convert", asset_id: String(a.id), mode: "equirect" });
+        panoRel = r.path;
+      } catch (err) { busy(false); toast(err.message, true); return; }
+      busy(false);
+    }
+    const key = a.id + "|" + panoRel;
+    if (viewerKey === key) return;
+    destroyViewer();
+    viewerKey = key;
+    viewer = pannellum.viewer("pano360", {
+      type: "equirectangular",
+      panorama: assetUrl(panoRel),
+      autoLoad: true, showControls: true, compass: false,
+      hfov: 100, friction: 0.12, backgroundColor: [0.94, 0.94, 0.95],
+      haov: a.kind === "equirect_180" ? 180 : 360,
+      minYaw: a.kind === "equirect_180" ? -90 : -180,
+      maxYaw: a.kind === "equirect_180" ? 90 : 180,
+    });
+    setViewStatus(`360° sphere · WebGL`, "");
+    lastView = { path: panoRel };
+  }
+
+  let renderTimer = null;
+  function scheduleRender() {
+    clearTimeout(renderTimer);
+    renderTimer = setTimeout(renderConverted, 230);
+  }
+
+  async function renderConverted() {
+    const a = selAsset();
+    if (!a) return;
+    const m = mode();
+    const seq = ++renderSeq;
+    const [pw, ph] = P.get("psize").split("x").map(Number);
+    const req = { action: "convert", asset_id: String(a.id), mode: m,
+      fov: P.get("fov"), yaw: P.get("yaw"), pitch: P.get("pitch"),
+      roll: P.get("roll"), zoom: P.get("zoom"), face_w: P.get("face") };
+    if (m === "perspective") { req.out_w = String(pw); req.out_h = String(ph); }
+    else { req.out_w = P.get("csize"); }
+    busy(true, "converting…");
+    try {
+      const r = await py(req);
+      if (seq !== renderSeq) return;         // a newer request superseded us
+      busy(false);
+      if (m === "cube_faces") {
+        show("faces");
+        const grid = els.faces.querySelector(".grid");
+        const order = { F: "Front", R: "Right", B: "Back", L: "Left", U: "Up", D: "Down" };
+        grid.innerHTML = r.faces.map((f) =>
+          `<figure><img src="${assetUrl(f.path)}">` +
+          `<figcaption><span>${order[f.face] || f.face} (${f.face})</span>` +
+          `<a href="${assetUrl(f.path)}" download="${a.name}_${f.face}.jpg">download</a>` +
+          `</figcaption></figure>`).join("");
+        lastView = null;
+      } else {
+        show("img");
+        els.img.src = assetUrl(r.path);
+        lastView = r;
+      }
+      setViewStatus(`${MODES.find(x => x.id === m).label} · ${r.w}×${r.h}`,
+        r.cached ? `<span class="ok">cached</span>` : `${r.ms} ms`);
+    } catch (err) {
+      if (seq !== renderSeq) return;
+      busy(false); toast(`convert failed: ${err.message}`, true);
+    }
+  }
+
+  function draw(force) {
+    renderModes(); renderControls();
+    document.querySelectorAll(".card").forEach((c) => c.classList.remove("sel"));
+    const a = selAsset();
+    if (!a) { destroyViewer(); show("empty"); els.warn.style.display = "none";
+      els.stAsset.textContent = ""; setViewStatus("", ""); return; }
+    const idx = assets.indexOf(a);
+    const card = els.assets.children[idx];
+    if (card) { card.classList.add("sel");
+      if (force) card.scrollIntoView({ block: "nearest" }); }
+    els.stAsset.textContent =
+      `#${a.id} ${a.name} · ${a.width}×${a.height} · ${a.orig_format} · ${KIND_LABEL[a.kind] || a.kind}`;
+    els.warn.style.display = a.valid ? "none" : "block";
+    els.warn.textContent = a.valid ? "" :
+      `⚠ not validated as panoramic — ${a.reasons[a.reasons.length - 1]}`;
+
+    const m = mode();
+    if (m === "view360") {
+      els.img.classList.remove("grabbable");
+      draw360(a);
+    } else if (m === "original") {
+      destroyViewer(); show("img");
+      els.img.classList.remove("grabbable");
+      els.img.src = assetUrl(a.display_path);
+      lastView = { path: a.display_path };
+      setViewStatus(`original pixels · ${a.display_w}×${a.display_h}` +
+        (a.display_w !== a.width ? " (display copy, downscaled)" : ""), "");
+    } else {
+      destroyViewer();
+      els.img.classList.toggle("grabbable",
+        m === "perspective" || m === "fisheye180");
+      scheduleRender();
+    }
+  }
+
+  // ------------------------------------------------------------- import
+  function b64(bytes) {
+    let s = "";
+    for (let i = 0; i < bytes.length; i += 0x8000)
+      s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    return btoa(s);
+  }
+  async function importFiles(files) {
+    for (const f of files) {
+      busy(true, `uploading ${f.name}…`);
+      try {
+        const buf = new Uint8Array(await f.arrayBuffer());
+        const { token } = await py({ action: "upload_begin" });
+        const CHUNK = 6 * 1024 * 1024;   // multiple of 3 → clean base64 joins
+        for (let i = 0, seq = 0; i < buf.length; i += CHUNK, seq++) {
+          busy(true, `uploading ${f.name} · ${Math.round(100 * i / buf.length)}%`);
+          await py({ action: "upload_chunk", token, seq: String(seq),
+            data_b64: b64(buf.subarray(i, i + CHUNK)) });
+        }
+        busy(true, `importing ${f.name}…`);
+        const r = await py({ action: "upload_end", token, name: f.name });
+        assets.push(r.asset);
+        P.set("asset", r.asset.id);
+        renderSidebar();
+        toast(`imported ${r.asset.name} (${r.asset.width}×${r.asset.height}, ` +
+          `${KIND_LABEL[r.asset.kind] || r.asset.kind}${r.asset.valid ? "" : " — NOT panoramic"})`,
+          !r.asset.valid);
+      } catch (err) { toast(`${f.name}: ${err.message}`, true); }
+    }
+    busy(false);
+    draw(true);
+  }
+
+  $("btnImport").addEventListener("click", () => toggleMenu($("importMenu")));
+  $("btnProc").addEventListener("click", () => toggleMenu($("procMenu")));
+  $("file").addEventListener("change", (e) => {
+    importFiles([...e.target.files]); e.target.value = "";
+  });
+  $("importMenu").addEventListener("click", (e) => {
+    const item = e.target.closest("[data-act]");
+    if (!item) return;
+    const act = item.dataset.act;
+    closeMenus();
+    if (act === "files") $("file").click();
+    if (act === "url") { $("urlpop").hidden = false; $("urlinput").focus(); }
+    if (act === "browse") { $("fbrowse").hidden = false; openBrowse(fb.path); }
+  });
+
+  // ---- import from URL
+  async function importUrl() {
+    const u = $("urlinput").value.trim();
+    if (!u) return;
+    closeMenus();
+    busy(true, `downloading ${u.slice(0, 60)}…`);
+    try {
+      const r = await py({ action: "import_url", url: u });
+      assets.push(r.asset);
+      P.set("asset", r.asset.id);
+      $("urlinput").value = "";
+      renderSidebar(); draw(true);
+      toast(`imported ${r.asset.name} (${r.asset.width}×${r.asset.height}, ` +
+        `${KIND_LABEL[r.asset.kind] || r.asset.kind})`, !r.asset.valid);
+    } catch (err) { toast(`URL import failed: ${err.message}`, true); }
+    busy(false);
+  }
+  $("urlgo").addEventListener("click", importUrl);
+  $("urlinput").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") importUrl();
+    if (e.key === "Escape") closeMenus();
+  });
+
+  // ---- server-side file explorer
+  const fb = { path: "~", sort: "name", asc: true, data: null };
+  async function openBrowse(path) {
+    try {
+      const r = await py({ action: "browse", path: path || "~" });
+      fb.path = r.path; fb.data = r;
+      $("fbpath").value = r.path;
+      renderBrowse();
+    } catch (err) { toast(err.message, true); }
+  }
+  function renderBrowse() {
+    const d = fb.data;
+    if (!d) return;
+    const sign = fb.asc ? 1 : -1;
+    const dirs = [...d.dirs].sort((a, b) => sign * a.name.localeCompare(b.name));
+    const files = [...d.files].sort((a, b) => sign * (
+      fb.sort === "size" ? a.size - b.size :
+      fb.sort === "mtime" ? a.mtime - b.mtime :
+      a.name.localeCompare(b.name)));
+    const join = (n) => (d.path.endsWith("/") ? d.path : d.path + "/") + n;
+    const fmtSize = (n) => n >= 1048576 ? (n / 1048576).toFixed(1) + " MB"
+      : Math.max(1, Math.round(n / 1024)) + " KB";
+    let html = "";
+    if (d.parent) html += `<div class="fbrow" data-dir="${esc(d.parent)}">📁 ..</div>`;
+    for (const x of dirs)
+      html += `<div class="fbrow" data-dir="${esc(join(x.name))}">📁 ${esc(x.name)}</div>`;
+    for (const f of files)
+      html += `<div class="fbrow" data-file="${esc(join(f.name))}">🖼 ${esc(f.name)}` +
+        `<span class="sz">${fmtSize(f.size)}</span></div>`;
+    $("fblist").innerHTML = html || `<div class="fbempty">no image files here</div>`;
+  }
+  async function importServerPath(p) {
+    busy(true, `importing ${p}…`);
+    try {
+      const r = await py({ action: "import_path", path: p });
+      assets.push(r.asset);
+      P.set("asset", r.asset.id);
+      renderSidebar(); draw(true);
+      toast(`imported ${r.asset.name} (${r.asset.width}×${r.asset.height}, ` +
+        `${KIND_LABEL[r.asset.kind] || r.asset.kind})`, !r.asset.valid);
+    } catch (err) { toast(err.message, true); }
+    busy(false);
+  }
+  $("fblist").addEventListener("click", (e) => {
+    const row = e.target.closest(".fbrow");
+    if (!row) return;
+    if (row.dataset.dir) openBrowse(row.dataset.dir);
+    else if (row.dataset.file) importServerPath(row.dataset.file);
+  });
+  $("fbgo").addEventListener("click", () => openBrowse($("fbpath").value.trim()));
+  $("fbpath").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") openBrowse($("fbpath").value.trim());
+    if (e.key === "Escape") closeMenus();
+  });
+  $("fbsort").addEventListener("change", () => {
+    fb.sort = $("fbsort").value; renderBrowse();
+  });
+  $("fbdir").addEventListener("click", () => {
+    fb.asc = !fb.asc;
+    $("fbdir").textContent = fb.asc ? "↑ asc" : "↓ desc";
+    renderBrowse();
+  });
+
+  // drag & drop anywhere
+  document.addEventListener("dragover", (e) => e.preventDefault());
+  document.addEventListener("drop", (e) => {
+    e.preventDefault();
+    const files = [...e.dataTransfer.files].filter((f) =>
+      /image|tiff/.test(f.type) || /\.(tiff?|webp|avif)$/i.test(f.name));
+    if (files.length) importFiles(files);
+  });
+
+  // ------------------------------------------------------------- download
+  $("btnDl").addEventListener("click", downloadView);
+  function downloadView() {
+    const a = selAsset();
+    if (!a || !lastView || !lastView.path) { toast("nothing to download"); return; }
+    const link = document.createElement("a");
+    link.href = assetUrl(lastView.path);
+    link.download = `${a.name.replace(/\.[^.]+$/, "")}_${mode()}.jpg`;
+    link.click();
+  }
+
+  // ------------------------------------------------------------- drag look
+  (function dragLook() {
+    let drag = null;
+    els.img.addEventListener("pointerdown", (e) => {
+      const m = mode();
+      if (m !== "perspective" && m !== "fisheye180") return;
+      drag = { x: e.clientX, y: e.clientY, yaw: P.num("yaw"), pitch: P.num("pitch") };
+      els.img.classList.add("grabbing");
+      els.img.setPointerCapture(e.pointerId);
+    });
+    els.img.addEventListener("pointermove", (e) => {
+      if (!drag) return;
+      const fov = P.num("fov");
+      const scale = (mode() === "fisheye180" ? 120 : fov) / els.img.clientWidth;
+      let yaw = drag.yaw - (e.clientX - drag.x) * scale;
+      let pitch = drag.pitch + (e.clientY - drag.y) * scale;
+      yaw = ((yaw + 180) % 360 + 360) % 360 - 180;
+      pitch = Math.max(-90, Math.min(90, pitch));
+      P.set("yaw", Math.round(yaw));
+      P.set("pitch", Math.round(pitch));
+    });
+    const end = () => { drag = null; els.img.classList.remove("grabbing"); };
+    els.img.addEventListener("pointerup", end);
+    els.img.addEventListener("pointercancel", end);
+    els.img.addEventListener("wheel", (e) => {
+      if (mode() !== "perspective") return;
+      e.preventDefault();
+      const fov = Math.max(20, Math.min(175, P.num("fov") + (e.deltaY > 0 ? 5 : -5)));
+      P.set("fov", Math.round(fov));
+    }, { passive: false });
+  })();
+
+  // ------------------------------------------------------------- keyboard
+  document.addEventListener("keydown", (e) => {
+    const tag = (e.target.tagName || "").toLowerCase();
+    if (tag === "input" || tag === "textarea" || tag === "select") return;
+    if (e.key === "?" ) { const h = $("help");
+      h.style.display = h.style.display === "flex" ? "none" : "flex"; return; }
+    if (e.key === "Escape") { $("help").style.display = "none"; closeMenus(); return; }
+    if (e.key === "ArrowDown" || e.key === "j") { e.preventDefault(); navAsset(1); return; }
+    if (e.key === "ArrowUp" || e.key === "k") { e.preventDefault(); navAsset(-1); return; }
+    if (e.key === "i") { $("file").click(); return; }
+    if (e.key === "d") { downloadView(); return; }
+    const n = parseInt(e.key, 10);
+    if (n >= 1 && n <= MODES.length) setMode(MODES[n - 1].id);
+  });
+  $("btnHelp").addEventListener("click", () =>
+    $("help").style.display = "flex");
+  $("help").addEventListener("click", (e) => {
+    if (e.target === $("help")) $("help").style.display = "none";
+  });
+
+  // ------------------------------------------------------------- boot
+  fused.params.onChange(() => draw(false));
+  try {
+    busy(true, "loading library…");
+    const r = await py({ action: "setup" });
+    assets = r.assets;
+    busy(false);
+    if (!fused.params.get("asset") && assets.length)
+      fused.params.set("asset", String(assets[0].id));
+    renderSidebar();
+    draw(true);
+  } catch (err) {
+    busy(false);
+    toast(`startup failed: ${err.message}`, true);
+    throw err;
+  }
+})();
+</script>
+</body>
+</html>

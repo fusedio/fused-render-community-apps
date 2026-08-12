@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "name": "Disk Space Visualizer",
+  "description": "Scan any folder level by level, see what eats your disk, preview files, and clean up safely (delete = move to Trash).",
+  "author": { "name": "Sina" },
+  "tags": ["system", "cleanup", "macos"],
+  "version": "1.0.0",
+  "requires_python": true
+}

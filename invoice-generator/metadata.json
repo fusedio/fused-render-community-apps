@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "name": "Invoice Generator",
+  "description": "Local invoice manager: clients, numbered invoice documents, FX reference rates, print-ready output. Pure-stdlib backend, all data as plain JSON on your disk.",
+  "author": { "name": "Aman" },
+  "tags": ["documents", "business", "invoices"],
+  "version": "1.0.0",
+  "requires_python": true
+}

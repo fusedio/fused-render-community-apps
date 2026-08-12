@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Overture Map Explorer</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root {
+    --bg: #12141a; --panel: #1a1d26; --panel2: #22262f; --border: #2e3340;
+    --text: #e6e9f0; --dim: #8b93a7; --accent: #58a6ff; --cafe: #ffb347;
+    --bike: #4cd97b; --warn: #f0883e;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; font: 13px/1.45 -apple-system, "Segoe UI", sans-serif;
+    background: var(--bg); color: var(--text); }
+  #app { display: flex; height: 100%; }
+  #sidebar { width: 320px; min-width: 320px; background: var(--panel);
+    border-right: 1px solid var(--border); padding: 14px; overflow-y: auto;
+    display: flex; flex-direction: column; gap: 12px; }
+  #map { flex: 1; background: #0d0f13; }
+  h1 { font-size: 15px; margin: 0; letter-spacing: .3px; }
+  h1 small { color: var(--dim); font-weight: 400; display: block; font-size: 11px; margin-top: 2px; }
+  label { display: block; color: var(--dim); font-size: 11px; text-transform: uppercase;
+    letter-spacing: .5px; margin-bottom: 4px; }
+  input, select, button { width: 100%; padding: 7px 9px; border-radius: 6px;
+    border: 1px solid var(--border); background: var(--panel2); color: var(--text);
+    font: inherit; }
+  input:focus, select:focus { outline: none; border-color: var(--accent); }
+  button { cursor: pointer; font-weight: 600; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #0b1220; }
+  button.ghost:hover, button.primary:hover { filter: brightness(1.12); }
+  .row { display: flex; gap: 8px; }
+  .row > * { flex: 1; }
+  #status { min-height: 18px; color: var(--dim); font-size: 12px; }
+  #status.err { color: #ff7b72; }
+  .statgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .stat { background: var(--panel2); border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 10px; }
+  .stat .v { font-size: 20px; font-weight: 700; }
+  .stat .k { color: var(--dim); font-size: 11px; }
+  .bar { display: flex; align-items: center; gap: 6px; margin: 3px 0; font-size: 12px; }
+  .bar .lbl { width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    color: var(--dim); text-align: right; }
+  .bar .track { flex: 1; height: 10px; background: var(--panel2); border-radius: 5px; overflow: hidden; }
+  .bar .fill { height: 100%; background: var(--accent); border-radius: 5px; }
+  .bar .n { width: 44px; font-variant-numeric: tabular-nums; }
+  #detail { background: var(--panel2); border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px; font-size: 12px; display: none; }
+  #detail .name { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
+  #detail .kv { display: grid; grid-template-columns: 82px 1fr; gap: 2px 8px; }
+  #detail .kv .k { color: var(--dim); }
+  #detail .gers { font-family: ui-monospace, monospace; font-size: 10.5px; word-break: break-all;
+    color: var(--accent); }
+  a.dl { display: inline-block; width: 100%; text-align: center; padding: 7px 9px;
+    border-radius: 6px; border: 1px solid var(--border); background: var(--panel2);
+    color: var(--text); text-decoration: none; font-weight: 600; }
+  a.dl:hover { border-color: var(--accent); }
+  .note { color: var(--warn); font-size: 11px; }
+  .story-stat { background: linear-gradient(135deg, #17301f, #142218);
+    border: 1px solid #2c5238; border-radius: 8px; padding: 10px; display: none; }
+  .story-stat .big { font-size: 26px; font-weight: 800; color: var(--bike); }
+  .legend span { display: inline-block; margin-right: 10px; font-size: 11px; color: var(--dim); }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 4px; }
+  .footer { margin-top: auto; color: var(--dim); font-size: 10.5px; }
+  hr { border: 0; border-top: 1px solid var(--border); margin: 2px 0; width: 100%; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="sidebar">
+    <h1>Overture Map Explorer<small>Live DuckDB queries over Overture's public S3 parquet</small></h1>
+
+    <div>
+      <label>Fly to a place</label>
+      <div class="row">
+        <input id="place" placeholder="e.g. Copenhagen, Denmark" style="flex:3">
+        <button id="goBtn" class="primary" style="flex:1">Go</button>
+      </div>
+    </div>
+
+    <div class="row">
+      <div>
+        <label>Theme</label>
+        <select id="theme">
+          <option value="places">Places (POIs)</option>
+          <option value="buildings">Buildings</option>
+          <option value="transportation">Transportation</option>
+        </select>
+      </div>
+      <div>
+        <label>Category</label>
+        <select id="category"></select>
+      </div>
+    </div>
+
+    <div>
+      <label>Name contains</label>
+      <input id="search" placeholder="free-text name filter (optional)">
+    </div>
+
+    <button id="queryBtn" class="primary">Query this view</button>
+    <button id="storyBtn" class="ghost">Cafes &times; bike paths story</button>
+    <div id="status"></div>
+
+    <div class="story-stat" id="storyStat">
+      <div class="big" id="storyPct">–</div>
+      <div id="storyTxt" style="font-size:12px"></div>
+      <div class="legend" style="margin-top:6px">
+        <span><i class="dot" style="background:var(--cafe)"></i>cafe</span>
+        <span><i class="dot" style="background:var(--bike)"></i>bike path</span>
+        <span><i class="dot" style="background:#fff;border:2px solid var(--bike);width:6px;height:6px"></i>cafe near path</span>
+      </div>
+    </div>
+
+    <div class="statgrid" id="stats" style="display:none">
+      <div class="stat"><div class="v" id="count">–</div><div class="k" id="countK">features</div></div>
+      <div class="stat"><div class="v" id="release" style="font-size:13px;line-height:20px">–</div><div class="k">Overture release</div></div>
+    </div>
+    <div id="capNote" class="note" style="display:none"></div>
+    <div id="topcats"></div>
+    <a id="csvBtn" class="dl" download="overture_export.csv" style="display:none">Download CSV of results</a>
+
+    <hr>
+    <div id="detail">
+      <div class="name" id="dName"></div>
+      <div class="kv" id="dKv"></div>
+    </div>
+
+    <div class="footer">Data © Overture Maps Foundation · queries bbox-limited to viewport (span capped) · geocoding © OSM Nominatim</div>
+  </div>
+  <div id="map"></div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const P = fused.params;
+
+const CATEGORIES = {
+  places: [["", "All places"], ["cafe", "Cafes & coffee"], ["restaurant", "Restaurants"],
+    ["bar", "Bars"], ["hotel", "Hotels"], ["school", "Schools"], ["pharmacy", "Pharmacies"],
+    ["supermarket", "Supermarkets"], ["ev_charging_station", "EV charging"],
+    ["bicycle_shop", "Bicycle shops"], ["park", "Parks"]],
+  buildings: [["", "All buildings"], ["residential", "Residential"], ["commercial", "Commercial"],
+    ["industrial", "Industrial"], ["education", "Education"], ["religious", "Religious"]],
+  transportation: [["", "All segments"], ["cycleway", "Bike paths (cycleway)"],
+    ["footway", "Footways"], ["primary", "Primary roads"], ["residential", "Residential roads"],
+    ["motorway", "Motorways"], ["rail", "Rail"]],
+};
+const COLORS = { places: "#58a6ff", buildings: "#c792ea", transportation: "#f0883e" };
+
+// ── Map ──────────────────────────────────────────────────────────────────
+const map = L.map("map", { zoomControl: true });
+L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+  { attribution: "© OpenStreetMap © CARTO", maxZoom: 19 }).addTo(map);
+let dataLayer = null, storyLayers = [];
+
+function viewFromParams() {
+  const lat = parseFloat(P.get("lat") || "37.78"),
+        lng = parseFloat(P.get("lng") || "-122.415"),
+        z   = parseInt(P.get("z") || "14", 10);
+  map.setView([lat, lng], z, { animate: false });
+}
+map.on("moveend", () => {
+  const c = map.getCenter();
+  syncing = true;
+  P.set("lat", c.lat.toFixed(5)); P.set("lng", c.lng.toFixed(5));
+  P.set("z", String(map.getZoom()));
+  syncing = false;
+});
+let syncing = false;
+
+// ── Controls <-> params ──────────────────────────────────────────────────
+function fillCategories(theme, selected) {
+  $("category").innerHTML = CATEGORIES[theme]
+    .map(([v, l]) => `<option value="${v}"${v === selected ? " selected" : ""}>${l}</option>`)
+    .join("");
+}
+function reflect() {
+  const theme = P.get("theme") || "places";
+  $("theme").value = theme;
+  fillCategories(theme, P.get("cat") || "");
+  $("search").value = P.get("q") || "";
+  $("place").value = P.get("place") || "";
+}
+$("theme").addEventListener("change", () => { P.set("theme", $("theme").value); P.set("cat", ""); });
+$("category").addEventListener("change", () => P.set("cat", $("category").value));
+$("search").addEventListener("change", () => P.set("q", $("search").value));
+
+// ── Status helper ────────────────────────────────────────────────────────
+function status(msg, err) { $("status").textContent = msg; $("status").className = err ? "err" : ""; }
+
+// ── Geocode / fly ────────────────────────────────────────────────────────
+async function flyTo(place) {
+  if (!place.trim()) return;
+  status("Geocoding…");
+  try {
+    const r = await fused.runPython("./overture.py", { action: "geocode", place });
+    if (!r.ok) { status(r.error, true); return; }
+    status("→ " + r.display_name);
+    const [w, s, e, n] = r.bbox;
+    map.fitBounds([[s, w], [n, e]]);
+    if (map.getZoom() > 15) map.setZoom(14);
+  } catch (err) { status(err.message, true); }
+}
+$("goBtn").addEventListener("click", () => { P.set("place", $("place").value); flyTo($("place").value); });
+$("place").addEventListener("keydown", ev => { if (ev.key === "Enter") $("goBtn").click(); });
+
+// ── Feature detail card ──────────────────────────────────────────────────
+function showDetail(props) {
+  $("detail").style.display = "block";
+  $("dName").textContent = props.name || "(unnamed)";
+  const rows = [["GERS id", `<span class="gers">${props.id}</span>`]];
+  for (const k of ["category", "subtype", "class", "confidence", "near_bike_path"])
+    if (props[k] !== null && props[k] !== undefined) rows.push([k.replace("_", " "), String(props[k])]);
+  $("dKv").innerHTML = rows.map(([k, v]) => `<div class="k">${k}</div><div>${v}</div>`).join("");
+}
+
+// ── Rendering helpers ────────────────────────────────────────────────────
+function clearLayers() {
+  if (dataLayer) { map.removeLayer(dataLayer); dataLayer = null; }
+  storyLayers.forEach(l => map.removeLayer(l)); storyLayers = [];
+}
+function makeLayer(gj, opts) {
+  return L.geoJSON(gj, {
+    pointToLayer: (f, ll) => L.circleMarker(ll, { radius: opts.radius || 4,
+      color: opts.stroke || opts.color, fillColor: opts.color, fillOpacity: 0.75,
+      weight: opts.weight ?? 1 }),
+    style: () => ({ color: opts.color, weight: opts.lineWeight || 2, fillOpacity: 0.25 }),
+    onEachFeature: (f, layer) => layer.on("click", () => showDetail(f.properties)),
+  });
+}
+
+// ── Top categories bar + CSV ─────────────────────────────────────────────
+function renderTop(top) {
+  if (!top.length) { $("topcats").innerHTML = ""; return; }
+  const max = top[0].n;
+  $("topcats").innerHTML = "<label>Top categories</label>" + top.map(t =>
+    `<div class="bar"><div class="lbl" title="${t.label}">${t.label}</div>
+     <div class="track"><div class="fill" style="width:${(100 * t.n / max).toFixed(1)}%"></div></div>
+     <div class="n">${t.n.toLocaleString()}</div></div>`).join("");
+}
+function csvEscape(v) {
+  if (v === null || v === undefined) return "";
+  v = String(v);
+  return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+}
+function buildCsv(features) {
+  const cols = ["id", "name", "category", "subtype", "class", "confidence", "lon", "lat"];
+  const lines = [cols.join(",")];
+  for (const f of features) {
+    let lon = "", lat = "";
+    const g = f.geometry;
+    if (g.type === "Point") [lon, lat] = g.coordinates;
+    else { const b = L.geoJSON(f).getBounds().getCenter(); lon = b.lng; lat = b.lat; }
+    lines.push(cols.map(c => c === "lon" ? lon : c === "lat" ? lat :
+      csvEscape(f.properties[c])).join(","));
+  }
+  const url = URL.createObjectURL(new Blob([lines.join("\n")], { type: "text/csv" }));
+  const a = $("csvBtn");
+  if (a.href.startsWith("blob:")) URL.revokeObjectURL(a.href);
+  a.href = url; a.style.display = "block";
+}
+
+// ── Query current viewport ───────────────────────────────────────────────
+let reqId = 0;
+async function runQuery() {
+  const b = map.getBounds();
+  const theme = P.get("theme") || "places";
+  const my = ++reqId;
+  status("Counting features (" + theme + ")… cold areas take ~20 s");
+  $("storyStat").style.display = "none";
+  try {
+    const bbox = { west: b.getWest(), south: b.getSouth(),
+                   east: b.getEast(), north: b.getNorth() };
+    const filt = { theme, category: P.get("cat") || "", search: P.get("q") || "" };
+    const c = await fused.runPython("./overture.py", { action: "count", ...filt, ...bbox });
+    if (my !== reqId) return;
+    $("stats").style.display = "grid";
+    $("count").textContent = c.total.toLocaleString();
+    $("countK").textContent = "features";
+    $("release").textContent = c.release;
+    if (c.total === 0) {
+      clearLayers(); renderTop([]);
+      $("capNote").style.display = "none";
+      status("No features here — try another spot or category");
+      return;
+    }
+    status(`Fetching ${Math.min(c.total, 4000).toLocaleString()} of ${c.total.toLocaleString()} features…`);
+    const r = await fused.runPython("./overture.py",
+      { action: "fetch", k: c.k, ...filt, ...bbox });
+    if (my !== reqId) return;
+    clearLayers();
+    dataLayer = makeLayer(r.geojson, { color: COLORS[theme] }).addTo(map);
+    const capped = c.total > r.count;
+    $("countK").textContent = capped ? `features (showing ${r.count.toLocaleString()})` : "features";
+    const notes = [];
+    if (capped) notes.push("over plot cap — uniformly thinned sample shown; zoom in for the full set");
+    if (c.clamped) notes.push("viewport too large — queried a clipped bbox around center");
+    $("capNote").style.display = notes.length ? "block" : "none";
+    $("capNote").textContent = notes.join(" · ");
+    renderTop(r.top);
+    buildCsv(r.geojson.features);
+    status("Done — click a feature for details");
+  } catch (err) { if (my === reqId) status(err.message, true); }
+}
+$("queryBtn").addEventListener("click", runQuery);
+
+// ── Story: cafes vs bike paths ───────────────────────────────────────────
+async function runStory() {
+  const b = map.getBounds();
+  const my = ++reqId;
+  status("Running cafes × bike paths story… (two Overture queries)");
+  try {
+    const bbox = { west: b.getWest(), south: b.getSouth(),
+                   east: b.getEast(), north: b.getNorth() };
+    // Pre-warm each layer in its own <30 s call; the story call then hits disk cache.
+    for (const [theme, category] of [["places", "cafe"], ["transportation", "cycleway"]]) {
+      status(`Story: counting ${category}s…`);
+      const c = await fused.runPython("./overture.py", { action: "count", theme, category, search: "", ...bbox });
+      if (my !== reqId) return;
+      status(`Story: fetching ${c.total.toLocaleString()} ${category} features…`);
+      await fused.runPython("./overture.py", { action: "fetch", theme, category, search: "", k: c.k, ...bbox });
+      if (my !== reqId) return;
+    }
+    status("Story: computing 100 m proximity…");
+    const r = await fused.runPython("./overture.py", { action: "story", ...bbox });
+    if (my !== reqId) return;
+    clearLayers();
+    storyLayers.push(makeLayer(r.bikes, { color: "#4cd97b", lineWeight: 3 }).addTo(map));
+    const far = { type: "FeatureCollection", features: r.cafes.features.filter(f => !f.properties.near_bike_path) };
+    const near = { type: "FeatureCollection", features: r.cafes.features.filter(f => f.properties.near_bike_path) };
+    storyLayers.push(makeLayer(far, { color: "#ffb347", radius: 4 }).addTo(map));
+    storyLayers.push(makeLayer(near, { color: "#ffb347", stroke: "#4cd97b", radius: 5, weight: 2.5 }).addTo(map));
+    $("storyStat").style.display = "block";
+    $("storyPct").textContent = r.pct_near + "%";
+    $("storyTxt").textContent = `of ${r.n_cafes.toLocaleString()} cafes are within 100 m of a bike path (${r.n_near} cafes, ${r.n_bikes} cycleway segments) — Overture ${r.release}`;
+    $("stats").style.display = "none"; $("topcats").innerHTML = "";
+    buildCsv(r.cafes.features);
+    status("Story done — click any feature for details");
+  } catch (err) { if (my === reqId) status(err.message, true); }
+}
+$("storyBtn").addEventListener("click", runStory);
+
+// ── Boot ─────────────────────────────────────────────────────────────────
+let lastKey = "";
+function queryKey() { return [P.get("theme"), P.get("cat"), P.get("q")].join("|"); }
+P.onChange(() => {
+  if (syncing) return;
+  reflect();
+  if (queryKey() !== lastKey) { lastKey = queryKey(); runQuery(); }
+});
+lastKey = queryKey();
+reflect();
+viewFromParams();
+runQuery();
+</script>
+</body>
+</html>

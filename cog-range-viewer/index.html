@@ -1,0 +1,1238 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>One photo, 316 MB, zero downloads</title>
+<script src="https://unpkg.com/geotiff@2.1.3/dist-browser/geotiff.js"></script>
+<script src="https://unpkg.com/proj4@2.15.0/dist/proj4.js"></script>
+<style>
+  :root {
+    /* warm paper + ink, matching the visual explainers */
+    --paper:#f6f2e9; --card:#fffdf8; --line:#e4dccb; --line2:#d6cdb8;
+    --ink:#28231a; --dim:#7b7260; --mut:#a89e8a;
+    --gold:#b8860b;
+    --l4:#2f9e57; --l3:#1f8fb8; --l2:#3b62d6; --l1:#7a4fd1; --l0:#c9366b;
+  }
+  * { box-sizing:border-box; }
+  html, body { margin:0; }
+  body { background:var(--paper); color:var(--ink);
+         font:14px/1.5 -apple-system,"Segoe UI",Helvetica,Arial,sans-serif; }
+  .mono { font-family:"SF Mono",ui-monospace,Menlo,monospace; }
+  b { color:var(--ink); }
+
+  /* ---------- everything above the fold lives in one viewport ---------- */
+  #main { height:100vh; display:flex; flex-direction:column;
+          max-width:1280px; margin:0 auto; padding:14px 24px 12px; }
+  #topRow { display:flex; align-items:flex-start; gap:24px; flex:none; }
+  #topRow .titleBlock { flex:1; min-width:0; }
+  h1 { font-family:Georgia,"Iowan Old Style","Times New Roman",serif; font-size:24px;
+       font-weight:600; margin:0; }
+  .lede { color:var(--dim); font-size:13.5px; margin:2px 0 0; }
+  #counterBlock { flex:none; }
+  #bigCount { font-family:Georgia,serif; font-size:31px; line-height:1.05;
+              font-variant-numeric:tabular-nums; }
+  #counterRest { color:var(--dim); font-size:12.5px; }
+  #stripBar { flex:none; display:flex; flex-direction:row; gap:22px; align-items:center;
+              margin-top:12px; padding:10px 18px; }
+  #stripCount { flex:none; min-width:200px; }
+  #stripArea { flex:1; min-width:0; }
+  #stripTitle { font-size:10.5px; letter-spacing:.08em; text-transform:uppercase;
+                color:var(--mut); font-weight:600; margin-bottom:5px; }
+  #advToggle { margin-top:4px; font-size:11.5px; cursor:pointer; border-radius:7px;
+               padding:4px 10px; border:1px solid var(--line2); background:var(--card);
+               color:var(--dim); }
+
+  #cols { display:grid; grid-template-columns: minmax(380px, 470px) 1fr; gap:22px;
+          flex:1; min-height:0; margin-top:12px; }
+  @media (max-width: 880px) { #cols { grid-template-columns:1fr; } #main { height:auto; } }
+
+  .stage { background:var(--card); border:1px solid var(--line); border-radius:16px;
+           box-shadow:0 2px 10px rgba(90,75,40,.06); padding:12px 14px;
+           display:flex; flex-direction:column; min-height:0; }
+  .stage h2 { font-family:Georgia,serif; font-size:17px; margin:0; font-weight:600; }
+  .stage .hint { color:var(--mut); font-size:12px; margin:1px 0 8px; }
+
+  /* map card */
+  #viewerWrap { position:relative; border-radius:11px; overflow:hidden;
+                border:1px solid var(--line2); background:#101418; flex:0 0 auto;
+                height:clamp(300px, 54vh, 500px); }
+  #viewer { position:absolute; inset:0; width:100%; height:100%; cursor:grab; touch-action:none; }
+  #viewer.dragging { cursor:grabbing; }
+  .chip { position:absolute; background:rgba(16,20,24,.82); border-radius:7px;
+          padding:4px 9px; font-size:11.5px; color:#e8e2d4; }
+  #levelChip { top:10px; left:10px; }
+  #levelChip .swatch { display:inline-block; width:9px; height:9px; border-radius:2px;
+                       margin-right:6px; }
+  #zoomBtns { position:absolute; top:10px; right:10px; display:flex; flex-direction:column; gap:5px; }
+  #zoomBtns button { width:30px; height:30px; font-size:16px; border-radius:7px; border:none;
+                     background:rgba(16,20,24,.82); color:#e8e2d4; cursor:pointer; }
+  #loadingOverlay { position:absolute; inset:0; display:flex; flex-direction:column; gap:10px;
+          align-items:center; justify-content:center; background:rgba(16,20,24,.92); z-index:5;
+          transition:opacity .5s; font-size:13.5px; color:#cfc8b8; }
+  #loadingOverlay.gone { opacity:0; pointer-events:none; }
+  .pulse { width:11px; height:11px; border-radius:50%; background:var(--gold);
+           animation:pu 1s infinite alternate; }
+  @keyframes pu { from {opacity:.3; transform:scale(.8);} to {opacity:1; transform:scale(1.2);} }
+  #mapButtons { display:flex; gap:7px; margin-top:9px; flex-wrap:wrap; flex:none; }
+  button.b { font-size:12.5px; cursor:pointer; border-radius:8px; padding:7px 12px;
+             border:1px solid var(--line2); background:var(--card); color:var(--ink); }
+  button.b:hover { box-shadow:0 1px 6px rgba(90,75,40,.15); }
+  button.b.primary { background:var(--ink); color:var(--paper); border-color:var(--ink); }
+
+  /* narration */
+  #narration { margin-top:8px; flex:none; min-height:58px; }
+  .msg { font-size:13px; color:var(--mut); }
+  .msg:first-child { color:var(--ink); }
+  .msg .sz { color:var(--gold); font-weight:600; font-variant-numeric:tabular-nums; }
+
+  /* pyramid card */
+  #pyrWrap { position:relative; flex:1; min-height:300px; }
+  #pyr { position:absolute; inset:0; width:100%; height:100%; }
+
+  /* ---------- advanced (below the fold) ---------- */
+  #advanced { display:none; max-width:1280px; margin:0 auto; padding:6px 24px 60px; }
+  #advanced.open { display:block; }
+  #advanced .stage { padding:18px; display:block; }
+  #cogNote { color:var(--dim); max-width:860px; margin:0 0 14px; }
+  .adv h3, #advanced h3 { margin:0 0 8px; font-size:11.5px; letter-spacing:.09em;
+        text-transform:uppercase; color:var(--mut); font-weight:600; }
+  #byteStrip { width:100%; height:38px; display:block; border:1px solid var(--line2);
+               border-radius:8px; background:#efe9da; }
+  #stripLegend { display:flex; gap:13px; margin-top:5px; font-size:11px; color:var(--dim); flex-wrap:wrap; }
+  #stripLegend .swatch { display:inline-block; width:9px; height:9px; border-radius:2px; margin-right:5px; }
+  #advCols { display:flex; gap:22px; margin-top:18px; align-items:flex-start; }
+  @media (max-width:900px) { #advCols { flex-direction:column; } }
+  .adv { flex:1; min-width:0; }
+  #reqLog { max-height:260px; overflow-y:auto; font-size:11.5px; border:1px solid var(--line);
+            border-radius:9px; background:#fbf8f0; }
+  #reqLog table { width:100%; border-collapse:collapse; }
+  #reqLog td { padding:4px 9px; border-bottom:1px solid #efe8d8; white-space:nowrap;
+               font-variant-numeric:tabular-nums; color:var(--dim); }
+  #reqLog td.what { max-width:230px; overflow:hidden; text-overflow:ellipsis; }
+  #advStats { flex:0 0 320px; display:flex; flex-direction:column; gap:7px; font-size:13px;
+              color:var(--dim); }
+  #advStats .kv { display:flex; justify-content:space-between; gap:10px; }
+  #advStats .kv b { font-variant-numeric:tabular-nums; }
+  #curl { background:#fbf8f0; border:1px solid var(--line); border-radius:8px; padding:8px 10px;
+          font-size:10.5px; color:var(--dim); word-break:break-all; user-select:all; margin-top:4px; }
+  #byteStrip, #pyr { cursor:crosshair; }
+  #anatomy { width:100%; height:72px; display:block; border:1px solid var(--line2);
+             border-radius:8px; background:#fbf8f0; }
+  #anatomyCap { font-size:11.5px; color:var(--dim); margin-top:5px; }
+  #anatomyCap b { font-variant-numeric:tabular-nums; }
+  #blockSel { font-size:12px; padding:2px 6px; border:1px solid var(--line2);
+              border-radius:6px; background:var(--card); color:var(--ink); }
+  #reqLog tr:hover td { background:#f3edd9; }
+  #hoverTip { position:fixed; z-index:60; display:none; pointer-events:none;
+              background:var(--card); border:1px solid var(--line2); border-radius:8px;
+              padding:5px 10px; font-size:11.5px; color:var(--ink);
+              box-shadow:0 3px 12px rgba(90,75,40,.18); white-space:nowrap; }
+</style>
+</head>
+<body>
+<div id="main">
+  <div id="topRow">
+    <div class="titleBlock">
+      <h1 id="pageTitle">One photo, 316&nbsp;MB, zero downloads</h1>
+      <p class="lede" id="ledeP">
+        This satellite photo of Venice is <b>one single 316&nbsp;MB file</b> (a Cloud-Optimized
+        GeoTIFF) on a public server. Pan and zoom — your browser fetches <b>only the pieces it
+        needs</b>, and they light up in the stack on the right. Every number is a real request.
+      </p>
+    </div>
+    <div id="counterBlock">
+      <button id="advToggle">Nerdy details ▾</button>
+    </div>
+  </div>
+
+  <div id="cols">
+    <div class="stage" id="mapCard">
+      <h2>The photo</h2>
+      <p class="hint">drag to pan · scroll to zoom — the frame is the edge of the photo</p>
+      <div id="viewerWrap">
+        <canvas id="viewer"></canvas>
+        <div id="loadingOverlay"><div class="pulse"></div><div id="loadingText">Contacting the server…</div></div>
+        <div class="chip" id="levelChip"><span class="swatch"></span><span id="levelChipText">—</span></div>
+        <div id="zoomBtns"><button id="zin">+</button><button id="zout">−</button></div>
+      </div>
+      <div id="mapButtons">
+        <button class="b primary" id="jumpVenice">Zoom to Venice</button>
+        <button class="b" id="jumpFull">Whole photo</button>
+        <button class="b" id="btnReplay" title="Replays the very first load with each request stretched out, so you can watch the table of contents arrive before any picture does.">↺ Start over, slowly</button>
+      </div>
+      <div id="narration"><div class="msg">Waking up…</div></div>
+    </div>
+
+    <div class="stage" id="fileCard">
+      <h2>Inside the file — the same photo, stored 5 times</h2>
+      <p class="hint">each layer covers the <b>same area</b>, just sharper (and heavier) as you go down —
+        the outlined patch is what your map shows right now · tiles <b>blink while downloading</b>, then stay lit</p>
+      <div id="pyrWrap"><canvas id="pyr"></canvas></div>
+    </div>
+  </div>
+
+  <div class="stage" id="stripBar">
+    <div id="stripCount">
+      <div id="bigCount">0 KB</div>
+      <div id="counterRest">of the <b id="fsTxt">316.6 MB</b> file · <b id="pct">0%</b><br><span id="reqCount">0 requests</span></div>
+    </div>
+    <div id="stripArea">
+      <div id="stripTitle">the whole file, byte by byte (to scale) — dark = bytes your browser fetched</div>
+      <canvas id="byteStrip"></canvas>
+      <div id="stripLegend"></div>
+    </div>
+  </div>
+</div>
+
+<div id="advanced">
+  <div class="stage">
+    <p id="cogNote">
+      The trick has a name: this file is a <b>Cloud-Optimized GeoTIFF (COG)</b>. It keeps a table
+      of contents at the front and stores the photo as ready-made zoom levels cut into tiles — so
+      any viewer on the internet can grab just the bytes it needs, with plain HTTP
+      <span class="mono">Range</span> requests (the same header your video player uses to skip ahead).
+    </p>
+    <h3>Anatomy of one request — hover a row below to inspect it</h3>
+    <canvas id="anatomy"></canvas>
+    <div id="anatomyCap">–</div>
+    <div id="advCols" style="margin-top:14px">
+      <div class="adv">
+        <h3>Every HTTP request (newest first)</h3>
+        <div id="reqLog" class="mono"><table><tbody id="reqRows"></tbody></table></div>
+      </div>
+      <div class="adv" id="advStats">
+        <h3>Details</h3>
+        <div class="kv"><span>File</span><b class="mono" id="advFile" style="font-size:11.5px">TCI.tif · Sentinel-2 · 12 Aug 2025</b></div>
+        <div class="kv"><span>Full image</span><b id="advDims" class="mono">—</b></div>
+        <div class="kv"><span>Zoom levels inside</span><b id="advLevels" class="mono">—</b></div>
+        <div class="kv"><span>Exact bytes fetched</span><b id="advBytes" class="mono">0</b></div>
+        <div class="kv"><span>— beyond the tiles you needed</span><b id="advWaste" class="mono">0</b></div>
+        <div class="kv"><span>Median request time</span><b id="advLat" class="mono">—</b></div>
+        <div class="kv"><span>Block size (restarts the demo)</span><span><select id="blockSel"></select></span></div>
+        <div style="margin-top:4px">Reads are rounded to <b id="blockTxt">64 KB</b> blocks —
+          the client's granularity knob: bigger blocks mean fewer requests but more spill into
+          neighbouring tiles; smaller means tighter but chattier. Try a range request yourself:</div>
+        <div id="curl" class="mono"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* =====================================================================
+   COG HTTP-range viewer — every visual on this page is driven by REAL
+   range requests made by geotiff.js against a public Sentinel-2 COG.
+   ===================================================================== */
+
+const DEFAULT_URL = "https://sentinel-cogs.s3.us-west-2.amazonaws.com/sentinel-s2-l2a-cogs/32/T/QR/2025/8/S2A_32TQR_20250812_0_L2A/TCI.tif";
+const QS = new URLSearchParams(location.search);
+const LOCAL_FILE = QS.get("file") || "";
+const REMOTE_URL = QS.get("url") || "";
+const IS_CUSTOM = !!(LOCAL_FILE || REMOTE_URL);
+let COG_URL = REMOTE_URL || DEFAULT_URL;    // local files resolved in boot() via the range daemon
+const FILE_NAME = (() => {
+  if (LOCAL_FILE) return LOCAL_FILE.split("/").pop();
+  try {                       // daemon-style URLs carry the real path in ?file=
+    const f = new URL(COG_URL).searchParams.get("file");
+    if (f) return decodeURIComponent(f).split("/").pop();
+  } catch (e) {}
+  return COG_URL.split("/").pop().split("?")[0];
+})();
+const BLOCK_CHOICES = [16384, 32768, 65536, 131072, 262144];
+const BLOCK = (() => {
+  const b = +new URLSearchParams(location.search).get("block");
+  return BLOCK_CHOICES.includes(b) ? b : 65536;
+})();
+
+const $ = id => document.getElementById(id);
+const fmtB = n => n >= 1e6 ? (n/1e6).toFixed(n >= 1e7 ? 0 : 1)+" MB"
+             : n >= 1000 ? Math.round(n/1000)+" KB" : n+" B";
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+/* ---------- 1. intercept every fetch geotiff.js makes ---------- */
+const state = {
+  bytes: 0, reqs: 0, fileSize: 0, headerEnd: 0, contentsHit: false,
+  levels: [],            // sorted full-res -> smallest
+  ranges: [],            // fetched [a,b) for byte strip
+  log: [],               // request log entries
+  latencies: [],
+  wanted: [],            // byte ranges the viewer explicitly asked for (header + tiles)
+  slow: new URLSearchParams(location.search).get("slow") === "1",
+};
+function wasteOf(spans) {
+  // bytes in these spans that belong to no wanted range (block-rounding spill)
+  let waste = 0;
+  for (const [a, b] of spans) {
+    let covered = 0;
+    for (const [wa, wb] of state.wanted)
+      covered += Math.max(0, Math.min(b, wb) - Math.max(a, wa));
+    waste += (b - a) - covered;
+  }
+  return Math.max(0, waste);
+}
+
+const nativeFetch = window.fetch.bind(window);
+window.fetch = async function(input, init) {
+  const url = typeof input === "string" ? input : (input && input.url) || "";
+  if (!url.startsWith(COG_URL)) return nativeFetch(input, init);
+  let range = null;
+  const h = (init && init.headers) || (typeof input === "object" && input.headers) || null;
+  if (h) {
+    if (typeof h.get === "function") range = h.get("Range") || h.get("range");
+    else if (Array.isArray(h)) { for (const [k,v] of h) if (String(k).toLowerCase()==="range") range = v; }
+    else range = h.Range || h.range || null;
+  }
+  if (state.slow) await sleep(700);
+  const t0 = performance.now();
+  const res = await nativeFetch(input, init);
+  try { onRequest(range, res, performance.now() - t0); } catch (e) { console.warn("[log]", e); }
+  return res;
+};
+
+function parseRanges(rangeHeader) {
+  if (!rangeHeader) return [];
+  const out = [];
+  for (const part of rangeHeader.replace(/^bytes=/, "").split(",")) {
+    const m = part.trim().match(/^(\d+)-(\d+)$/);
+    if (m) out.push([+m[1], +m[2] + 1]);   // [start, end)
+  }
+  return out;
+}
+
+function onRequest(rangeHeader, res, ms) {
+  const spans = parseRanges(rangeHeader);
+  const n = spans.reduce((s, [a,b]) => s + (b - a), 0) ||
+            +(res.headers.get("content-length") || 0);
+  state.reqs++; state.bytes += n; state.latencies.push(ms);
+  for (const sp of spans) state.ranges.push([sp[0], sp[1], state.reqs]);
+  const entry = { i: state.reqs, spans, n, ms, what: classify(spans),
+                  waste: state.levels.length ? wasteOf(spans) : null };
+  state.log.unshift(entry);
+  if (state.log.length > 300) state.log.pop();
+  narrateFromRequest(entry);
+  markHits(spans);
+  uiDirty = true;
+}
+
+/* ---------- 2. classify byte ranges against the COG's layout ---------- */
+function classify(spans) {
+  if (!state.levels.length) return [{ kind: "contents" }];
+  const hits = [];
+  for (const [a, b] of spans) {
+    if (a < state.headerEnd) hits.push({ kind: "contents" });
+    for (const lv of state.levels) {
+      if (b <= lv.dataStart || a >= lv.dataEnd) continue;
+      const tiles = [];
+      for (let t = 0; t < lv.offsets.length; t++) {
+        const o = lv.offsets[t], sz = lv.counts[t];
+        const ov = Math.min(b, o + sz) - Math.max(a, o);
+        if (ov > 0 && ov >= sz * 0.3) tiles.push(t);
+      }
+      if (tiles.length) hits.push({ kind: "level", lv, tiles });
+    }
+  }
+  return hits;
+}
+
+function markHits(spans) {
+  if (!state.levels.length) return;
+  for (const [a, b] of spans) {
+    if (a < state.headerEnd) state.contentsHit = true;
+    for (const lv of state.levels) {
+      if (b <= lv.dataStart || a >= lv.dataEnd) continue;
+      for (let t = 0; t < lv.offsets.length; t++) {
+        const o = lv.offsets[t], sz = lv.counts[t];
+        const ov = Math.min(b, o + sz) - Math.max(a, o);
+        if (ov > 0 && ov >= sz * 0.3) lv.hit.add(t);
+      }
+    }
+  }
+}
+
+/* ---------- 3. open the COG and read its structure ---------- */
+let tiff, pool = null, smallest, viewerReady = false;
+let grayMode = false, res0 = 0, stretch = null;
+function computeStretch(data) {
+  // robust 2-98% stretch from a sample of the first decoded tile
+  const step = Math.max(1, Math.floor(data.length / 5000)), vals = [];
+  for (let i = 0; i < data.length; i += step) {
+    const v = data[i];
+    if (Number.isFinite(v)) vals.push(v);
+  }
+  vals.sort((a, b) => a - b);
+  const lo = vals[Math.floor(vals.length * 0.02)] ?? 0;
+  let hi = vals[Math.floor(vals.length * 0.98)] ?? 255;
+  if (hi <= lo) hi = lo + 1;
+  return { lo, hi };
+}
+
+async function boot() {
+  $("loadingText").textContent = state.slow
+    ? "Slow-motion replay — watch the stack on the right…" : "Contacting the server…";
+  try { pool = new GeoTIFF.Pool(); } catch (e) { pool = null; }
+
+  if (LOCAL_FILE) {
+    if (!window.fused || !fused.runPython)
+      throw new Error("local files need the FusedRender app (open via /view/…)");
+    const sp = location.pathname.replace(/^\/view/, "").replace(/[^/]+$/, "");
+    const RANGE_SERVER = sp + "range_server.py";
+    const r = await fused.runPython(RANGE_SERVER, { action: "ensure", self_path: RANGE_SERVER });
+    if (!r || r.error) throw new Error((r && r.error) || "range daemon failed");
+    COG_URL = `http://127.0.0.1:${r.port}/raw?file=${encodeURIComponent(LOCAL_FILE)}`;
+  }
+
+  tiff = await GeoTIFF.fromUrl(COG_URL, { blockSize: BLOCK, cacheSize: 512 });
+  const count = await tiff.getImageCount();
+  const all = [];
+  for (let i = 0; i < count; i++) {
+    const img = await tiff.getImage(i);
+    const fd = img.fileDirectory;
+    if (!fd.TileWidth || !fd.TileOffsets) continue;    // stripped IFDs can't be tile-streamed
+    const w = img.getWidth(), h = img.getHeight();
+    const tw = img.getTileWidth(), th = img.getTileHeight();
+    const offsets = Array.from(fd.TileOffsets), counts = Array.from(fd.TileByteCounts);
+    let dataStart = Infinity, dataEnd = 0, totalBytes = 0;
+    for (let t = 0; t < offsets.length; t++) {
+      if (!counts[t]) continue;
+      dataStart = Math.min(dataStart, offsets[t]);
+      dataEnd = Math.max(dataEnd, offsets[t] + counts[t]);
+      totalBytes += counts[t];
+    }
+    all.push({ img, w, h, tw, th, offsets, counts, dataStart, dataEnd, totalBytes,
+               spp: fd.SamplesPerPixel || 1,
+               cols: Math.ceil(w / tw), rows: Math.ceil(h / th) });
+  }
+  const rgbLevels = all.filter(l => l.spp >= 3);
+  grayMode = rgbLevels.length === 0;                   // single-band file -> stretched grayscale
+  const levels = grayMode ? all : rgbLevels;           // with RGB present, extra IFDs are masks
+  if (!levels.length)
+    throw new Error("no tiled zoom levels found — this TIFF isn't cloud-optimized (convert with: gdal_translate -of COG)");
+  levels.sort((a, b) => b.w - a.w);
+  const full = levels[0];
+  try { res0 = Math.abs(full.img.getResolution()[0]) || 0; } catch (e) { res0 = 0; }
+  const n = levels.length;
+  const midPool = ["Sharp", "Medium", "Small"];
+  const colors = ["--l0", "--l1", "--l2", "--l3", "--l4"];
+  levels.forEach((lv, i) => {
+    lv.factor = full.w / lv.w;
+    lv.name = n === 1 ? "Full image"
+            : i === 0 ? "Sharpest"
+            : i === n - 1 ? "Tiny preview"
+            : (midPool[i - 1] || "1/" + Math.round(lv.factor) + " size");
+    const ci = n === 1 ? 0 : Math.round(i * (colors.length - 1) / (n - 1));
+    lv.color = getComputedStyle(document.documentElement)
+                 .getPropertyValue(colors[ci]).trim();
+    lv.hit = new Set();       // tiles whose bytes were touched by any request
+  });
+  state.levels = levels;
+  state.headerEnd = Math.min(...levels.map(l => l.dataStart));
+  state.fileSize = Math.max(...levels.map(l => l.dataEnd));
+  smallest = levels[levels.length - 1];
+
+  state.wanted.push([0, state.headerEnd]);
+  $("fsTxt").textContent = fmtB(state.fileSize);
+  if (IS_CUSTOM) {
+    $("pageTitle").textContent = `One file, ${fmtB(state.fileSize)}, zero downloads`;
+    $("ledeP").innerHTML =
+      `<b>${FILE_NAME}</b> is <b>one single ${fmtB(state.fileSize)} file</b> (a Cloud-Optimized
+       GeoTIFF) ${LOCAL_FILE ? "on your disk, served over local HTTP" : "on a public server"}.
+       Pan and zoom — the viewer fetches <b>only the pieces it needs</b>, and they light up in
+       the stack on the right. Every number is a real request.` +
+      (grayMode ? " Single-band data, shown as stretched grayscale." : "");
+    $("advFile").textContent = FILE_NAME;
+    $("jumpVenice").textContent = "Zoom in close";
+  }
+  buildAdvStatics();
+  for (const e of state.log) { e.what = classify(e.spans); e.waste = wasteOf(e.spans); }
+  markHits(state.ranges);
+  narrate(`📑 First stop: the <b>table of contents</b> at the front of the file — a few KB that
+           say where every piece lives. No picture yet.`);
+
+  initViewer();
+  uiDirty = true;
+}
+
+/* ---------- 4. the image viewer (plain canvas, pan + zoom) ---------- */
+const canvas = $("viewer"), ctx = canvas.getContext("2d");
+const pyr = $("pyr"), pctx = pyr.getContext("2d");
+const view = { scale: 0.05, tx: 0, ty: 0, min: 0.02, max: 3 };
+const tileCache = new Map();     // "f/c/r" -> {cnv,x0,y0,level}
+const pendingTiles = new Set();
+const flashes = [];              // {lv,col,row,at}
+let queue = [], active = 0, uiDirty = true, backdrop = null;
+let utmToPx = null, activeLevel = null;
+let hover = null, pyrGeom = null;    // cross-view hover: {lv, tiles:[t]} or {contents:true}
+
+const tip = document.createElement("div");
+tip.id = "hoverTip"; document.body.appendChild(tip);
+function setHover(h, x, y, html) {
+  hover = h; uiDirty = true;
+  if (h && html) {
+    tip.style.display = "block"; tip.innerHTML = html;
+    tip.style.left = Math.min(x + 14, innerWidth - tip.offsetWidth - 8) + "px";
+    tip.style.top = (y + 16) + "px";
+  } else tip.style.display = "none";
+}
+function tileInfo(lv, t) {
+  const c = t % lv.cols, r = Math.floor(t / lv.cols);
+  const key = lv.factor + "/" + c + "/" + r;
+  const st = pendingTiles.has(key) ? "downloading…" : lv.hit.has(t) ? "fetched ✓" : "not fetched yet";
+  return `<b style="color:${lv.color}">${lv.name.toLowerCase()}</b> · tile ${c},${r} · ${fmtB(lv.counts[t])} · ${st}`;
+}
+
+function initViewer() {
+  resizeAll();
+  fitFull(false);
+  try {
+    const img = state.levels[0].img;
+    const [ox, oy] = img.getOrigin(), [rx, ry] = img.getResolution();
+    const epsg = img.geoKeys && img.geoKeys.ProjectedCSTypeGeoKey;
+    if (epsg) {
+      const def = "+proj=utm +zone=" + (epsg % 100) + (epsg >= 32701 ? " +south" : "") + " +datum=WGS84 +units=m +no_defs";
+      utmToPx = (lon, lat) => {
+        const [e, n] = proj4("EPSG:4326", def, [lon, lat]);
+        return [(e - ox) / rx, (n - oy) / ry];
+      };
+    }
+  } catch (e) { console.warn("no geo jump:", e); }
+  viewerReady = true;
+  requestAnimationFrame(frame);
+  scheduleTiles();
+}
+
+function sizeCanvas(c, cctx) {
+  const r = c.parentElement.getBoundingClientRect();
+  const dpr = devicePixelRatio || 1;
+  c.width = r.width * dpr; c.height = r.height * dpr;
+  cctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  c._w = r.width; c._h = r.height;
+}
+function resizeAll() {
+  sizeCanvas(canvas, ctx);
+  sizeCanvas(pyr, pctx);
+  uiDirty = true;
+}
+new ResizeObserver(() => { resizeAll(); if (viewerReady) { fitClamp(); scheduleTilesDebounced(); } })
+  .observe($("viewerWrap"));
+new ResizeObserver(() => { sizeCanvas(pyr, pctx); uiDirty = true; }).observe($("pyrWrap"));
+
+function fitScale() {
+  const full = state.levels[0];
+  return Math.min(canvas._w / full.w, canvas._h / full.h) * 0.98;
+}
+function fitFull(animate) {
+  const full = state.levels[0], s = fitScale();
+  view.min = s;
+  const tx = (canvas._w - full.w * s) / 2, ty = (canvas._h - full.h * s) / 2;
+  animate ? flyTo(s, tx, ty) : Object.assign(view, { scale: s, tx, ty });
+}
+function fitClamp() { view.min = fitScale(); clampView(); }
+
+/* keep the photo near the frame, with ~28% breathing room past the edges */
+function clampView() {
+  const full = state.levels[0];
+  if (!full) return;
+  const iw = full.w * view.scale, ih = full.h * view.scale;
+  const mX = canvas._w * 0.28, mY = canvas._h * 0.28;
+  let lo = canvas._w - iw - mX, hi = mX;
+  view.tx = lo > hi ? (canvas._w - iw) / 2 : Math.min(hi, Math.max(lo, view.tx));
+  lo = canvas._h - ih - mY; hi = mY;
+  view.ty = lo > hi ? (canvas._h - ih) / 2 : Math.min(hi, Math.max(lo, view.ty));
+}
+
+function currentLevel() {
+  // smallest level whose resolution is still sharp enough for the current zoom
+  for (let i = state.levels.length - 1; i >= 0; i--)
+    if (view.scale * state.levels[i].factor <= 1.5) return state.levels[i];
+  return state.levels[0];
+}
+
+function visibleTiles(lv) {
+  const f = lv.factor, out = [];
+  const x0 = Math.max(0, Math.floor((-view.tx / view.scale) / f / lv.tw));
+  const y0 = Math.max(0, Math.floor((-view.ty / view.scale) / f / lv.th));
+  const x1 = Math.min(lv.cols - 1, Math.floor(((canvas._w - view.tx) / view.scale) / f / lv.tw));
+  const y1 = Math.min(lv.rows - 1, Math.floor(((canvas._h - view.ty) / view.scale) / f / lv.th));
+  for (let r = y0; r <= y1; r++) for (let c = x0; c <= x1; c++) out.push([c, r]);
+  const cc = (x0 + x1) / 2, cr = (y0 + y1) / 2;
+  out.sort((a, b) => (Math.abs(a[0]-cc)+Math.abs(a[1]-cr)) - (Math.abs(b[0]-cc)+Math.abs(b[1]-cr)));
+  return out;
+}
+
+function scheduleTiles() {
+  if (!viewerReady) return;
+  const lv = currentLevel();
+  queue = [];
+  for (const [c, r] of visibleTiles(lv)) {
+    const key = lv.factor + "/" + c + "/" + r;
+    if (!tileCache.has(key) && !pendingTiles.has(key)) queue.push([lv, c, r]);
+  }
+  pump();
+  updateLevelIndicators(lv);
+}
+
+function pump() {
+  while (active < 4 && queue.length) {
+    const [lv, c, r] = queue.shift();
+    loadTile(lv, c, r);
+  }
+}
+
+async function loadTile(lv, col, row) {
+  const key = lv.factor + "/" + col + "/" + row;
+  if (tileCache.has(key) || pendingTiles.has(key)) return;
+  pendingTiles.add(key); active++;
+  uiDirty = true;
+  const ti = row * lv.cols + col;
+  state.wanted.push([lv.offsets[ti], lv.offsets[ti] + lv.counts[ti]]);
+  try {
+    const x0 = col * lv.tw, y0 = row * lv.th;
+    const x1 = Math.min(x0 + lv.tw, lv.w), y1 = Math.min(y0 + lv.th, lv.h);
+    const data = await lv.img.readRasters({ window: [x0, y0, x1, y1], interleave: true, pool });
+    const w = x1 - x0, h = y1 - y0;
+    const cnv = document.createElement("canvas"); cnv.width = w; cnv.height = h;
+    const c2 = cnv.getContext("2d"), id = c2.createImageData(w, h);
+    const spp = data.length / (w * h);
+    const direct = data instanceof Uint8Array && spp >= 3;   // 8-bit RGB: no conversion
+    if (!direct && !stretch) stretch = computeStretch(data);
+    const s8 = v => Math.max(0, Math.min(255, Math.round((v - stretch.lo) / (stretch.hi - stretch.lo) * 255)));
+    for (let p = 0, q = 0; p < w * h; p++, q += spp) {
+      if (direct) {
+        id.data[p*4] = data[q]; id.data[p*4+1] = data[q+1]; id.data[p*4+2] = data[q+2]; id.data[p*4+3] = 255;
+      } else if (spp >= 3) {
+        id.data[p*4] = s8(data[q]); id.data[p*4+1] = s8(data[q+1]); id.data[p*4+2] = s8(data[q+2]);
+        id.data[p*4+3] = 255;
+      } else {
+        const g = s8(data[q]);
+        id.data[p*4] = g; id.data[p*4+1] = g; id.data[p*4+2] = g;
+        id.data[p*4+3] = Number.isFinite(data[q]) ? 255 : 0;
+      }
+    }
+    c2.putImageData(id, 0, 0);
+    tileCache.set(key, { cnv, x0, y0, lv, col, row });
+    if (tileCache.size > 260) tileCache.delete(tileCache.keys().next().value);
+    flashes.push({ lv, col, row, at: performance.now() });
+    if (lv === smallest) maybeBuildBackdrop();
+    if (!$("loadingOverlay").classList.contains("gone")) $("loadingOverlay").classList.add("gone");
+  } catch (e) { console.warn("tile failed", key, e); }
+  pendingTiles.delete(key); active--;
+  uiDirty = true;
+  pump();
+}
+
+function maybeBuildBackdrop() {
+  for (let r = 0; r < smallest.rows; r++) for (let c = 0; c < smallest.cols; c++)
+    if (!tileCache.has(smallest.factor + "/" + c + "/" + r)) return;
+  const b = document.createElement("canvas"); b.width = smallest.w; b.height = smallest.h;
+  const bc = b.getContext("2d");
+  for (const t of tileCache.values()) if (t.lv === smallest) bc.drawImage(t.cnv, t.x0, t.y0);
+  backdrop = b;
+}
+
+/* draw loop — keeps animating while anything is in flight (blinking) */
+function frame(now) {
+  if (uiDirty || flashes.length || pendingTiles.size) {
+    draw(now); drawPyramid(now); syncCounters();
+    uiDirty = false;
+  }
+  requestAnimationFrame(frame);
+}
+
+const blinkA = now => 0.45 + 0.4 * Math.sin(now / 140);
+
+function draw(now) {
+  ctx.clearRect(0, 0, canvas._w, canvas._h);
+  const lv = currentLevel(), s = view.scale, full = state.levels[0];
+  if (backdrop) {
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(backdrop, view.tx, view.ty, full.w * s, full.h * s);
+  }
+  // progressive: draw every cached level coarse -> fine down to the current one
+  ctx.imageSmoothingEnabled = s * lv.factor < 1.05;
+  for (let i = state.levels.length - 1; i >= 0; i--) {
+    const l = state.levels[i];
+    if (l.factor < lv.factor) break;
+    for (const t of tileCache.values()) {
+      if (t.lv !== l) continue;
+      const f = l.factor;
+      const x = view.tx + t.x0 * f * s, y = view.ty + t.y0 * f * s;
+      const w = t.cnv.width * f * s, h = t.cnv.height * f * s;
+      if (x + w < 0 || y + h < 0 || x > canvas._w || y > canvas._h) continue;
+      ctx.drawImage(t.cnv, x, y, w, h);
+    }
+  }
+  // tile borders of the current level: blink while downloading, solid when done
+  const f = lv.factor, ts = lv.tw * f * s;
+  const c0 = Math.max(0, Math.floor(-view.tx / ts)), r0 = Math.max(0, Math.floor(-view.ty / ts));
+  const c1 = Math.min(lv.cols - 1, Math.floor((canvas._w - view.tx) / ts));
+  const r1 = Math.min(lv.rows - 1, Math.floor((canvas._h - view.ty) / ts));
+  for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
+    const key = lv.factor + "/" + c + "/" + r;
+    const x = view.tx + c * ts, y = view.ty + r * ts;
+    const w = Math.min(lv.tw, lv.w - c * lv.tw) * f * s;
+    const h = Math.min(lv.th, lv.h - r * lv.th) * f * s;
+    if (pendingTiles.has(key)) {
+      ctx.strokeStyle = lv.color; ctx.globalAlpha = blinkA(now); ctx.lineWidth = 3;
+      ctx.strokeRect(x + 1.5, y + 1.5, w - 3, h - 3);
+      ctx.globalAlpha = blinkA(now) * 0.15; ctx.fillStyle = lv.color; ctx.fillRect(x, y, w, h);
+      ctx.globalAlpha = 1;
+    } else if (tileCache.has(key)) {
+      ctx.strokeStyle = lv.color; ctx.globalAlpha = 0.85; ctx.lineWidth = 1.5;
+      ctx.strokeRect(x + 0.75, y + 0.75, w - 1.5, h - 1.5);
+      ctx.globalAlpha = 1;
+    } else {
+      ctx.strokeStyle = "rgba(255,255,255,.14)"; ctx.lineWidth = 1;
+      ctx.strokeRect(x + .5, y + .5, w - 1, h - 1);
+    }
+  }
+  // the edge of the photo, always visible
+  ctx.strokeStyle = "rgba(232,226,212,.65)"; ctx.lineWidth = 2;
+  ctx.strokeRect(view.tx, view.ty, full.w * s, full.h * s);
+  // cross-view hover highlight
+  if (hover && hover.lv) {
+    const hl = hover.lv, hf = hl.factor;
+    for (const t of hover.tiles) {
+      const c = t % hl.cols, rr = Math.floor(t / hl.cols);
+      const x = view.tx + c * hl.tw * hf * s, y = view.ty + rr * hl.th * hf * s;
+      const w = Math.min(hl.tw, hl.w - c * hl.tw) * hf * s;
+      const h = Math.min(hl.th, hl.h - rr * hl.th) * hf * s;
+      ctx.strokeStyle = "rgba(255,255,255,.95)"; ctx.lineWidth = 4.5; ctx.strokeRect(x, y, w, h);
+      ctx.strokeStyle = "#28231a"; ctx.lineWidth = 2; ctx.strokeRect(x, y, w, h);
+      ctx.fillStyle = "rgba(255,255,255,.14)"; ctx.fillRect(x, y, w, h);
+    }
+  }
+  // brief flash fill on completion
+  for (let i = flashes.length - 1; i >= 0; i--) {
+    const fl = flashes[i], age = (now - fl.at) / 800;
+    if (age >= 1) { flashes.splice(i, 1); continue; }
+    const ff = fl.lv.factor;
+    const x = view.tx + fl.col * fl.lv.tw * ff * s, y = view.ty + fl.row * fl.lv.th * ff * s;
+    const w = Math.min(fl.lv.tw, fl.lv.w - fl.col * fl.lv.tw) * ff * s;
+    const h = Math.min(fl.lv.th, fl.lv.h - fl.row * fl.lv.th) * ff * s;
+    ctx.globalAlpha = (1 - age) * 0.25; ctx.fillStyle = fl.lv.color; ctx.fillRect(x, y, w, h);
+    ctx.globalAlpha = 1;
+  }
+}
+
+function updateLevelIndicators(lv) {
+  activeLevel = lv;
+  $("levelChip").querySelector(".swatch").style.background = lv.color;
+  const res = res0 > 0.05 && res0 < 5e5
+    ? (Math.round(res0 * lv.factor * 10) / 10) + " m per pixel"
+    : "1/" + Math.round(lv.factor) + " size";
+  $("levelChipText").textContent = "showing: " + lv.name.toLowerCase() + " (" + res + ")";
+}
+
+/* ---------- the isometric stack (the hero) ---------- */
+function isoQuad(cx, cy, W, H, u0, v0, u1, v1) {
+  // map normalized image coords (u,v in 0..1) onto the level's diamond
+  const pt = (u, v) => [cx + (u - v) * W / 2, cy + (u + v - 1) * H / 2];
+  return [pt(u0, v0), pt(u1, v0), pt(u1, v1), pt(u0, v1)];
+}
+function pathQuad(q) {
+  pctx.beginPath();
+  pctx.moveTo(q[0][0], q[0][1]);
+  for (let i = 1; i < 4; i++) pctx.lineTo(q[i][0], q[i][1]);
+  pctx.closePath();
+}
+
+function drawPyramid(now) {
+  if (!state.levels.length || !pyr._w) return;
+  const W = pyr._w, H = pyr._h;
+  pctx.clearRect(0, 0, W, H);
+  const n = state.levels.length;
+  const dW = Math.min(W * 0.52, 360);            // diamond width (same for all levels!)
+  const dH = dW / 3.2;                           // flattened tilt: layers clear each other
+  const slabH = dH * 0.24;
+  const padTop = slabH + 26, padBot = 12;
+  const span = H - padTop - padBot - dH;
+  const gap = n > 1 ? span / (n - 1) : 0;
+  const cx = W * 0.56;
+  // ordered top(smallest) -> bottom(sharpest)
+  const ordered = [...state.levels].sort((a, b) => a.w - b.w);
+  const centers = ordered.map((lv, i) => padTop + dH / 2 + i * gap);
+  pyrGeom = { cx, dW, dH, list: ordered.map((lv, i) => ({ lv, cy: centers[i] })) };
+
+  // viewport footprint in normalized image coords
+  const full = state.levels[0];
+  let u0 = (-view.tx / view.scale) / full.w, v0 = (-view.ty / view.scale) / full.h;
+  let u1 = ((canvas._w - view.tx) / view.scale) / full.w, v1 = ((canvas._h - view.ty) / view.scale) / full.h;
+  u0 = Math.max(0, Math.min(1, u0)); v0 = Math.max(0, Math.min(1, v0));
+  u1 = Math.max(0, Math.min(1, u1)); v1 = Math.max(0, Math.min(1, v1));
+
+  // table of contents slab above the stack
+  const tocQ = isoQuad(cx, slabH / 2 + 8, dW * 0.24, slabH, 0, 0, 1, 1);
+  pathQuad(tocQ);
+  const gold = getComputedStyle(document.documentElement).getPropertyValue("--gold").trim();
+  pctx.fillStyle = gold; pctx.globalAlpha = state.contentsHit ? 0.9 : 0.15; pctx.fill();
+  pctx.globalAlpha = 0.8; pctx.strokeStyle = gold; pctx.lineWidth = 1; pctx.stroke();
+  pctx.globalAlpha = 1;
+  pctx.fillStyle = "#7b7260"; pctx.font = "11px -apple-system,sans-serif"; pctx.textAlign = "left";
+  pctx.fillText("📑 table of contents — " + fmtB(state.headerEnd), cx + dW * 0.14, slabH / 2 + 12);
+
+  // frustum connectors between viewport quads (drawn beneath the layers)
+  for (const [dash, colr, wd] of [[[], "rgba(255,253,248,.75)", 2.5], [[4, 4], "rgba(40,35,26,.30)", 1]]) {
+    pctx.setLineDash(dash); pctx.strokeStyle = colr; pctx.lineWidth = wd;
+    for (let i = 0; i < n - 1; i++) {
+      const qa = isoQuad(cx, centers[i], dW, dH, u0, v0, u1, v1);
+      const qb = isoQuad(cx, centers[i + 1], dW, dH, u0, v0, u1, v1);
+      for (let k = 0; k < 4; k++) {
+        pctx.beginPath(); pctx.moveTo(qa[k][0], qa[k][1]); pctx.lineTo(qb[k][0], qb[k][1]); pctx.stroke();
+      }
+    }
+  }
+  pctx.setLineDash([]);
+
+  // layers, top to bottom — the active (or hovered) layer at full strength,
+  // the others faded so dense fills stay readable
+  const focusLv = (hover && hover.lv) || activeLevel;
+  ordered.forEach((lv, i) => {
+    const cy = centers[i];
+    const isActive = lv === activeLevel;
+    const dim = focusLv && lv !== focusLv ? 0.32 : 1;
+    // cells
+    for (let r = 0; r < lv.rows; r++) for (let c = 0; c < lv.cols; c++) {
+      const t = r * lv.cols + c;
+      // real tile proportions: the last row/column of every level is slimmer
+      const q = isoQuad(cx, cy, dW, dH,
+        c * lv.tw / lv.w, r * lv.th / lv.h,
+        Math.min((c + 1) * lv.tw, lv.w) / lv.w, Math.min((r + 1) * lv.th, lv.h) / lv.h);
+      pathQuad(q);
+      const key = lv.factor + "/" + c + "/" + r;
+      if (pendingTiles.has(key)) {
+        pctx.fillStyle = lv.color; pctx.globalAlpha = blinkA(now) * 0.85 * dim; pctx.fill();
+        pctx.globalAlpha = blinkA(now) * dim; pctx.strokeStyle = lv.color; pctx.lineWidth = 1.6; pctx.stroke();
+      } else if (lv.hit.has(t)) {
+        pctx.fillStyle = lv.color; pctx.globalAlpha = 0.8 * dim; pctx.fill();
+        pctx.globalAlpha = 0.9 * dim; pctx.strokeStyle = lv.color; pctx.lineWidth = 0.8; pctx.stroke();
+      } else {
+        pctx.fillStyle = lv.color; pctx.globalAlpha = 0.05 * dim; pctx.fill();
+        pctx.globalAlpha = 0.28 * dim; pctx.strokeStyle = lv.color; pctx.lineWidth = 0.6; pctx.stroke();
+      }
+      pctx.globalAlpha = 1;
+    }
+    // level outline
+    pathQuad(isoQuad(cx, cy, dW, dH, 0, 0, 1, 1));
+    pctx.strokeStyle = lv.color; pctx.lineWidth = isActive ? 2.6 : 1.1;
+    pctx.globalAlpha = (isActive ? 1 : 0.55) * (lv === focusLv ? 1 : 0.6); pctx.stroke(); pctx.globalAlpha = 1;
+    // viewport footprint on this level — white underlay keeps it readable on saturated fills
+    pathQuad(isoQuad(cx, cy, dW, dH, u0, v0, u1, v1));
+    pctx.strokeStyle = "rgba(255,253,248,.9)"; pctx.lineWidth = (isActive ? 2 : 1) + 2;
+    pctx.globalAlpha = isActive ? 0.9 : 0.45; pctx.stroke();
+    pctx.strokeStyle = "rgba(40,35,26,.85)"; pctx.lineWidth = isActive ? 2 : 1;
+    pctx.globalAlpha = isActive ? 0.95 : 0.5; pctx.stroke(); pctx.globalAlpha = 1;
+
+    // labels on the left
+    const lx = cx - dW / 2 - 14;
+    pctx.textAlign = "right";
+    pctx.fillStyle = lv.color; pctx.font = "600 14.5px Georgia,serif";
+    pctx.fillText(lv.name, lx, cy - 14);
+    pctx.fillStyle = "#7b7260"; pctx.font = "11px -apple-system,sans-serif";
+    pctx.fillText(lv.offsets.length + " tiles · " + fmtB(lv.totalBytes), lx, cy + 1);
+    pctx.fillStyle = "#28231a"; pctx.font = "600 11.5px -apple-system,sans-serif";
+    pctx.fillText(lv.hit.size + " / " + lv.offsets.length + " fetched", lx, cy + 16);
+    if (isActive) {
+      pctx.fillStyle = lv.color; pctx.font = "700 9.5px -apple-system,sans-serif";
+      pctx.fillText("ON THE MAP NOW", lx, cy + 30);
+    }
+    pctx.textAlign = "left";
+  });
+
+  // cross-view hover highlight
+  if (hover && hover.lv) {
+    const idx = ordered.indexOf(hover.lv);
+    if (idx >= 0) {
+      const cy = centers[idx], lv = hover.lv;
+      for (const t of hover.tiles) {
+        const c = t % lv.cols, r = Math.floor(t / lv.cols);
+        pathQuad(isoQuad(cx, cy, dW, dH,
+          c * lv.tw / lv.w, r * lv.th / lv.h,
+          Math.min((c + 1) * lv.tw, lv.w) / lv.w, Math.min((r + 1) * lv.th, lv.h) / lv.h));
+        pctx.fillStyle = "rgba(255,255,255,.3)"; pctx.fill();
+        pctx.strokeStyle = "#fffdf8"; pctx.lineWidth = 4; pctx.stroke();
+        pctx.strokeStyle = "#28231a"; pctx.lineWidth = 1.8; pctx.stroke();
+      }
+    }
+  }
+  if (hover && hover.contents) {
+    pathQuad(tocQ);
+    pctx.strokeStyle = "#28231a"; pctx.lineWidth = 2; pctx.stroke();
+  }
+}
+
+/* interactions */
+let drag = null, lastLevel = null;
+canvas.addEventListener("pointerdown", e => {
+  drag = { x: e.clientX, y: e.clientY }; canvas.setPointerCapture(e.pointerId);
+  canvas.classList.add("dragging");
+});
+canvas.addEventListener("pointermove", e => {
+  if (!drag) return;
+  view.tx += e.clientX - drag.x; view.ty += e.clientY - drag.y;
+  drag = { x: e.clientX, y: e.clientY };
+  clampView();
+  uiDirty = true; scheduleTilesDebounced();
+});
+canvas.addEventListener("pointerup", () => { drag = null; canvas.classList.remove("dragging"); scheduleTiles(); });
+canvas.addEventListener("mousemove", e => {
+  if (drag || !state.levels.length) return;
+  const r = canvas.getBoundingClientRect();
+  const ix = (e.clientX - r.left - view.tx) / view.scale, iy = (e.clientY - r.top - view.ty) / view.scale;
+  const full = state.levels[0];
+  if (ix < 0 || iy < 0 || ix >= full.w || iy >= full.h) { setHover(null); return; }
+  const lv = currentLevel();
+  const c = Math.min(lv.cols - 1, Math.floor(ix / (lv.factor * lv.tw)));
+  const rr = Math.min(lv.rows - 1, Math.floor(iy / (lv.factor * lv.th)));
+  const t = rr * lv.cols + c;
+  setHover({ lv, tiles: [t] });     // highlight everywhere, but no popup over the photo
+});
+canvas.addEventListener("mouseleave", () => setHover(null));
+
+/* pyramid hover — invert the iso projection, topmost layer wins */
+pyr.addEventListener("mousemove", e => {
+  if (!pyrGeom) return;
+  const r = pyr.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+  for (let i = pyrGeom.list.length - 1; i >= 0; i--) {
+    const { lv, cy } = pyrGeom.list[i];
+    const u = ((x - pyrGeom.cx) / (pyrGeom.dW / 2) + (y - cy) / (pyrGeom.dH / 2) + 1) / 2;
+    const v = ((y - cy) / (pyrGeom.dH / 2) - (x - pyrGeom.cx) / (pyrGeom.dW / 2) + 1) / 2;
+    if (u >= 0 && u < 1 && v >= 0 && v < 1) {
+      const c = Math.min(lv.cols - 1, Math.floor(u * lv.w / lv.tw));
+      const rr = Math.min(lv.rows - 1, Math.floor(v * lv.h / lv.th));
+      const t = rr * lv.cols + c;
+      setHover({ lv, tiles: [t] }, e.clientX, e.clientY, tileInfo(lv, t));
+      return;
+    }
+  }
+  setHover(null);
+});
+pyr.addEventListener("mouseleave", () => setHover(null));
+canvas.addEventListener("wheel", e => {
+  e.preventDefault();
+  const r = canvas.getBoundingClientRect();
+  zoomAt(e.clientX - r.left, e.clientY - r.top, Math.exp(-e.deltaY * 0.0016));
+}, { passive: false });
+$("zin").onclick = () => zoomAt(canvas._w / 2, canvas._h / 2, 1.7);
+$("zout").onclick = () => zoomAt(canvas._w / 2, canvas._h / 2, 1 / 1.7);
+
+function zoomAt(px, py, k) {
+  const ns = Math.max(view.min, Math.min(view.max, view.scale * k));
+  const kk = ns / view.scale;
+  view.tx = px - (px - view.tx) * kk; view.ty = py - (py - view.ty) * kk;
+  view.scale = ns;
+  clampView();
+  uiDirty = true; scheduleTilesDebounced();
+  const lv = currentLevel();
+  if (lv !== lastLevel) {
+    if (lastLevel && lv.factor < lastLevel.factor)
+      narrate(`🔍 Zoomed in — the ${lastLevel.name.toLowerCase()} version isn't sharp enough here,
+               so the viewer moves down a layer to <b>${lv.name.toLowerCase()}</b> and fetches its pieces.`);
+    lastLevel = lv;
+    updateLevelIndicators(lv);
+  }
+}
+
+let debT = null, lastSched = 0;
+function scheduleTilesDebounced() {
+  // throttle: fire immediately if it's been a moment, and always trail —
+  // so tiles start fetching DURING a pan, not only after you stop
+  const now = performance.now();
+  if (now - lastSched > 120) { lastSched = now; scheduleTiles(); }
+  clearTimeout(debT); debT = setTimeout(() => { lastSched = performance.now(); scheduleTiles(); }, 130);
+}
+
+/* smooth fly-to for the jump buttons */
+let flyAnim = null;
+function flyTo(scale, tx, ty) {
+  const from = { s: view.scale, tx: view.tx, ty: view.ty }, t0 = performance.now(), dur = 1400;
+  cancelAnimationFrame(flyAnim);
+  const step = now => {
+    const t = Math.min(1, (now - t0) / dur), e = t < .5 ? 2*t*t : 1 - Math.pow(-2*t+2, 2)/2;
+    view.scale = from.s + (scale - from.s) * e;
+    view.tx = from.tx + (tx - from.tx) * e;
+    view.ty = from.ty + (ty - from.ty) * e;
+    clampView();
+    uiDirty = true; scheduleTilesDebounced();
+    if (t < 1) flyAnim = requestAnimationFrame(step); else scheduleTiles();
+  };
+  flyAnim = requestAnimationFrame(step);
+}
+$("jumpFull").onclick = () => { fitFull(true); narrate("🌍 Back to the whole photo — already cached, so almost nothing new to fetch."); };
+$("jumpVenice").onclick = () => {
+  let px, py;
+  if (!IS_CUSTOM && utmToPx) [px, py] = utmToPx(12.3358, 45.4343);   // Venice historic centre
+  else { px = state.levels[0].w / 2; py = state.levels[0].h / 2; }
+  const s = 1.0;
+  flyTo(s, canvas._w / 2 - px * s, canvas._h / 2 - py * s);
+  narrate(`🛰 Flying ${IS_CUSTOM ? "in close" : "to Venice"} at full sharpness — watch the
+           <b>bottom layer</b> of the stack: only the handful of tiles under the outlined
+           patch get fetched.`);
+};
+
+/* ---------- 5. counters + narration ---------- */
+function syncCounters() {
+  $("bigCount").textContent = fmtB(state.bytes);
+  const pct = state.fileSize ? (100 * state.bytes / state.fileSize) : 0;
+  $("pct").textContent = pct < 0.1 ? pct.toFixed(2) + "%" : pct.toFixed(1) + "%";
+  $("reqCount").textContent = state.reqs + " request" + (state.reqs === 1 ? "" : "s") + " to the server";
+  drawStrip();
+  syncAdvanced();
+}
+
+const narrDiv = $("narration");
+let narrAgg = { t: null, byLevel: new Map(), contents: 0 };
+function narrate(html) {
+  const d = document.createElement("div");
+  d.className = "msg"; d.innerHTML = html;
+  narrDiv.prepend(d);
+  while (narrDiv.children.length > 2) narrDiv.lastChild.remove();
+}
+function narrateFromRequest(entry) {
+  for (const h of entry.what) {
+    if (h.kind === "contents") narrAgg.contents += entry.n;
+    else {
+      const cur = narrAgg.byLevel.get(h.lv) || { n: 0, tiles: new Set() };
+      cur.n += entry.n; h.tiles.forEach(t => cur.tiles.add(t));
+      narrAgg.byLevel.set(h.lv, cur);
+    }
+  }
+  clearTimeout(narrAgg.t);
+  narrAgg.t = setTimeout(() => {
+    for (const [lv, v] of narrAgg.byLevel) {
+      const pieces = v.tiles.size || Math.max(1, Math.round(v.n / (lv.totalBytes / lv.offsets.length)));
+      narrate(`🧩 Fetched <b>${pieces} piece${pieces === 1 ? "" : "s"}</b> of the
+               <span style="color:${lv.color};font-weight:600">${lv.name.toLowerCase()}</span> layer
+               — <span class="sz">${fmtB(v.n)}</span>, not the whole file.`);
+    }
+    narrAgg = { t: null, byLevel: new Map(), contents: 0 };
+  }, 650);
+}
+
+/* ---------- 6. advanced section ---------- */
+let advOpen = false;
+$("advToggle").onclick = () => {
+  advOpen = !advOpen;
+  $("advanced").classList.toggle("open", advOpen);
+  $("advToggle").textContent = advOpen ? "Nerdy details ▴" : "Nerdy details ▾";
+  if (advOpen) { sizeAnatomy(); uiDirty = true; $("advanced").scrollIntoView({ behavior: "smooth" }); }
+};
+new ResizeObserver(() => { sizeStrip(); uiDirty = true; }).observe($("stripArea"));
+
+const anat = $("anatomy"), actx = anat.getContext("2d");
+let anatomyEntry = null;    // hovered log row; falls back to the latest request
+function sizeAnatomy() {
+  const r = anat.getBoundingClientRect(), dpr = devicePixelRatio || 1;
+  anat.width = r.width * dpr; anat.height = r.height * dpr;
+  actx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  anat._w = r.width; anat._h = r.height;
+}
+function drawAnatomy() {
+  if (!anat._w || !state.fileSize) return;
+  const e = anatomyEntry || state.log[0];
+  const W = anat._w, H = anat._h;
+  actx.clearRect(0, 0, W, H);
+  actx.fillStyle = "#fbf8f0"; actx.fillRect(0, 0, W, H);
+  if (!e || !e.spans.length) { $("anatomyCap").textContent = "–"; return; }
+  const a0 = Math.min(...e.spans.map(sp => sp[0])), b0 = Math.max(...e.spans.map(sp => sp[1]));
+  const w0 = Math.max(0, (Math.floor(a0 / BLOCK) - 2) * BLOCK);
+  const w1 = Math.min(state.fileSize, (Math.ceil(b0 / BLOCK) + 2) * BLOCK);
+  const X = b => (b - w0) / (w1 - w0) * W;
+  // tile layout in this byte neighbourhood
+  actx.textAlign = "center"; actx.font = "10px -apple-system,sans-serif";
+  if (w0 < state.headerEnd) {
+    const gold = getComputedStyle(document.documentElement).getPropertyValue("--gold").trim();
+    actx.fillStyle = gold; actx.globalAlpha = .25;
+    actx.fillRect(X(0), 0, X(Math.min(state.headerEnd, w1)) - X(0), H); actx.globalAlpha = 1;
+  }
+  for (const lv of state.levels) {
+    if (lv.dataEnd <= w0 || lv.dataStart >= w1) continue;
+    for (let t = 0; t < lv.offsets.length; t++) {
+      const o = lv.offsets[t], en = o + lv.counts[t];
+      if (en <= w0 || o >= w1) continue;
+      const x0 = X(Math.max(o, w0)), x1 = X(Math.min(en, w1));
+      actx.fillStyle = lv.color; actx.globalAlpha = .16;
+      actx.fillRect(x0, 0, x1 - x0, H); actx.globalAlpha = 1;
+      actx.strokeStyle = lv.color; actx.globalAlpha = .6; actx.lineWidth = 1;
+      actx.beginPath(); actx.moveTo(X(o), 0); actx.lineTo(X(o), H); actx.stroke(); actx.globalAlpha = 1;
+      if (x1 - x0 > 52) {
+        actx.fillStyle = lv.color;
+        actx.fillText("tile " + (t % lv.cols) + "," + Math.floor(t / lv.cols) +
+                      " · " + fmtB(lv.counts[t]), (x0 + x1) / 2, 12);
+      }
+    }
+  }
+  // block grid
+  actx.strokeStyle = "rgba(40,35,26,.18)"; actx.lineWidth = 1;
+  for (let bb = Math.ceil(w0 / BLOCK) * BLOCK; bb <= w1; bb += BLOCK) {
+    actx.beginPath(); actx.moveTo(X(bb), 16); actx.lineTo(X(bb), H); actx.stroke();
+  }
+  // bytes fetched by EARLIER requests (the cache this request could skip)
+  for (const [ra, rb, ri] of state.ranges) {
+    if (ri >= e.i || rb <= w0 || ra >= w1) continue;
+    actx.fillStyle = "rgba(40,35,26,.20)";
+    actx.fillRect(X(Math.max(ra, w0)), H - 16, X(Math.min(rb, w1)) - X(Math.max(ra, w0)), 10);
+  }
+  // this request
+  for (const [ra, rb] of e.spans) {
+    const x0 = X(ra), x1 = Math.max(X(rb), x0 + 2);
+    actx.fillStyle = "rgba(40,35,26,.78)";
+    actx.fillRect(x0, 24, x1 - x0, H - 48);
+    actx.strokeStyle = "#fffdf8"; actx.lineWidth = 1.5;
+    actx.strokeRect(x0, 24, x1 - x0, H - 48);
+  }
+  actx.textAlign = "left";
+  const kb = BLOCK / 1024;
+  $("anatomyCap").innerHTML =
+    `request <b>#${e.i}</b> · ${e.spans.length} range${e.spans.length > 1 ? "s" : ""} · <b>${fmtB(e.n)}</b>` +
+    ` — dark bar = this request, rounded to the ${kb} KB grid · grey (bottom) = bytes already fetched earlier` +
+    (e.waste ? ` · <b>${fmtB(e.waste)}</b> spilled beyond the wanted tile${e.waste > 0 ? "s" : ""}` : "");
+}
+const strip = $("byteStrip"), sctx = strip.getContext("2d");
+strip.addEventListener("mousemove", e => {
+  if (!state.fileSize || !strip._w) return;
+  const r = strip.getBoundingClientRect();
+  const byte = (e.clientX - r.left) / strip._w * state.fileSize;
+  if (byte < state.headerEnd) {
+    setHover({ contents: true }, e.clientX, e.clientY,
+      `<b style="color:var(--gold)">table of contents</b> · first ${fmtB(state.headerEnd)} of the file`);
+    return;
+  }
+  for (const lv of state.levels) {
+    if (byte < lv.dataStart || byte >= lv.dataEnd) continue;
+    for (let t = 0; t < lv.offsets.length; t++)
+      if (byte >= lv.offsets[t] && byte < lv.offsets[t] + lv.counts[t]) {
+        setHover({ lv, tiles: [t] }, e.clientX, e.clientY, tileInfo(lv, t));
+        return;
+      }
+  }
+  setHover(null);
+});
+strip.addEventListener("mouseleave", () => setHover(null));
+
+$("reqLog").addEventListener("mousemove", e => {
+  const tr = e.target.closest("tr");
+  if (!tr || !tr.dataset.i) { setHover(null); return; }
+  const entry = state.log.find(x => x.i == tr.dataset.i);
+  if (!entry) { setHover(null); return; }
+  anatomyEntry = entry; uiDirty = true;
+  const h = entry.what.find(w => w.kind === "level" && w.tiles.length);
+  if (h) setHover({ lv: h.lv, tiles: h.tiles.slice() }, e.clientX, e.clientY,
+                  describe(entry) + " · " + fmtB(entry.n));
+  else if (entry.what.some(w => w.kind === "contents"))
+    setHover({ contents: true }, e.clientX, e.clientY, "table of contents");
+  else setHover(null);
+});
+$("reqLog").addEventListener("mouseleave", () => { setHover(null); anatomyEntry = null; uiDirty = true; });
+function sizeStrip() {
+  const r = strip.getBoundingClientRect(), dpr = devicePixelRatio || 1;
+  strip.width = r.width * dpr; strip.height = r.height * dpr;
+  sctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  strip._w = r.width; strip._h = r.height;
+}
+function buildAdvStatics() {
+  const lg = $("stripLegend"); lg.innerHTML = "";
+  const add = (color, label) => {
+    const s = document.createElement("span");
+    s.innerHTML = `<span class="swatch" style="background:${color}"></span>${label}`;
+    lg.appendChild(s);
+  };
+  add("var(--gold)", "table of contents (" + fmtB(state.headerEnd) + " — too small to see at this scale)");
+  for (const lv of [...state.levels].sort((a, b) => a.dataStart - b.dataStart))
+    add(lv.color, lv.name.toLowerCase() + " (" + fmtB(lv.totalBytes) + ")");
+  $("advDims").textContent = state.levels[0].w.toLocaleString() + " × " + state.levels[0].h.toLocaleString() + " px";
+  $("advLevels").textContent = state.levels.length + " (each pre-shrunk ×2)";
+  $("curl").textContent = `curl -r 0-${BLOCK - 1} "${COG_URL}" -o header.bin`;
+  $("blockTxt").textContent = (BLOCK / 1024) + " KB";
+  const sel = $("blockSel");
+  sel.innerHTML = BLOCK_CHOICES.map(b =>
+    `<option value="${b}"${b === BLOCK ? " selected" : ""}>${b / 1024} KB${b === 65536 ? " (default)" : ""}</option>`).join("");
+  sel.onchange = () => {
+    const q = new URLSearchParams(location.search);
+    q.set("block", sel.value);
+    location.search = q.toString();
+  };
+}
+function drawStrip() {
+  if (!strip._w || !state.fileSize) return;
+  const W = strip._w, H = strip._h, X = b => b / state.fileSize * W;
+  sctx.clearRect(0, 0, W, H);
+  sctx.fillStyle = "#efe9da"; sctx.fillRect(0, 0, W, H);
+  for (const lv of state.levels) {
+    sctx.fillStyle = lv.color; sctx.globalAlpha = 0.15;
+    sctx.fillRect(X(lv.dataStart), 0, Math.max(1, X(lv.dataEnd) - X(lv.dataStart)), H);
+    sctx.globalAlpha = 1;
+  }
+  for (const [a, b] of state.ranges) {
+    let x0 = X(a), x1 = Math.max(X(b), x0 + 1.5);
+    let col = getComputedStyle(document.documentElement).getPropertyValue("--gold").trim();
+    for (const lv of state.levels) if (a >= lv.dataStart && a < lv.dataEnd) col = lv.color;
+    sctx.fillStyle = col; sctx.fillRect(x0, 4, x1 - x0, H - 8);
+  }
+  sctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--gold").trim();
+  sctx.fillRect(0, 0, 2, H);
+  // cross-view hover highlight
+  if (hover && hover.lv) {
+    for (const t of hover.tiles) {
+      const x0 = X(hover.lv.offsets[t]), x1 = Math.max(X(hover.lv.offsets[t] + hover.lv.counts[t]), x0 + 2.5);
+      sctx.strokeStyle = "#fffdf8"; sctx.lineWidth = 4; sctx.strokeRect(x0, 2, x1 - x0, H - 4);
+      sctx.strokeStyle = "#28231a"; sctx.lineWidth = 1.8; sctx.strokeRect(x0, 2, x1 - x0, H - 4);
+    }
+  }
+  if (hover && hover.contents) {
+    sctx.strokeStyle = "#28231a"; sctx.lineWidth = 1.8; sctx.strokeRect(0, 2, 4, H - 4);
+  }
+  sctx.fillStyle = "rgba(40,35,26,.55)"; sctx.font = "10px ui-monospace,monospace";
+  sctx.textAlign = "left"; sctx.fillText("byte 0", 5, H - 6);
+  sctx.textAlign = "right"; sctx.fillText(fmtB(state.fileSize), W - 5, H - 6); sctx.textAlign = "left";
+}
+function describe(entry) {
+  const parts = [];
+  for (const h of entry.what) {
+    if (h.kind === "contents") parts.push("contents");
+    else parts.push(h.lv.name.toLowerCase() + (h.tiles.length ? " tile" + (h.tiles.length > 1 ? "s ×" + h.tiles.length : " #" + h.tiles[0]) : ""));
+  }
+  return parts.join(" + ") || "—";
+}
+let lastLogReqs = -1;
+function syncAdvanced() {
+  if (!advOpen) return;
+  if (state.reqs !== lastLogReqs) {
+    lastLogReqs = state.reqs;
+    const rows = $("reqRows"); rows.innerHTML = "";
+    for (const e of state.log.slice(0, 120)) {
+      const tr = document.createElement("tr");
+      tr.dataset.i = e.i;
+      const rangeTxt = e.spans.map(([a, b]) => a.toLocaleString() + "–" + (b - 1).toLocaleString()).join(", ");
+      tr.innerHTML = `<td>#${e.i}</td>
+        <td>bytes=${rangeTxt}</td><td>${fmtB(e.n)}</td>
+        <td class="what">${describe(e)}</td>
+        <td>${Math.round(e.ms)} ms</td>`;
+      rows.appendChild(tr);
+    }
+  }
+  $("advBytes").textContent = fmtB(state.bytes) + " (" + state.bytes.toLocaleString() + " B)";
+  let waste = 0;
+  for (const e of state.log) waste += e.waste || 0;
+  $("advWaste").textContent = fmtB(waste) + " (" + (state.bytes ? (100 * waste / state.bytes).toFixed(1) : 0) + "%)";
+  const lat = [...state.latencies].sort((a, b) => a - b);
+  $("advLat").textContent = lat.length ? Math.round(lat[lat.length >> 1]) + " ms" : "—";
+  drawAnatomy();
+}
+
+/* ---------- 7. replay ---------- */
+$("btnReplay").onclick = () => {
+  const q = new URLSearchParams(location.search);
+  state.slow ? q.delete("slow") : q.set("slow", "1");
+  location.search = q.toString();
+};
+if (state.slow) $("btnReplay").textContent = "↺ Start over (normal speed)";
+
+boot().catch(e => {
+  $("loadingText").textContent = "Could not reach the file — " + e.message;
+  console.error(e);
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "name": "Pano Viewer",
+  "description": "360° panorama workbench: import, validate, and browse panoramas; view them as interactive spheres, cube maps, little planets, and more.",
+  "author": { "name": "Aman" },
+  "tags": ["images", "360", "viewer"],
+  "version": "1.0.0",
+  "requires_python": true
+}
