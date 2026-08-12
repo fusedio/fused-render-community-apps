@@ -4,6 +4,6 @@
   "description": "Scan any folder level by level, see what eats your disk, preview files, and clean up safely (delete = move to Trash).",
   "author": { "name": "Sina" },
   "tags": ["system", "cleanup", "macos"],
-  "version": "1.0.0",
+  "version": "1.0.1",
   "requires_python": true
 }

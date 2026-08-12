@@ -1,5 +1,7 @@
 # Invoice Generator
 
+![Client book with the New client dialog open](screenshot.png)
+
 A local invoice manager. Create clients, issue numbered invoices, track
 status, and print. Nothing leaves your machine: every document is a plain
 JSON file on disk, one invoice per file, grouped per client — readable,

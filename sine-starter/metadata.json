@@ -4,6 +4,6 @@
   "description": "The minimal fused-app: a slider, a Python main() that computes a sine wave, and a canvas plot. Copy it to start your own.",
   "author": { "name": "Sina" },
   "tags": ["starter", "example"],
-  "version": "1.0.0",
+  "version": "1.0.1",
   "requires_python": true
 }
