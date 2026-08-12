@@ -4,6 +4,7 @@
   "description": "One photo, 316 MB, zero downloads: pan a huge cloud-optimized GeoTIFF and watch the exact HTTP byte-ranges the browser fetches, live.",
   "author": { "name": "Max" },
   "tags": ["geospatial", "cog", "explainer"],
+  "category": "geospatial",
   "version": "1.0.1",
   "requires_python": true
 }

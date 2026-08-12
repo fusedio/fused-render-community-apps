@@ -4,6 +4,7 @@
   "description": "Local invoice manager: clients, numbered invoice documents, FX reference rates, print-ready output. Pure-stdlib backend, all data as plain JSON on your disk.",
   "author": { "name": "Aman" },
   "tags": ["documents", "business", "invoices"],
+  "category": "productivity",
   "version": "1.0.1",
   "requires_python": true
 }

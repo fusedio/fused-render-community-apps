@@ -25,6 +25,7 @@ SKIP_DIRS = {".git", ".github", "scripts"}
 
 REQUIRED_STR = ("name", "description")
 LIMITS = {"name": 60, "description": 200}
+CATEGORIES = {"geospatial", "productivity", "starters"}
 
 
 def fail(errors: list[str], app: str, msg: str) -> None:
@@ -94,6 +95,9 @@ def validate_app(folder: Path, errors: list[str]) -> dict | None:
         not isinstance(t, str) or t != t.lower() for t in tags
     ):
         fail(errors, slug, 'metadata.json: "tags" must be ≤ 5 lowercase strings')
+        return None
+    if meta.get("category") not in CATEGORIES:
+        fail(errors, slug, f'metadata.json: "category" must be one of {sorted(CATEGORIES)}')
         return None
 
     return {"slug": slug, "size_bytes": total, **meta}

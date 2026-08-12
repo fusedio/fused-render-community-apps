@@ -31,6 +31,7 @@ unique (it's a directory name) and permanent — renaming a folder is a new app.
   "description": "Browse and filter GPS trip parquet files on a map.",
   "author": { "name": "Ada L.", "github": "adal" },
   "tags": ["maps", "parquet"],
+  "category": "geospatial",
   "version": "1.0.0",
   "min_fused_render": "0.4.0",
   "requires_python": true
@@ -45,6 +46,7 @@ unique (it's a directory name) and permanent — renaming a folder is a new app.
 | `author.name` | yes | display name |
 | `author.github` | no | GitHub username; should match the PR author |
 | `tags` | no | ≤ 5 lowercase strings; drive the marketplace filter chips |
+| `category` | yes | exactly one of `geospatial`, `productivity`, `starters` — unlike tags, each app has a single category |
 | `version` | yes | semver, bump on changes |
 | `min_fused_render` | no | oldest fused-render version the app works on |
 | `requires_python` | yes | `true` if the app calls `fused.runPython` |

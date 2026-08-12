@@ -4,6 +4,7 @@
   "description": "Explore Overture Maps data anywhere on Earth: geocode a place, query places/buildings/roads from public S3 parquet via DuckDB, see stats on a Leaflet map.",
   "author": { "name": "Fused team" },
   "tags": ["maps", "geospatial", "duckdb", "overture"],
+  "category": "geospatial",
   "version": "1.0.1",
   "requires_python": true
 }
