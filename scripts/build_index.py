@@ -42,7 +42,7 @@ def validate_app(folder: Path, errors: list[str]) -> dict | None:
         fail(errors, slug, "must contain exactly one top-level .html, named index.html")
         return None
 
-    for name in ("readme.md", "icon.svg", "metadata.json"):
+    for name in ("readme.md", "preview.png", "metadata.json"):
         if not (folder / name).is_file():
             fail(errors, slug, f"missing required file {name}")
             return None

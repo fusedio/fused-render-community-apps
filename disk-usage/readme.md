@@ -1,6 +1,6 @@
 # Disk Space Visualizer
 
-![Treemap of a scanned folder with proportional tiles per subfolder](screenshot.png)
+![Treemap of a scanned folder with proportional tiles per subfolder](preview.png)
 
 Find out what's eating your disk. Scans one directory level at a time
 (`du`-based, fast even on big folders), shows subfolder and file sizes as

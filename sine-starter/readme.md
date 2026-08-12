@@ -1,6 +1,6 @@
 # Sine Starter
 
-![Frequency slider bound to fused.params driving a canvas sine plot](screenshot.png)
+![Frequency slider bound to fused.params driving a canvas sine plot](preview.png)
 
 The smallest useful fused-app — a working example of the whole authoring
 model in two files:

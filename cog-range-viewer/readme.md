@@ -1,6 +1,6 @@
 # COG Range Viewer
 
-![Pan/zoom map beside the five-layer tile pyramid, with live byte counts](screenshot.png)
+![Pan/zoom map beside the five-layer tile pyramid, with live byte counts](preview.png)
 
 **One photo, 316 MB, zero downloads.** An interactive explainer of why
 cloud-optimized GeoTIFFs work: pan and zoom a 316 MB public Sentinel-2

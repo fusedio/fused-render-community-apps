@@ -1,6 +1,6 @@
 # Invoice Generator
 
-![Client book with the New client dialog open](screenshot.png)
+![Client book with the New client dialog open](preview.png)
 
 A local invoice manager. Create clients, issue numbered invoices, track
 status, and print. Nothing leaves your machine: every document is a plain

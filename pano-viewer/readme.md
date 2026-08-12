@@ -1,6 +1,6 @@
 # Pano Viewer
 
-![Sample panorama in the interactive 360° sphere view, library sidebar on the left](screenshot.png)
+![Sample panorama in the interactive 360° sphere view, library sidebar on the left](preview.png)
 
 A panoramic-image workbench for fused-render: import panoramas in any
 Pillow-readable format (JPEG/PNG/WebP/TIFF/BMP/…), validate that they really

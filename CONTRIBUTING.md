@@ -9,7 +9,7 @@
 3. Add the three required files next to your `index.html`:
    - `readme.md` — what the app does, how to use it, screenshots welcome
      (relative image links work).
-   - `icon.svg` — a square icon.
+   - `preview.png` — a preview image of the app.
    - `metadata.json` — see the schema below.
 4. Fork this repo, copy your folder in at the repo root, open a PR.
 
@@ -54,7 +54,7 @@ Unknown keys are ignored (forward-lenient).
 ## What CI checks
 
 - exactly one top-level `.html` in the folder, named `index.html`
-- `readme.md`, `icon.svg`, `metadata.json` present and schema-valid
+- `readme.md`, `preview.png`, `metadata.json` present and schema-valid
 - slug matches the pattern; no symlinks in the folder
 - folder ≤ 20 MB, no single file > 10 MB
 - no obvious absolute local paths in `.html`/`.py` (lint, not a security

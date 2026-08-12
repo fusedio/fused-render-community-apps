@@ -1,6 +1,6 @@
 # Overture Map Explorer
 
-![49k San Francisco POIs queried live from Overture parquet, plotted on a dark Leaflet map](screenshot.png)
+![49k San Francisco POIs queried live from Overture parquet, plotted on a dark Leaflet map](preview.png)
 
 Explore [Overture Maps](https://overturemaps.org/) open data anywhere on
 Earth, straight from its public S3 parquet — no account, no download step.

@@ -23,7 +23,7 @@ files.
 <slug>/
 ├── index.html       # entry point (required, exactly one top-level .html)
 ├── readme.md        # shown in the marketplace detail view (required)
-├── icon.svg         # square icon (required)
+├── preview.png      # preview image (required)
 ├── metadata.json    # manifest (required — see CONTRIBUTING.md)
 └── ...              # anything else: .py helpers, assets/, etc.
 ```
