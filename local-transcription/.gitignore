@@ -1,0 +1,5 @@
+*.html.json
+.claude-split.json
+.venv/
+recordings/
+*.srt
