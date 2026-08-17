@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "name": "Local Transcription",
+  "description": "Record from a mic, desktop, or tab — or pick a media file already on disk — and transcribe it locally with Whisper or Parakeet, speakers included.",
+  "author": { "name": "Isaac" },
+  "tags": ["local-ai", "transcription", "speech-to-text", "whisper", "audio"],
+  "category": "local-ai",
+  "version": "1.0.0",
+  "requires_python": true
+}
