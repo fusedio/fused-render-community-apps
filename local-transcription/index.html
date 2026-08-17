@@ -1,0 +1,1930 @@
+<!DOCTYPE html>
+<html data-fused-theme="shell">
+<head>
+<meta charset="utf-8" />
+<meta name="fused-app" />
+<title>Local transcription</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0e1116; --panel: #14181f; --panel-2: #191e27; --text: #dce2ea;
+    --muted: #8b93a1; --line: #262c37; --line-soft: #1d222b;
+    --accent: #7fd1c1; --accent-dim: #2f4f4a; --warn: #e0b463; --err: #e2807f;
+    --sel: #1f2a33;
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --bg: #f6f7f9; --panel: #ffffff; --panel-2: #f1f3f6; --text: #171b21;
+    --muted: #626a78; --line: #dce0e7; --line-soft: #e8ebf0;
+    --accent: #17796a; --accent-dim: #bfe0d9; --warn: #96650d; --err: #b3403f;
+    --sel: #e6eef2;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+  header {
+    display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
+    padding: 14px 18px; border-bottom: 1px solid var(--line); background: var(--panel);
+  }
+  header h1 { font-size: 14px; margin: 0; letter-spacing: .01em; }
+  header .sub { color: var(--muted); font-size: 12px; }
+  #runtime { margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); display: inline-block; }
+  .dot.on { background: var(--accent); }
+  .dot.off { background: var(--err); }
+
+  .layout { display: grid; grid-template-columns: 290px 1fr; min-height: calc(100vh - 49px); }
+  aside { border-right: 1px solid var(--line); background: var(--panel); padding: 14px; }
+  main { padding: 18px; min-width: 0; }
+
+  .group { margin-bottom: 18px; }
+  .group > label, .glabel {
+    display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .08em;
+    color: var(--muted); margin-bottom: 6px;
+  }
+  input[type="text"], input[type="number"], select, textarea {
+    width: 100%; background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--line); border-radius: 5px; padding: 6px 8px;
+    font: inherit;
+  }
+  input[type="text"]:focus, input[type="number"]:focus, select:focus { outline: 1px solid var(--accent-dim); border-color: var(--accent); }
+  input:disabled, select:disabled { opacity: .5; }
+  .row { display: flex; gap: 8px; }
+  .row > * { min-width: 0; }
+  .check { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12px; }
+
+  button {
+    font: inherit; color: var(--text); background: var(--panel-2);
+    border: 1px solid var(--line); border-radius: 5px; padding: 6px 11px; cursor: pointer;
+  }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:disabled { opacity: .45; cursor: default; }
+  button.primary { background: var(--accent-dim); border-color: var(--accent); font-weight: 600; }
+  button.link { background: none; border: none; padding: 0; color: var(--accent); text-decoration: underline; }
+  button.tiny { padding: 3px 7px; font-size: 11px; }
+
+  #files { max-height: 46vh; overflow: auto; border: 1px solid var(--line-soft); border-radius: 6px; }
+  .file {
+    display: block; width: 100%; text-align: left; border: none; border-radius: 0;
+    background: none; padding: 7px 9px; border-bottom: 1px solid var(--line-soft); cursor: pointer;
+  }
+  .file:last-child { border-bottom: none; }
+  .file:hover { background: var(--panel-2); }
+  .file[aria-current="true"] { background: var(--sel); box-shadow: inset 2px 0 0 var(--accent); }
+  .file b { font-weight: 500; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .file span { color: var(--muted); font-size: 11px; }
+  .empty { color: var(--muted); padding: 10px; font-size: 12px; }
+
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px; margin-bottom: 14px; }
+  .card h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 10px; font-weight: 600; }
+  .banner { border-left: 3px solid var(--warn); padding: 10px 12px; background: var(--panel); border-radius: 0 6px 6px 0; margin-bottom: 14px; color: var(--muted); }
+  .banner.error { border-left-color: var(--err); }
+  .banner b { color: var(--text); }
+
+  /* Recorder */
+  #recordCard .recrow { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  #rec {
+    display: inline-flex; align-items: center; gap: 9px;
+    padding: 9px 16px; font-size: 13px; font-weight: 600; border-radius: 999px;
+  }
+  #rec .bulb { width: 9px; height: 9px; border-radius: 50%; background: var(--err); }
+  #rec.recording { border-color: var(--err); background: transparent; }
+  #rec.recording .bulb { animation: pulse 1.1s ease-in-out infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .3; transform: scale(.75); } }
+  #recClock { font-size: 20px; font-variant-numeric: tabular-nums; letter-spacing: .02em; }
+  #levelWrap {
+    flex: 1; min-width: 90px; height: 8px; border-radius: 999px;
+    background: var(--panel-2); border: 1px solid var(--line-soft); overflow: hidden;
+  }
+  #level { height: 100%; width: 0%; background: var(--accent); transition: width .06s linear; }
+  #recNote { color: var(--muted); font-size: 12px; margin-top: 10px; }
+  .srcrow { margin-bottom: 12px; }
+  .srcrow select { width: auto; min-width: 130px; max-width: 260px; }
+  .srcrow .check { gap: 6px; }
+  #deviceWrap.hidden { display: none; }
+
+  /* Decode timing */
+  #timing { margin: 2px 0 14px; padding: 12px; background: var(--panel-2); border: 1px solid var(--line-soft); border-radius: 6px; }
+  .trow { display: grid; grid-template-columns: 62px 1fr 76px; gap: 10px; align-items: center; margin-bottom: 6px; }
+  .tlab { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .07em; }
+  .ttrack { height: 10px; background: var(--bg); border: 1px solid var(--line-soft); border-radius: 3px; overflow: hidden; }
+  .tfill { height: 100%; border-radius: 2px; }
+  .tfill.audio  { background: var(--accent-dim); border-right: 2px solid var(--accent); }
+  .tfill.decode { background: var(--accent); }
+  .tfill.load   { background: var(--warn); opacity: .6; }
+  /* The whole run, and the pre-passes inside it: dimmer than decode, because
+     they are the part of the wall clock no word came out of. */
+  .tfill.total  { background: var(--muted); opacity: .35; }
+  .tfill.pre    { background: var(--accent); opacity: .38; }
+  .tval { font-size: 12px; font-variant-numeric: tabular-nums; text-align: right; }
+  .rtf { margin-top: 8px; font-size: 12px; color: var(--muted); }
+  .rtf b { font-size: 15px; color: var(--text); font-variant-numeric: tabular-nums; }
+
+  audio { width: 100%; margin-top: 4px; }
+  progress { width: 100%; height: 6px; accent-color: var(--accent); }
+  .meta { display: flex; gap: 14px; flex-wrap: wrap; color: var(--muted); font-size: 12px; }
+
+  .toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+  .toolbar .grow { flex: 1; min-width: 120px; }
+  .seg {
+    display: grid; grid-template-columns: 78px 1fr; gap: 10px; align-items: start;
+    padding: 5px 8px; border-radius: 5px; cursor: pointer; border: 1px solid transparent;
+  }
+  .seg:hover { background: var(--panel-2); }
+  .seg.active { background: var(--sel); border-color: var(--accent-dim); }
+  .seg.dim { opacity: .3; }
+  .seg time { color: var(--muted); font-size: 11px; }
+  .seg mark { background: var(--accent-dim); color: var(--text); border-radius: 2px; }
+  #plain { white-space: pre-wrap; margin: 0; font-size: 13.5px; line-height: 1.65; }
+  /* The same highlight the segments view uses — the browser default is a yellow
+     that belongs to neither palette. */
+  #plain mark { background: var(--accent-dim); color: var(--text); border-radius: 2px; }
+  #segments { max-height: 62vh; overflow: auto; }
+  .hidden { display: none !important; }
+
+  /* Speaker colours. Eight hues, and the class name carries the speaker NUMBER —
+     `spk-0` is always "Speaker 1" — so the colour is a function of the label and
+     not of the order this page happened to iterate in. Two palettes, because a
+     colour handed to a chip has to stay readable when the shell flips to light.
+     A ninth speaker wraps round to the first hue: repeating a colour is honest
+     (the label still says which person it is) where inventing an unreadable
+     ninth one is not. */
+  .spk-0 { --spk: #7fd1c1; }  .spk-1 { --spk: #8fb8f0; }
+  .spk-2 { --spk: #e3a76f; }  .spk-3 { --spk: #c79bea; }
+  .spk-4 { --spk: #e08f9e; }  .spk-5 { --spk: #9ed17f; }
+  .spk-6 { --spk: #ddd07a; }  .spk-7 { --spk: #7fd0e0; }
+  :root[data-theme="light"] .spk-0 { --spk: #10796a; }
+  :root[data-theme="light"] .spk-1 { --spk: #2a5fb0; }
+  :root[data-theme="light"] .spk-2 { --spk: #9a5716; }
+  :root[data-theme="light"] .spk-3 { --spk: #6f3fa8; }
+  :root[data-theme="light"] .spk-4 { --spk: #a83a52; }
+  :root[data-theme="light"] .spk-5 { --spk: #3d7a22; }
+  :root[data-theme="light"] .spk-6 { --spk: #7d6a0c; }
+  :root[data-theme="light"] .spk-7 { --spk: #10688a; }
+  /* Whisper heard words where the segmenter heard nobody. Grey and dashed, so it
+     reads as "no attribution" rather than as one more person in the room. */
+  .spk-none { --spk: var(--muted); }
+
+  .spkchip {
+    display: inline-block; margin-right: 7px; padding: 0 6px;
+    border: 1px solid var(--spk); border-radius: 999px;
+    color: var(--spk); font-size: 10.5px; text-transform: uppercase;
+    letter-spacing: .06em; vertical-align: 1px; white-space: nowrap;
+  }
+  .spk-none .spkchip { border-style: dashed; font-style: italic; text-transform: none; }
+  .seg.spk { box-shadow: inset 3px 0 0 var(--spk); padding-left: 12px; }
+  #legend { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; font-size: 12px; }
+  #legend .lg { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
+  #legend .sw { width: 10px; height: 10px; border-radius: 3px; background: var(--spk); }
+  #legend .spk-none .sw { background: none; border: 1px dashed var(--spk); }
+  .turn { margin: 0 0 12px; }
+  .turn:last-child { margin-bottom: 0; }
+  .turn .who { display: block; color: var(--spk); font-size: 11px; text-transform: uppercase; letter-spacing: .07em; margin-bottom: 2px; }
+  .spk-none .who { text-transform: none; font-style: italic; }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Local transcription</h1>
+    <span class="sub">speech&nbsp;→&nbsp;text on this machine, via <span class="mono">fused.ai.transcribe</span></span>
+    <div id="runtime"><span class="dot"></span><span id="runtimeText">checking runner…</span></div>
+  </header>
+
+  <div class="layout">
+    <aside>
+      <div class="group">
+        <span class="glabel">Source</span>
+        <div class="row">
+          <input id="path" type="text" class="mono" placeholder="/path/to/recording.m4a" spellcheck="false" />
+        </div>
+      </div>
+
+      <div class="group">
+        <span class="glabel">Found on this machine</span>
+        <div id="files"><div class="empty">Scanning…</div></div>
+        <div class="row" style="margin-top:8px; align-items:center">
+          <button id="rescan" class="tiny">Rescan</button>
+          <span id="scanNote" class="sub" style="color:var(--muted);font-size:11px"></span>
+        </div>
+        <div style="margin-top:8px">
+          <input id="roots" type="text" class="mono" placeholder="folders to scan (comma-separated)" spellcheck="false" />
+        </div>
+      </div>
+
+      <div class="group">
+        <label for="model">Model</label>
+        <select id="model"></select>
+        <div id="modelNote" class="sub" style="color:var(--muted);font-size:11px;margin-top:5px"></div>
+        <div class="row" style="margin-top:8px">
+          <button id="load" class="tiny">Preload</button>
+          <button id="unload" class="tiny">Unload</button>
+        </div>
+        <div id="modelState" class="sub" style="color:var(--muted);font-size:11px;margin-top:6px"></div>
+      </div>
+
+      <div class="group">
+        <label for="task" id="taskLabel">Task</label>
+        <select id="task">
+          <option value="transcribe">Transcribe (keep language)</option>
+          <option value="translate">Translate to English</option>
+        </select>
+      </div>
+
+      <div class="group">
+        <label for="lang" id="langLabel">Language</label>
+        <select id="lang">
+          <option value="">Auto-detect</option>
+          <option value="en">English</option>
+          <option value="es">Spanish</option>
+          <option value="fr">French</option>
+          <option value="de">German</option>
+          <option value="it">Italian</option>
+          <option value="pt">Portuguese</option>
+          <option value="nl">Dutch</option>
+          <option value="hi">Hindi</option>
+          <option value="bn">Bengali</option>
+          <option value="ja">Japanese</option>
+          <option value="ko">Korean</option>
+          <option value="zh">Chinese</option>
+          <option value="ru">Russian</option>
+          <option value="ar">Arabic</option>
+        </select>
+      </div>
+
+      <div class="group">
+        <label class="check"><input id="vad" type="checkbox" checked /> Skip silence (VAD)</label>
+      </div>
+
+      <div class="group">
+        <!-- `speakers` is an OPTIONAL hint beside `diarize`: left empty, the
+             clustering works the count out from the voices and says so in the
+             reply; given, it is obeyed exactly. So the field starts empty —
+             estimating is the default, and a number is an override for someone
+             who actually knows how many people are in the room. -->
+        <label class="check"><input id="diarize" type="checkbox" /> <span id="diarizeLabel">Identify speakers</span></label>
+        <div class="row" id="speakersRow" style="margin-top:7px; align-items:center; gap:7px">
+          <label class="check" for="speakers" style="flex:1" id="speakersLabel">How many people (optional)</label>
+          <input id="speakers" type="number" min="1" max="100" step="1" placeholder="auto" style="width:64px; flex:none" />
+        </div>
+        <div id="speakersNote" class="sub" style="color:var(--muted);font-size:11px;margin-top:6px"></div>
+      </div>
+
+      <div class="row">
+        <button id="go" class="primary" style="flex:1">Transcribe</button>
+        <button id="stop" disabled>Stop</button>
+      </div>
+    </aside>
+
+    <main>
+      <div id="notices"></div>
+
+      <div class="card" id="recordCard">
+        <h2>Record</h2>
+        <div class="recrow srcrow">
+          <label class="check">Capture
+            <select id="source">
+              <option value="mic">Microphone</option>
+              <option value="tab">Browser tab</option>
+              <option value="system">Desktop audio</option>
+              <option value="mic+tab">Mic + tab</option>
+              <option value="both">Mic + desktop</option>
+            </select>
+          </label>
+          <label class="check hidden" id="deviceWrap">Input
+            <select id="device"></select>
+          </label>
+          <button id="devices" class="tiny">Refresh devices</button>
+        </div>
+        <div id="sourceNote" class="sub" style="color:var(--muted);font-size:11px;margin:-6px 0 12px"></div>
+        <div class="recrow">
+          <button id="rec" class="primary"><span class="bulb"></span><span id="recLabel">Record</span></button>
+          <span id="recClock" class="mono">0:00</span>
+          <div id="levelWrap" title="input level"><div id="level"></div></div>
+          <label class="check"><input id="auto" type="checkbox" checked /> Transcribe when I stop</label>
+        </div>
+        <div id="recNote">Saved to <span class="mono">./recordings/</span>.</div>
+      </div>
+
+      <div class="card" id="playerCard">
+        <h2>Selected recording</h2>
+        <div id="selName" class="mono" style="word-break:break-all">Nothing selected.</div>
+        <audio id="player" controls preload="metadata" class="hidden"></audio>
+      </div>
+
+      <div class="card hidden" id="progressCard">
+        <h2 id="progressTitle">Transcribing</h2>
+        <progress id="bar"></progress>
+        <div class="meta" style="margin-top:8px">
+          <span id="clock" class="mono">0:00 / 0:00</span>
+          <span id="elapsed" class="mono"></span>
+          <span id="split" class="mono"></span>
+          <span id="progressDetail"></span>
+        </div>
+      </div>
+
+      <div class="card hidden" id="resultCard">
+        <h2>Transcript</h2>
+        <div class="toolbar">
+          <input id="q" type="text" class="grow" placeholder="Search the transcript…" />
+          <button id="viewSegments" class="tiny">Segments</button>
+          <button id="viewText" class="tiny">Plain text</button>
+          <button id="copy" class="tiny">Copy</button>
+          <button id="srt" class="tiny">Save .srt</button>
+        </div>
+        <div id="timing" class="hidden"></div>
+        <div class="meta" id="resultMeta" style="margin-bottom:10px"></div>
+        <div id="legend" class="hidden"></div>
+        <div id="segments"></div>
+        <pre id="plain" class="hidden mono"></pre>
+      </div>
+    </main>
+  </div>
+
+<script>
+// ── This page is local-only. `fused.ai.transcribe` needs a worker process and a
+// filesystem to read the transcript back off, neither of which an exported page
+// has — and the exporter does not stop dotted ai calls, so we gate them here.
+const IS_LOCAL = fused.env === "local";
+const ASR = "automatic-speech-recognition";
+
+// ── Diarization: the bounds, and whether this runtime has it at all ─────────
+// 1..100 is the runtime's own rule (`MAX_SPEAKERS` in fused_render/ai/runners/
+// diarize.py, restated in runtime.js), enforced here so a bad count is an
+// inline sentence beside the input instead of a bad_request that travels.
+const MAX_SPEAKERS = 100;
+// Speaker diarization is newer than some servers this page will meet, and a
+// checkbox that is checked and silently ignored produces an unlabelled
+// transcript the user blames the model for. The runtime is the authority on its
+// own features: `fused.ai.transcribe` refuses a missing `speakers` in its own
+// body, so its source is where "does this build know the word" is answered
+// without POSTing anything or opening a job row to find out.
+const DIARIZE_OK = (() => {
+  try {
+    return /\bdiarize\b/.test(String(fused.ai.transcribe));
+  } catch (err) {
+    return false;   // no transcribe at all — the page says so elsewhere
+  }
+})();
+// …and whether the count may be LEFT OUT. Newer again than diarization itself:
+// on the first builds that had `diarize`, a missing `speakers` was a
+// bad_request, so an empty field there is a call that dies rather than a count
+// worked out from the recording. Asked of the bridge's own source for the same
+// reason DIARIZE_OK is — `estimatedSpeakers` is the field a run that estimated
+// comes back with, and it is only named in transcribe()'s body on a runtime
+// that can do the estimating.
+const ESTIMATE_OK = DIARIZE_OK && (() => {
+  try {
+    return /\bestimatedSpeakers\b/.test(String(fused.ai.transcribe));
+  } catch (err) {
+    return false;
+  }
+})();
+// What the picker offers when catalog() could not answer — and deliberately NOT
+// a list of repos. Three engines serve this capability (MLX Whisper, Parakeet
+// TDT and faster-whisper on CTranslate2), they load mutually unusable formats,
+// and which one is serving is a user's choice in Preferences as much as a fact
+// about the machine. So any id hardcoded here is right on at most one setup and
+// a multi-gigabyte unloadable download on the rest — this list used to name
+// three CTranslate2 repos and was exactly that on every Mac.
+//
+// Naming no repo is the honest fallback: an empty `model` is what a bare
+// transcribe call sends, and the server answers it with the active engine's own
+// default. The page loses the ability to CHOOSE a model in that state, which is
+// a real loss and is why the option says so rather than reading like a model.
+const ENGINE_DEFAULT = [{
+  id: "",
+  label: "This engine's default model",
+  note: "The model catalog could not be read, so no repo is named here — the engine " +
+        "serving this machine loads the smallest model it offers.",
+}];
+
+const el = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const clock = (s) => {
+  s = Math.max(0, Math.floor(Number(s) || 0));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+  return (h ? h + ":" + String(m).padStart(2, "0") : String(m)) + ":" + String(sec).padStart(2, "0");
+};
+const bytes = (n) => {
+  if (!n) return "—";
+  const u = ["B", "KB", "MB", "GB", "TB"];
+  let i = 0; while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+  return n.toFixed(i > 1 ? 1 : 0) + " " + u[i];
+};
+
+let files = [];          // last scan result
+let result = null;       // last transcript {text, segments, ...} — live stand-in while a run is in flight
+let running = false;
+let asrRunner;           // runtime entry for the speech runner — undefined until first read, then entry|null
+let asrLoaded = null;    // the resident speech model {model, residentBytes, …}, or null
+let catalogModels = [];  // what the ACTIVE engine can load, straight from catalog()
+let catalogEngine = "";  // that engine's short label, for sentences about it
+let catalogRunner = "";  // …and its runner code, e.g. "parakeet-mlx"
+
+// ── Params are the state ───────────────────────────────────────────────────
+const P = {
+  get file()  { return fused.params.get("file") || ""; },
+  get model() { return fused.params.get("model") || ""; },
+  get lang()  { return fused.params.get("lang") || ""; },
+  get task()  { return fused.params.get("task") || "transcribe"; },
+  get vad()   { return (fused.params.get("vad") || "1") !== "0"; },
+  get diarize() { return fused.params.get("diarize") === "1"; },
+  // Empty is a VALUE here, not a missing one: it means "estimate the count".
+  // So there is no default to fall back to — an absent param and an empty one
+  // are the same request.
+  get speakers() { return fused.params.get("speakers") || ""; },
+  get roots() { return fused.params.get("roots") || ""; },
+  get source() { return fused.params.get("source") || "mic"; },
+  get q()     { return fused.params.get("q") || ""; },
+  get view()  { return fused.params.get("view") || "segments"; },
+};
+
+function notice(html, kind) {
+  const div = document.createElement("div");
+  div.className = "banner" + (kind === "error" ? " error" : "");
+  div.innerHTML = html;
+  el("notices").appendChild(div);
+  return div;
+}
+
+// ── The diarization control ────────────────────────────────────────────────
+// `speakers` beside `diarize` is optional, and the three answers this can give
+// are the three the runtime distinguishes: an empty field is a request to
+// ESTIMATE (n: null), a good number is a count to obey, and a number that is
+// present and wrong is refused HERE — the page, not the runtime and certainly
+// not the server, is where the user gets a sentence under the input they typed
+// in instead of a bad_request from a call they never saw.
+function speakerCount() {
+  const raw = el("speakers").value.trim();
+  if (!raw) {
+    // Nothing typed. On a runtime that can estimate, that is the ordinary case
+    // and not a hole to fill; on an older one it is a call that would die, so
+    // it is refused with the reason rather than quietly substituted.
+    return ESTIMATE_OK
+      ? { ok: true, n: null }
+      : { ok: false, why: "This runtime cannot estimate the count — enter a whole number from 1 to " + MAX_SPEAKERS + "." };
+  }
+  // Number(), not parseInt(): parseInt("2 people") is 2, and a count read out
+  // of an <input> is exactly where that kind of silent success does damage.
+  const n = Number(raw);
+  const orEmpty = ESTIMATE_OK ? ", or leave it empty and it is estimated." : ".";
+  if (!Number.isInteger(n)) {
+    return { ok: false, why: "Enter a whole number from 1 to " + MAX_SPEAKERS + orEmpty };
+  }
+  if (n < 1 || n > MAX_SPEAKERS) {
+    return { ok: false, why: n + " is outside 1–" + MAX_SPEAKERS + " speakers" + orEmpty };
+  }
+  return { ok: true, n };
+}
+
+function syncDiarize() {
+  const box = el("diarize"), input = el("speakers"), note = el("speakersNote");
+  note.style.color = "var(--muted)";
+  if (!DIARIZE_OK) {
+    // Said in the control's OWN label: an option that is quietly inert is the
+    // worst of the three possible answers.
+    box.checked = false;
+    box.disabled = input.disabled = true;
+    el("diarizeLabel").textContent = "Identify speakers — not supported by this runtime";
+    note.textContent = "";
+    return;
+  }
+  el("diarizeLabel").textContent = "Identify speakers";
+  box.disabled = false;
+  input.disabled = !box.checked;
+  // Whether the number may be left out is said in the field's OWN label, the
+  // same way an unsupported checkbox is: a runtime that cannot estimate turns
+  // "optional" into a submit that fails, and a control cannot be allowed to
+  // describe a capability the runtime behind it does not have.
+  el("speakersLabel").textContent = ESTIMATE_OK
+    ? "How many people (optional)"
+    : "How many people — this runtime cannot estimate it";
+  if (!box.checked) {
+    note.textContent = "";
+    return;
+  }
+  const count = speakerCount();
+  if (!count.ok) {
+    note.style.color = "var(--err)";
+    note.textContent = count.why;
+    return;
+  }
+  // An estimate is a guess the page should not present as a measurement: it can
+  // split one person across two microphones and merge two similar voices, so
+  // the note says what will happen and what to do about it before the run,
+  // while the result view says what it decided afterwards.
+  note.textContent = count.n === null
+    ? "Empty, so the count is estimated from the voices — the result says what it decided. Type it in if you know it: an estimate can split one person across two mics, or merge two similar voices."
+    : "";
+}
+
+// ── What the engine serving us will not do ─────────────────────────────────
+// Parakeet is the third engine for this capability and it is not a Whisper: it
+// REFUSES three of transcribe's options rather than ignoring them — task:
+// "translate", `language` and `initialPrompt` — each a bad_request raised before
+// a job row opens. This page owns controls for two of the three (it never sends
+// an initialPrompt), so they are disabled and say why in their own labels. The
+// alternative is a Transcribe button that fails on a request whose failure was
+// knowable while the user was still choosing.
+const PARAKEET = "parakeet-mlx";
+
+// The engine actually serving the capability, by runner CODE. models.list() is
+// the authority — `active` is the backend a run would use, which since the
+// Engines preference exists is not the same question as `available` — and the
+// catalog's answer stands in for the moment before that call has returned.
+// Neither is hardcoded: which engine serves is a user's choice.
+const engineCode = () => (asrRunner && asrRunner.code) || catalogRunner || "";
+const engineName = () =>
+  (asrRunner && (asrRunner.shortLabel || asrRunner.label)) || catalogEngine || "this engine";
+
+function syncEngineOptions() {
+  const parakeet = engineCode() === PARAKEET;
+  const who = engineName();
+  const task = el("task"), lang = el("lang");
+
+  // The pristine label is stashed once, so re-running this never appends the
+  // suffix to a label that already carries it (the same trick syncSourceHints
+  // uses on the capture list, and for the same reason).
+  const translate = Array.from(task.options).find((o) => o.value === "translate");
+  const base = translate.dataset.label || (translate.dataset.label = translate.textContent);
+  translate.disabled = parakeet;
+  translate.textContent = base + (parakeet ? " — " + who + " has no translate task" : "");
+  el("taskLabel").textContent = parakeet ? "Task — " + who + " only transcribes" : "Task";
+
+  lang.disabled = parakeet;
+  el("langLabel").textContent = parakeet
+    ? "Language — " + who + " detects its own (25 European languages) and cannot be pinned"
+    : "Language";
+
+  if (!parakeet) return;
+  // A bookmarked URL, or yesterday's choice on a machine whose engine has since
+  // been switched, can carry either option into a Parakeet run. Moving the param
+  // back to what this engine honours and SAYING so beats leaving a dead value
+  // selected for the Transcribe button to be refused over — the same answer this
+  // page gives a capture mode the browser cannot do.
+  if (P.task === "translate") {
+    fused.params.set("task", "transcribe");
+    notice("<b>Switched to Transcribe.</b> " + esc(who) + " only transcribes — it has no translate " +
+      "task. Choose a Whisper engine on the AI Models page if you need English out of another language.");
+  }
+  if (P.lang) {
+    fused.params.set("lang", "");
+    notice("<b>Language set back to auto-detect.</b> " + esc(who) + " detects the language itself, " +
+      "among the 25 European ones its weights were trained on, and cannot be pinned to one. " +
+      "A Whisper engine on the AI Models page can.");
+  }
+  task.value = P.task;
+  lang.value = P.lang;
+}
+
+// ── Runtime + model catalog ────────────────────────────────────────────────
+async function refreshRuntime() {
+  const dot = document.querySelector("#runtime .dot");
+  if (!IS_LOCAL) {
+    dot.className = "dot off";
+    el("runtimeText").textContent = "not available in an exported page";
+    return;
+  }
+  try {
+    const rt = await fused.ai.models.list();
+    const runners = rt.runners || [];
+    // `active` is the one SERVING the capability; `available` only says a
+    // backend could run here. With three speech runners and a Preferences switch
+    // between them, picking the first available one names the wrong engine.
+    asrRunner = runners.find((r) => r.capability === ASR && r.active) ||
+                runners.find((r) => r.capability === ASR) || null;
+    const loaded = (rt.loaded || []).find((m) => m.capability === ASR);
+    asrLoaded = loaded || null;
+    if (!asrRunner) {
+      dot.className = "dot off";
+      el("runtimeText").textContent = "no speech runner on this build";
+    } else if (asrRunner.available === false) {
+      dot.className = "dot off";
+      el("runtimeText").textContent = asrRunner.reason || "speech runner unavailable";
+    } else if (loaded) {
+      dot.className = "dot on";
+      // `residentBytes`, the name /api/ai/runtime actually uses — the snake_case
+      // spelling is always undefined, so the size never appeared.
+      el("runtimeText").textContent = "resident: " + (loaded.model || "model") +
+        (loaded.residentBytes ? " · " + bytes(loaded.residentBytes) : "");
+    } else {
+      dot.className = "dot on";
+      el("runtimeText").textContent = (asrRunner.label || "speech runner") + " ready · nothing resident";
+    }
+  } catch (err) {
+    dot.className = "dot off";
+    asrLoaded = null;
+    el("runtimeText").textContent = (err.type || "error") + ": " + err.message;
+  }
+  syncModelButtons();
+  // Which engine is active is re-read here and nowhere else — after a run, a
+  // load, an unload and at startup — so the controls an engine refuses are
+  // resynced on the same path rather than on a second one that could disagree
+  // with it. A switch made in Preferences mid-session lands the next time this
+  // runs, which is the first thing any of those four do.
+  syncEngineOptions();
+}
+
+// ── Preload / Unload reflect the state they would produce ──────────────────
+function syncModelButtons() {
+  const load = el("load"), unload = el("unload"), state = el("modelState");
+  const want = el("model").value || "";
+  const resident = asrLoaded ? asrLoaded.model : "";
+  const entry = catalogModels.find((m) => m.id === want);
+  const size = entry && entry.size_gb;
+
+  if (IS_LOCAL && asrRunner === undefined) {
+    load.disabled = unload.disabled = true;
+    state.textContent = "Checking…";
+    return;
+  }
+  if (!IS_LOCAL || !asrRunner || asrRunner.available === false) {
+    load.disabled = unload.disabled = true;
+    load.textContent = "Preload";
+    unload.textContent = "Unload";
+    state.textContent = IS_LOCAL
+      ? (asrRunner && asrRunner.reason) || "No speech runner available."
+      : "Local app only.";
+    return;
+  }
+
+  // No repo named — the state the catalog fallback leaves the picker in. There
+  // is nothing to preload, because which weights a transcribe call would fetch
+  // is the server's decision and not this page's; Unload still means something,
+  // since whatever is resident is resident however it got there.
+  if (!want) {
+    load.disabled = true;
+    load.textContent = "Preload";
+    state.textContent = resident
+      ? resident + " is resident · the engine picks its own model for a run"
+      : "No repo named — the engine picks its own model when you transcribe.";
+    unload.disabled = !resident;
+    unload.textContent = resident && asrLoaded.residentBytes
+      ? "Unload (" + bytes(asrLoaded.residentBytes) + ")"
+      : "Unload";
+    return;
+  }
+
+  if (resident && resident === want) {
+    load.disabled = true;
+    load.textContent = "Preloaded";
+    state.textContent = "Resident" +
+      (asrLoaded.residentBytes ? " · " + bytes(asrLoaded.residentBytes) : "");
+  } else if (resident) {
+    load.disabled = false;
+    load.textContent = "Load instead";
+    state.textContent = resident + " is resident" + (size ? " · " + size + " GB to load" : "");
+  } else {
+    load.disabled = false;
+    load.textContent = "Preload";
+    state.textContent = "Not resident" + (size ? " · " + size + " GB" : "");
+  }
+
+  unload.disabled = !resident;
+  unload.textContent = resident && asrLoaded.residentBytes
+    ? "Unload (" + bytes(asrLoaded.residentBytes) + ")"
+    : "Unload";
+}
+
+async function fillModels() {
+  let models = null;
+  let engine = "";        // the ACTIVE engine's short label, when the catalog answered
+  let runner = "";        // …and its runner CODE, which is what option support is keyed on
+  if (IS_LOCAL) {
+    try {
+      // catalog() is already engine-correct: it resolves the runner the same way
+      // a load does, so its list is exactly what this machine can load right
+      // now. That is the whole reason the picker must not add to it.
+      const cat = await fused.ai.models.catalog();
+      const entry = (cat.capabilities || []).find((c) => c.capability === ASR);
+      if (entry) {
+        engine = entry.runnerShortLabel || entry.runnerLabel || "";
+        // The code, not the label: `parakeet-mlx` is what decides which options
+        // the engine will refuse, and a label is prose that may be reworded.
+        runner = entry.runner || "";
+        models = (entry.models || []).map((m) => ({ id: m.id, label: m.label || m.id, note: m.note, size_gb: m.size_gb }));
+        if (entry.default && !models.some((m) => m.id === entry.default)) {
+          models.unshift({ id: entry.default, label: entry.default });
+        }
+      }
+    } catch (err) {
+      // Catalog is a nicety; the model id is what actually matters.
+      console.warn("[transcribe] catalog unavailable:", err.message);
+    }
+  }
+  const fromCatalog = !!(models && models.length);
+  if (!fromCatalog) models = ENGINE_DEFAULT;
+  catalogModels = models;
+  catalogEngine = engine;
+  catalogRunner = runner;
+
+  const sel = el("model");
+  sel.innerHTML = models.map((m) =>
+    `<option value="${esc(m.id)}">${esc(m.label)}${m.size_gb ? " · " + m.size_gb + " GB" : ""}</option>`
+  ).join("");
+
+  const want = P.model;
+  const stale = want && !models.some((m) => m.id === want);
+  if (stale && fromCatalog) {
+    // A remembered id the active engine cannot load — the usual cause is an
+    // engine switch in Preferences, since a speech repo belongs to a BACKEND
+    // and not to this capability: CTranslate2 reads model.bin, MLX Whisper
+    // reads weights.npz, and Parakeet reads a NeMo-flavoured safetensors, so
+    // each of the three is an unusable download under the other two. Neither
+    // silently dropping the id (the choice vanishes
+    // with no explanation) nor silently offering it (the load fails later) is
+    // honest, so it stays in the list, visibly unusable, and we say what we
+    // picked instead.
+    sel.insertAdjacentHTML("beforeend",
+      `<option value="${esc(want)}" disabled>${esc(want)} — ${esc(engine || "this engine")} cannot load it</option>`);
+    sel.value = models[0].id;
+    // The param has to move too, or draw() puts the dead option straight back.
+    fused.params.set("model", sel.value);
+    notice("<b>" + esc(want) + " is not loadable by " + esc(engine || "the speech engine in use") +
+      "</b> — switched to <b>" + esc(models[0].label || models[0].id) + "</b>.");
+  } else if (stale) {
+    // No catalog answer, so we do not KNOW the id is wrong — keep the choice.
+    sel.insertAdjacentHTML("afterbegin", `<option value="${esc(want)}">${esc(want)}</option>`);
+    sel.value = want;
+  } else {
+    sel.value = want || models[0].id;
+  }
+
+  syncModelMeta();
+}
+
+// The note and the buttons both describe the CURRENT selection, so they are
+// resynced together whenever it changes — not only when the list is rebuilt.
+function syncModelMeta() {
+  const note = catalogModels.find((m) => m.id === el("model").value);
+  el("modelNote").textContent = (note && note.note) || "";
+  syncModelButtons();
+}
+
+// ── File picker ────────────────────────────────────────────────────────────
+async function scan() {
+  el("files").innerHTML = '<div class="empty">Scanning…</div>';
+  try {
+    const data = await fused.runPython("./audio_scan.py", { roots: P.roots, depth: "3", limit: "200" });
+    files = data.files || [];
+    el("scanNote").textContent = files.length
+      ? files.length + (data.truncated ? "+ files" : " files") + " · " + data.roots.length + " folders"
+      : data.roots.length + " folders scanned";
+    drawFiles();
+  } catch (err) {
+    files = [];
+    el("files").innerHTML = `<div class="empty">Scan failed — ${esc(err.message)}</div>`;
+  }
+}
+
+function drawFiles() {
+  const box = el("files");
+  if (!files.length) {
+    box.innerHTML = '<div class="empty">Nothing found — try other folders or paste a path.</div>';
+    return;
+  }
+  box.innerHTML = files.map((f, i) =>
+    `<button class="file" data-i="${i}" aria-current="${f.path === P.file}">` +
+      `<b>${esc(f.name)}</b><span>${f.kind} · ${bytes(f.size)} · ${esc(f.dir.replace(/^\/Users\/[^/]+/, "~"))}</span>` +
+    `</button>`
+  ).join("");
+  box.querySelectorAll(".file").forEach((b) => {
+    b.addEventListener("click", () => fused.params.set("file", files[Number(b.dataset.i)].path));
+  });
+}
+
+// ── Speakers in the transcript ─────────────────────────────────────────────
+// A transcript is diarized when the reply carried the speaker legend — and, as a
+// second door, when the segments carry the key at all: `speaker: null` on every
+// segment is still a diarized run (one where the segmenter heard nobody), and
+// reading only the legend would render that as a plain transcript.
+const NO_SPEAKER = "Unattributed";
+function isDiarized(r) {
+  return !!r && (Array.isArray(r.speakers) || (r.segments || []).some((s) => "speaker" in s));
+}
+
+// The colour comes from the NUMBER in the label, so "Speaker 3" is the third hue
+// in every render of every recording — never a function of which speaker this
+// page happened to see first. `null` gets its own grey, dashed treatment: it
+// means Whisper heard words where the segmenter heard nobody, and painting it as
+// one more colour would read as one more person in the room.
+const SPK_HUES = 8;
+function speakerClass(label) {
+  if (!label) return "spk-none";
+  const digits = /(\d+)/.exec(String(label));
+  if (!digits) {
+    // No number to key on (not a shape the runtime emits today). Hash the label
+    // instead of defaulting to 0, so two such names still differ — and so the
+    // answer stays the same on every render, which is the property that matters.
+    let sum = 0;
+    for (const ch of String(label)) sum += ch.codePointAt(0);
+    return "spk-" + (sum % SPK_HUES);
+  }
+  return "spk-" + ((Number(digits[1]) - 1 + SPK_HUES * 2) % SPK_HUES);
+}
+const speakerName = (label) => label || NO_SPEAKER;
+
+function drawLegend(segs) {
+  const box = el("legend");
+  if (!isDiarized(result)) { box.classList.add("hidden"); box.innerHTML = ""; return; }
+  // Built from the reply's legend (the labels that actually landed on a
+  // segment), with the unattributed entry added only when a segment really has
+  // none — a legend row nothing in the transcript refers to reads as a bug.
+  const labels = (result.speakers || []).slice();
+  const seen = new Set(labels);
+  for (const s of segs) {
+    if (s.speaker && !seen.has(s.speaker)) { seen.add(s.speaker); labels.push(s.speaker); }
+  }
+  const rows = labels.map((l) =>
+    `<span class="lg ${speakerClass(l)}"><span class="sw"></span>${esc(l)}</span>`);
+  if (segs.some((s) => "speaker" in s && !s.speaker)) {
+    rows.push(`<span class="lg spk-none"><span class="sw"></span>${esc(NO_SPEAKER)} — ` +
+      `words the speaker segmenter heard nobody in</span>`);
+  }
+  box.innerHTML = rows.join("");
+  box.classList.toggle("hidden", !rows.length);
+}
+
+// Consecutive segments from one speaker are ONE turn: a paragraph per hand-over
+// is what a diarized transcript is for, and a label per sentence is noise.
+function speakerTurns(segs) {
+  const turns = [];
+  for (const s of segs) {
+    const who = s.speaker || null;
+    const last = turns[turns.length - 1];
+    if (last && last.who === who) last.parts.push(s.text || "");
+    else turns.push({ who, parts: [s.text || ""] });
+  }
+  return turns.map((t) => ({ who: t.who, text: t.parts.join(" ").replace(/\s+/g, " ").trim() }));
+}
+
+// ── Transcript rendering ───────────────────────────────────────────────────
+function drawResult() {
+  if (!result) { el("resultCard").classList.add("hidden"); return; }
+  el("resultCard").classList.remove("hidden");
+
+  drawTiming();
+  const dur = result.duration || (result.segments && result.segments.length ? result.segments[result.segments.length - 1].end : 0);
+  const words = (result.text || "").trim().split(/\s+/).filter(Boolean).length;
+  el("resultMeta").innerHTML = [
+    result.model ? "model <span class='mono'>" + esc(result.model) + "</span>" : "",
+    result.language ? "language <b>" + esc(result.language) + "</b>" : "",
+    result.task ? "task " + esc(result.task) : "",
+    dur ? "audio " + clock(dur) : "",
+    (result.segments || []).length + " segments · " + words + " words",
+    // Said in the meta line rather than in a banner, because it qualifies every
+    // other number beside it: a live count is a count SO FAR.
+    result.partial ? "<b style='color:var(--accent)'>" + esc(result.partial) + "</b>" : "",
+    isDiarized(result) ? (result.speakers || []).length + " speakers identified" : "",
+    // Present ONLY on a run that had to work the count out, which is what makes
+    // its presence the whole message: nobody told this run how many people were
+    // in the room. It can exceed the labels beside it — it counts the voices the
+    // segmenter heard, including anyone who spoke where no words were
+    // transcribed — so it is said as a separate number rather than folded in.
+    result.estimatedSpeakers
+      ? "count <b>estimated</b> — " + result.estimatedSpeakers + " voices heard"
+      : "",
+    result.url ? `<a href="${esc(result.url)}" target="_blank" style="color:var(--accent)">transcript json</a>` : "",
+  ].filter(Boolean).map((s) => "<span>" + s + "</span>").join("");
+
+  const q = P.q.trim().toLowerCase();
+  const segs = result.segments || [];
+  const diarized = isDiarized(result);
+  drawLegend(segs);
+  el("segments").innerHTML = segs.length
+    ? segs.map((s, i) => {
+        const hit = !q || (s.text || "").toLowerCase().includes(q);
+        const who = diarized
+          ? `<span class="spkchip">${esc(speakerName(s.speaker))}</span>`
+          : "";
+        return `<div class="seg${hit ? "" : " dim"}` +
+          (diarized ? " spk " + speakerClass(s.speaker) : "") +
+          `" data-i="${i}" data-start="${s.start}">` +
+          `<time class="mono">${clock(s.start)} → ${clock(s.end)}</time>` +
+          `<div>${who}${highlight(s.text || "", q)}</div></div>`;
+      }).join("")
+    : '<div class="empty">No segments returned.</div>';
+  el("segments").querySelectorAll(".seg").forEach((d) => {
+    d.addEventListener("click", () => {
+      const p = el("player");
+      if (!p.classList.contains("hidden")) { p.currentTime = Number(d.dataset.start) || 0; p.play(); }
+    });
+  });
+
+  // Plain text is grouped by turn when the run was diarized, and byte-identical
+  // to what it always was when it wasn't. The search highlight runs over the
+  // same text either way.
+  el("plain").innerHTML = diarized && segs.length
+    ? speakerTurns(segs).map((t) =>
+        `<div class="turn ${speakerClass(t.who)}">` +
+        `<span class="who">${esc(speakerName(t.who))}</span>` +
+        highlight(t.text, q) + "</div>").join("")
+    : highlight(result.text || "", q);
+  const seg = P.view !== "text";
+  el("segments").classList.toggle("hidden", !seg);
+  el("plain").classList.toggle("hidden", seg);
+  el("viewSegments").classList.toggle("primary", seg);
+  el("viewText").classList.toggle("primary", !seg);
+}
+
+// ── The transcript AS IT DECODES ───────────────────────────────────────────
+// `onSegment` hands over each segment during the run — in order, exactly once,
+// and in the same `{start, end, text}` (+ `speaker`) shape `rec.segments`
+// carries. So there is no second renderer here: the arriving segments are put
+// into `result` and drawResult() draws them, which is the whole reason the
+// shapes match. A live view that drifted from the final one would be a second
+// transcript to keep honest.
+//
+// What `result` holds mid-run is a STAND-IN: the segments so far, the text they
+// make, and nothing that only a finished transcript can answer — no url, no
+// duration, no language, no legend. drawResult() drops falsy entries out of its
+// meta line already, so those simply do not appear until the run resolves.
+//
+// Speaker labels are safe to draw the moment they arrive: diarization is a
+// pre-pass that finishes before decoding starts, so a label can never change
+// under a segment this has already painted.
+//
+// Redraws are coalesced to one a frame. Resolution is the engine's: faster
+// whisper emits a segment at a time while the MLX runner finishes a whole
+// decoded window and emits its segments together, so a burst of twenty
+// callbacks must cost one repaint of the pane, not twenty — this rewrites the
+// whole list every time, which is fine once a frame and quadratic if it isn't.
+let livePending = 0;
+function queueLive(segs, model) {
+  if (livePending) return;
+  livePending = requestAnimationFrame(() => { livePending = 0; drawLive(segs, model); });
+}
+
+function drawLive(segs, model, label) {
+  result = {
+    partial: label || "decoding…",
+    model,
+    task: P.task,
+    segments: segs,
+    // The worker's own join (`" ".join(...).strip()`), so switching to Plain
+    // text mid-run shows the same words the finished transcript will, and the
+    // handover at the end changes nothing visible.
+    text: segs.map((s) => s.text || "").join(" ").trim(),
+  };
+  // drawResult() rewrites #segments wholesale, and that puts a scrolled pane
+  // back at the top. Following the tail is the point of a live transcript, so
+  // stick to the bottom — unless the reader has scrolled up to re-read
+  // something, in which case their position is the one worth keeping.
+  const box = el("segments");
+  const following = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+  const keep = box.scrollTop;
+  drawResult();
+  box.scrollTop = following ? box.scrollHeight : keep;
+}
+
+// ── Salvage: what survived a run that ended badly ──────────────────────────
+// Two witnesses, and they answer different failures. What `onSegment` already
+// delivered is on screen and is complete as far as it goes — the runtime
+// settles its last reads before rejecting, so nothing arrives after this. The
+// worker's `.partial.jsonl` (named by `err.outputPartial`, never derived here)
+// is the other, and it is the one that survives a run whose job row aged out
+// while the tab slept — the case where the page saw only the first few minutes.
+// Whichever is longer is the transcript, and neither is a merge of the other:
+// both are prefixes of the same ordered list.
+//
+// The read is allowed to fail SILENTLY, on purpose. A finished run deletes that
+// file, and so does a cancelled one, so "not there" is the normal answer on
+// every path except the failure it exists for — checking the read rather than
+// the rejection type is the whole reason the fields are on both.
+async function keepWhatSurvived(err, live, model) {
+  let segs = live;
+  if (err.outputPartial) {
+    try {
+      const lines = (await fused.readFile(err.outputPartial)).split("\n").filter(Boolean);
+      const salvaged = lines.map((line) => JSON.parse(line));
+      if (salvaged.length > segs.length) segs = salvaged;
+    } catch (readErr) {
+      /* gone, or half a line at the end of it — the live list stands */
+    }
+  }
+  if (!segs.length) return;
+  // The same renderer once more, with the label saying what this is: a
+  // transcript that stops early, not one the model thought was complete.
+  drawLive(segs, model, "partial — the run did not finish");
+}
+
+function highlight(text, q) {
+  const safe = esc(text);
+  if (!q) return safe;
+  const rx = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
+  return safe.replace(rx, (m) => "<mark>" + m + "</mark>");
+}
+
+function syncActiveSegment() {
+  const t = el("player").currentTime, segs = result && result.segments;
+  if (!segs) return;
+  let active = -1;
+  for (let i = 0; i < segs.length; i++) if (t >= segs[i].start && t <= segs[i].end) { active = i; break; }
+  el("segments").querySelectorAll(".seg").forEach((d) => {
+    d.classList.toggle("active", Number(d.dataset.i) === active);
+  });
+}
+
+// ── Microphone recording ───────────────────────────────────────────────────
+// MediaRecorder hands back a Blob, and fused.writeFile only writes text — so the
+// bytes go through ./save_recording.py as base64 to become a real file on disk,
+// which is what fused.ai.transcribe needs (it takes a path, not an upload).
+const REC_TYPES = [
+  { mime: "audio/webm;codecs=opus", ext: "webm" },
+  { mime: "audio/webm", ext: "webm" },
+  { mime: "audio/ogg;codecs=opus", ext: "ogg" },
+  { mime: "audio/mp4", ext: "m4a" },
+  { mime: "", ext: "webm" },                      // let the browser pick its default
+];
+const B64_CHUNK = 900000;   // chars, a multiple of 4 so each chunk decodes alone
+
+// Desktop audio has no single portable route. A loopback INPUT device (BlackHole,
+// Loopback, Soundflower…) is the one that actually works on macOS, where WebKit's
+// getDisplayMedia hands over screen video and no audio at all; on Chromium,
+// getDisplayMedia can carry tab/system audio. Try both, and say which we got.
+const LOOPBACK_RX = /blackhole|loopback|soundflower|virtual|aggregate|multi-?output|ishowu|vb-?cable|voicemeeter/i;
+
+// What each Capture choice actually opens. `desk` names the display surface to
+// ask for, and a browser TAB is its own entry rather than a footnote under
+// Desktop audio because on Chromium it is the one surface that reliably hands
+// over an audio track — no loopback device, no driver, just the picker's "Share
+// tab audio" tick. Firefox and WebKit offer no share audio whatsoever, and even
+// Chrome limits WHOLE-SCREEN audio to Windows/ChromeOS. Two surfaces, different
+// support on every engine, so they get two capability flags and two
+// explanations rather than one "desktop audio" that means five things.
+const CAPTURE = {
+  mic:       { mic: true,  desk: null,     label: "the microphone" },
+  tab:       { mic: false, desk: "tab",    label: "tab audio" },
+  system:    { mic: false, desk: "screen", label: "desktop audio" },
+  "mic+tab": { mic: true,  desk: "tab",    label: "mic + tab" },
+  both:      { mic: true,  desk: "screen", label: "mic + desktop" },
+};
+const captureMode = (source) => CAPTURE[source] || CAPTURE.mic;
+
+// macOS is the reason the tab mode exists. There, a screen share arrives as
+// video with no audio track at all, so "Desktop audio" and "Mic + desktop" are
+// dead unless a loopback driver is installed — a fact worth saying BESIDE the
+// control, since the alternative is finding out after a recording that turned
+// out to be silence.
+const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || "");
+
+// Whether getDisplayMedia can carry sound is a per-ENGINE, per-SURFACE fact,
+// and getting it wrong in either direction wastes a recording:
+//
+//   Chromium  tab    — yes, everywhere. The picker's "Share tab audio" tick;
+//                      extensions get chrome.tabCapture on top, which is how a
+//                      Loom-style recorder grabs a tab with no driver.
+//   Chromium  screen — Windows and ChromeOS only. Sharing an entire screen on
+//                      macOS or Linux hands over no system audio.
+//   Firefox   both   — never implemented, on any platform. Mozilla bug 1627913
+//                      ("Implement getDisplayMedia({audio: true})") is still open.
+//   WebKit    both   — no. Its picker is the macOS system one: windows and
+//                      screens, no tab list and no audio checkbox.
+//
+// So the engine PREDICTS, and the first real share CONFIRMS or overturns it
+// (see openDesktop) — a prediction is never allowed to be the last word.
+const UA = navigator.userAgent || "";
+const IS_CHROMIUM = /chrome|chromium|crios|edg\/|opr\//i.test(UA);
+const IS_FIREFOX = /firefox|fxios/i.test(UA);          // Safari says "like Gecko"; only Firefox says Firefox
+const IS_WINDOWSISH = /Windows|CrOS/i.test(UA);
+const ENGINE = IS_CHROMIUM ? "Chrome" : IS_FIREFOX ? "Firefox" : "Safari/WebKit";
+const displayAudio = { tab: IS_CHROMIUM, screen: IS_CHROMIUM && IS_WINDOWSISH };
+
+// The route that works when the browser won't: a loopback INPUT, which is just
+// a microphone as far as getUserMedia is concerned. Spelled out per platform —
+// a bare "install a loopback device" leaves out the Multi-Output step, and
+// without it the user records fine but hears nothing, which reads as a broken
+// machine rather than a missing step.
+const LOOPBACK_RECIPE = () => IS_MAC
+  ? "Install <b>BlackHole</b> (free), then in <b>Audio MIDI Setup</b> create a Multi-Output Device " +
+    "combining BlackHole with your speakers so you can still hear what you record. Set that as the system " +
+    "output, pick <b>BlackHole</b> as the Input above, and record <b>Desktop audio</b>."
+  : "Install a loopback input — <b>VB-Cable</b> or <b>VoiceMeeter</b> on Windows, a PulseAudio/PipeWire monitor " +
+    "source on Linux — set it as the system output, pick it as the Input above, and record <b>Desktop audio</b>.";
+
+// Why a surface can't be recorded here, in the browser's own terms. Firefox is
+// the case that motivated saying the engine's name out loud: it fails for a
+// reason no macOS driver or picker setting can fix, so "install BlackHole" as a
+// blanket answer would send the user down the wrong path for the tab modes.
+function whyNoDisplayAudio(desk) {
+  if (IS_FIREFOX) {
+    return "Firefox has never implemented audio capture in a screen share — <span class='mono'>getDisplayMedia" +
+      "({audio:true})</span> is Mozilla bug 1627913, still open — so neither a tab nor the desktop can be " +
+      "recorded through the share picker on any platform. Nothing about your machine is misconfigured.";
+  }
+  if (!IS_CHROMIUM) {
+    return "Safari/WebKit offers no audio in a screen share at all: its picker is the macOS system one — " +
+      "windows and screens, no tab list and no audio checkbox.";
+  }
+  return desk === "tab"
+    ? "This build's picker offered no tab audio."
+    : "Chrome captures whole-screen audio on Windows and ChromeOS only — sharing a screen here carries no sound. " +
+      "(A single <b>Browser tab</b> is still fine.)";
+}
+
+function syncSourceHints() {
+  const sel = el("source"), note = el("sourceNote");
+  const loop = loopbackDevice();
+  // A loopback input is the whole system mix: it rescues the screen-wide modes
+  // and can do nothing for a single tab, so the two are judged separately.
+  const deadFor = (desk) =>
+    desk === "tab" ? !displayAudio.tab : desk === "screen" ? (!displayAudio.screen && !loop) : false;
+
+  for (const opt of sel.options) {
+    // The pristine label is stashed once, so re-running this never appends the
+    // suffix to a label that already carries it.
+    const base = opt.dataset.label || (opt.dataset.label = opt.textContent);
+    const desk = (CAPTURE[opt.value] || {}).desk;
+    const dead = deadFor(desk);
+    opt.disabled = dead;
+    opt.textContent = base + (!dead ? ""
+      : desk === "tab" ? " — " + ENGINE + " cannot capture tab audio"
+      : " — needs a loopback device");
+  }
+
+  // A bookmarked URL (or yesterday's choice) can name a mode this browser
+  // cannot do. Falling back to the microphone and SAYING so beats leaving a
+  // dead option selected for the Record button to fail on a second time.
+  if (deadFor(captureMode(sel.value).desk)) {
+    const mode = captureMode(sel.value);
+    sel.value = "mic";
+    fused.params.set("source", "mic");
+    note.innerHTML = "Switched to the microphone — <b>" + esc(mode.label) + "</b> is not capturable in " +
+      esc(ENGINE) + ". " + LOOPBACK_RECIPE();
+    return;
+  }
+
+  const desk = captureMode(sel.value).desk;
+  if (desk === "screen" && loop) {
+    note.textContent = "Loopback input: “" + loop.label + "”.";
+  } else if (desk === "screen" && !displayAudio.screen) {
+    note.innerHTML = whyNoDisplayAudio("screen") + " " + LOOPBACK_RECIPE();
+  } else if (desk === "tab") {
+    note.textContent = "Tick “Share tab audio” in the picker.";
+  } else {
+    note.textContent = "";
+  }
+}
+
+let recorder = null, recChunks = [], capture = null, recExt = "webm";
+let recTimer = null, recStart = 0, recLevel = null;
+let inputDevices = [];
+let timing = null;   // {audioSec, decodeMs, loadMs} for the last transcription
+
+function pickRecType() {
+  for (const t of REC_TYPES) {
+    if (!t.mime) return t;
+    if (window.MediaRecorder && MediaRecorder.isTypeSupported(t.mime)) return t;
+  }
+  return null;
+}
+
+function setRecUI(on) {
+  el("rec").classList.toggle("recording", on);
+  el("recLabel").textContent = on ? "Stop recording" : "Record";
+  el("go").disabled = on || running;
+  if (!on) { el("level").style.width = "0%"; }
+}
+
+function startLevelMeter(stream) {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 1024;
+    ctx.createMediaStreamSource(stream).connect(analyser);
+    const buf = new Uint8Array(analyser.fftSize);
+    let stopped = false;
+    (function tick() {
+      if (stopped) return;
+      analyser.getByteTimeDomainData(buf);
+      let peak = 0;
+      for (let i = 0; i < buf.length; i++) peak = Math.max(peak, Math.abs(buf[i] - 128) / 128);
+      el("level").style.width = Math.min(100, peak * 140).toFixed(1) + "%";
+      requestAnimationFrame(tick);
+    })();
+    recLevel = { stop() { stopped = true; ctx.close().catch(() => {}); } };
+  } catch (err) {
+    recLevel = null;                                // a missing meter is cosmetic
+    console.warn("[record] level meter unavailable:", err.message);
+  }
+}
+
+async function listDevices() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
+  try {
+    const all = await navigator.mediaDevices.enumerateDevices();
+    inputDevices = all.filter((d) => d.kind === "audioinput");
+  } catch (err) {
+    inputDevices = [];
+    console.warn("[record] enumerateDevices failed:", err.message);
+  }
+  const sel = el("device"), want = fused.params.get("device") || "";
+  // Labels are blank until the mic has been granted once — that's the browser's
+  // privacy rule, not a bug, so name them positionally in the meantime.
+  sel.innerHTML = inputDevices.length
+    ? inputDevices.map((d, i) =>
+        `<option value="${esc(d.deviceId)}">${esc(d.label || "Input " + (i + 1))}</option>`).join("")
+    : '<option value="">default input</option>';
+  if (want && inputDevices.some((d) => d.deviceId === want)) sel.value = want;
+  const loop = inputDevices.find((d) => LOOPBACK_RX.test(d.label || ""));
+  el("devices").title = loop ? "loopback device detected: " + loop.label : "no loopback device detected";
+  syncSourceHints();          // which desktop routes are real depends on this list
+}
+
+function loopbackDevice() {
+  return inputDevices.find((d) => LOOPBACK_RX.test(d.label || "")) || null;
+}
+
+async function openMic() {
+  const id = el("device").value;
+  return navigator.mediaDevices.getUserMedia({
+    audio: {
+      deviceId: id ? { exact: id } : undefined,
+      echoCancellation: true, noiseSuppression: true, channelCount: 1,
+    },
+  });
+}
+
+async function openDesktop(kind) {
+  // A loopback input carries the whole system mix — exactly right for "desktop
+  // audio", and exactly wrong for "this tab", which is the one thing it cannot
+  // isolate. So the shortcut is taken only for the screen-wide capture.
+  const loop = kind === "tab" ? null : loopbackDevice();
+  if (loop) {
+    // A loopback input carries the real system mix, and no picker appears.
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: { deviceId: { exact: loop.deviceId }, echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+    });
+    return { stream, how: "loopback device “" + loop.label + "”" };
+  }
+  if (navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) {
+    const tab = kind === "tab";
+    // Chromium needs video requested for audio to be offered at all. The rest
+    // are hints — `displaySurface` puts the picker on its tab list, and
+    // `selfBrowserSurface` keeps this page from being one of the options, which
+    // would record the app narrating itself. Unsupported hints are ignored, so
+    // this stays a plain screen share where they mean nothing.
+    const shared = await navigator.mediaDevices.getDisplayMedia({
+      video: tab ? { displaySurface: "browser" } : true,
+      audio: true,
+      ...(tab ? { selfBrowserSurface: "exclude", systemAudio: "exclude" } : { systemAudio: "include" }),
+    });
+    const audio = shared.getAudioTracks();
+    if (!audio.length) {
+      shared.getTracks().forEach((t) => t.stop());
+      // Now PROVEN for this surface, not predicted. Record it and resync the
+      // picker so the mode is marked dead and this is the last time the user
+      // meets this message.
+      displayAudio[kind] = false;
+      syncSourceHints();
+      throw new Error(
+        "the share carried no audio track — only video. " + whyNoDisplayAudio(kind).replace(/<[^>]+>/g, "") +
+        " The Capture list now says so; the way to record " + (tab ? "a browser tab" : "desktop audio") +
+        " here is a loopback input (see the note under Capture).");
+    }
+    displayAudio[kind] = true;                          // this surface does carry sound here
+    shared.getVideoTracks().forEach((t) => t.stop());   // we only want the sound
+    return { stream: new MediaStream(audio), how: tab ? "shared tab audio" : "shared screen/tab audio" };
+  }
+  throw new Error(
+    "this engine offers neither a loopback input nor getDisplayMedia audio. " +
+    "Install a loopback device such as BlackHole or Loopback and pick it as the input."
+  );
+}
+
+// Mic + desktop become one track through WebAudio; MediaRecorder takes a single
+// stream, and two separate files would need aligning after the fact.
+function mixStreams(streams) {
+  const ctx = new (window.AudioContext || window.webkitAudioContext)();
+  const dest = ctx.createMediaStreamDestination();
+  for (const s of streams) {
+    const gain = ctx.createGain();
+    gain.gain.value = 0.9;                             // headroom so the sum doesn't clip
+    ctx.createMediaStreamSource(s).connect(gain).connect(dest);
+  }
+  return { stream: dest.stream, ctx };
+}
+
+async function openCapture(source) {
+  const mode = captureMode(source);
+  const sources = [], labels = [];
+  try {
+    if (mode.mic) { sources.push(await openMic()); labels.push("microphone"); }
+    if (mode.desk) { const d = await openDesktop(mode.desk); sources.push(d.stream); labels.push(d.how); }
+  } catch (err) {
+    sources.forEach((s) => s.getTracks().forEach((t) => t.stop()));
+    throw err;
+  }
+  if (sources.length === 1) {
+    const only = sources[0];
+    return { stream: only, how: labels.join(""), stop() { only.getTracks().forEach((t) => t.stop()); } };
+  }
+  const { stream, ctx } = mixStreams(sources);
+  return {
+    stream, how: labels.join(" + "),
+    stop() {
+      sources.forEach((s) => s.getTracks().forEach((t) => t.stop()));
+      ctx.close().catch(() => {});
+    },
+  };
+}
+
+async function startRecording() {
+  if (!IS_LOCAL) { notice("Recording feeds a local transcription runner, which an exported page doesn't have.", "error"); return; }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
+    notice("<b>This browser can't record.</b> <span class='mono'>MediaRecorder</span> / <span class='mono'>getUserMedia</span> is unavailable here — pick an existing file on the left instead.", "error");
+    return;
+  }
+  const type = pickRecType();
+  el("notices").innerHTML = "";
+  try {
+    capture = await openCapture(P.source);
+  } catch (err) {
+    capture = null;
+    const why = err.name === "NotAllowedError"
+      ? "Access was denied. Allow it for fused-render (macOS: System Settings → Privacy &amp; Security → Microphone / Screen Recording) and try again."
+      : err.name === "NotFoundError" ? "No matching input device was found on this machine."
+      : esc(err.message || String(err));
+    notice("<b>Could not start capturing " + esc(captureMode(P.source).label) + ".</b><br>" + why, "error");
+    return;
+  }
+  listDevices();                                       // labels are readable now that access was granted
+
+  recExt = type.ext;
+  recChunks = [];
+  recorder = type.mime ? new MediaRecorder(capture.stream, { mimeType: type.mime }) : new MediaRecorder(capture.stream);
+  recorder.addEventListener("dataavailable", (e) => { if (e.data && e.data.size) recChunks.push(e.data); });
+  recorder.addEventListener("stop", finishRecording);
+  recorder.start(1000);                             // flush a blob per second
+
+  recStart = Date.now();
+  el("recClock").textContent = "0:00";
+  recTimer = setInterval(() => {
+    el("recClock").textContent = clock((Date.now() - recStart) / 1000);
+  }, 250);
+  startLevelMeter(capture.stream);
+  setRecUI(true);
+  el("recNote").textContent = "Recording " + capture.how + " → ./recordings/";
+
+  // A shared-screen capture ends when the user hits the browser's own Stop
+  // sharing button; treat that as pressing Stop here.
+  capture.stream.getAudioTracks().forEach((t) => t.addEventListener("ended", () => {
+    if (recorder && recorder.state !== "inactive") stopRecording();
+  }));
+}
+
+function stopRecording() {
+  if (recorder && recorder.state !== "inactive") recorder.stop();   // fires finishRecording
+}
+
+async function finishRecording() {
+  clearInterval(recTimer); recTimer = null;
+  if (recLevel) { recLevel.stop(); recLevel = null; }
+  if (capture) { capture.stop(); capture = null; }
+  setRecUI(false);
+
+  const blob = new Blob(recChunks, { type: recorder && recorder.mimeType ? recorder.mimeType : "audio/webm" });
+  const seconds = (Date.now() - recStart) / 1000;
+  recorder = null; recChunks = [];
+  if (!blob.size) { notice("Nothing was captured — the recording was empty.", "error"); return; }
+
+  el("recNote").textContent = "Saving " + bytes(blob.size) + " to ./recordings/…";
+  let saved;
+  try {
+    saved = await saveRecording(blob, recExt);
+  } catch (err) {
+    el("recNote").textContent = "";
+    notice("<b>Could not save the recording.</b> " + esc(err.message), "error");
+    return;
+  }
+  el("recNote").innerHTML = "Saved <span class='mono'>" + esc(saved.name) + "</span> · " +
+    clock(seconds) + " · " + bytes(saved.size) + " — in <span class='mono'>./recordings/</span>, never uploaded.";
+
+  fused.params.set("file", saved.path);
+  scan();                                           // the new file joins the list
+  if (el("auto").checked) transcribe();
+}
+
+async function saveRecording(blob, ext) {
+  const b64 = await blobToBase64(blob);
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-").replace("T", "_").slice(0, 19);
+  const name = "rec-" + stamp;
+  let last = null;
+  for (let i = 0; i < b64.length; i += B64_CHUNK) {
+    // key: null — these are sequential writes to one file; the default stale
+    // cancellation is for scrubbing, and here every chunk must land.
+    last = await fused.runPython(
+      "./save_recording.py",
+      { b64: b64.slice(i, i + B64_CHUNK), name, ext, append: i ? "1" : "0" },
+      { key: null }
+    );
+  }
+  return last;
+}
+
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onerror = () => reject(new Error("could not read the recorded audio"));
+    fr.onload = () => resolve(String(fr.result).split(",")[1] || "");
+    fr.readAsDataURL(blob);
+  });
+}
+
+// ── The transcription itself ───────────────────────────────────────────────
+async function transcribe() {
+  const path = P.file.trim();
+  if (!path) { notice("Pick a recording first — choose one on the left or paste an absolute path.").scrollIntoView(); return; }
+  if (!IS_LOCAL) { notice("Transcription only runs on the local fused-render app.", "error"); return; }
+
+  // The last gate before the call. A count that is present and unusable would
+  // be refused by the runtime anyway; refusing it here keeps the explanation
+  // next to the input that caused it, and nothing is submitted at all. An
+  // ABSENT count is not a refusal — it is the request to estimate.
+  const wantSpeakers = DIARIZE_OK && el("diarize").checked;
+  const count = wantSpeakers ? speakerCount() : null;
+  if (wantSpeakers && !count.ok) {
+    syncDiarize();
+    el("speakers").focus();
+    notice("<b>How many speakers?</b> " + esc(count.why), "error").scrollIntoView({ block: "nearest" });
+    return;
+  }
+
+  running = true;
+  el("go").disabled = true;         // fused.ai has no stale-cancel; a second click would start a second run
+  el("stop").disabled = false;
+  el("notices").innerHTML = "";
+  // The transcript pane belongs to the run being watched. Since it now fills in
+  // live, leaving the PREVIOUS run's text sitting under a running progress bar
+  // would read as this run's output until the first segment overwrote it.
+  result = null;
+  timing = null;                    // ditto the timing chart: last run's numbers, wrong picture
+  drawResult();
+  // A stale search would hide the words as they arrive. Cleared here rather
+  // than on resolve (where it used to be), for the same reason.
+  fused.params.set("q", "");
+  el("progressCard").classList.remove("hidden");
+  el("progressTitle").textContent = "Transcribing";
+  el("bar").removeAttribute("value");
+  el("bar").removeAttribute("max");
+  el("clock").textContent = "starting…";
+  el("progressDetail").textContent = "";
+  el("split").textContent = "";
+
+  // Decode timing: measured around this attempt only, so a cold model download
+  // (which the model_loading retry handles) is reported separately from decoding.
+  const t0 = performance.now();
+  // …and WHERE the wall clock went inside that attempt, which the total alone
+  // hides: a twenty-second clip costs about the same on either engine because
+  // the VAD and diarization pre-passes sweep the whole waveform before a single
+  // word is decoded, and "8s for 20s of audio" reads as a slow model rather
+  // than as two full passes and a short decode.
+  //
+  // The split comes from what onProgress already distinguishes: `job.total` set
+  // means the row is counting SECONDS OF AUDIO, i.e. decoding; absent means a
+  // stage that cannot say how far along it is — the pre-passes and the fetches
+  // they do. Each interval between ticks is charged to the kind the tick that
+  // OPENED it reported, because that is the stage that was running during it.
+  const span = { pre: 0, decode: 0, unknown: 0, stages: [] };
+  let lastTick = 0;         // 0 = nothing has reported yet
+  let lastKind = null;
+  // The opening interval — the call going out, the row opening, whatever runs
+  // before the first report — is charged to NEITHER. Nothing has said what is
+  // happening in it, and a guess would be the one number in the panel with
+  // nothing behind it. It is left out of the breakdown rather than named.
+  const charge = () => {
+    const now = performance.now();
+    if (!lastTick) span.unknown += now - t0;
+    else span[lastKind] += now - lastTick;
+    lastTick = now;
+  };
+  // The interval in progress is added WITHOUT being committed, so the live line
+  // counts up instead of sitting at zero for the whole of a stage — which is
+  // exactly the stretch this number exists to explain.
+  const splitNow = () => {
+    const live = { pre: span.pre, decode: span.decode };
+    if (lastTick && lastKind) live[lastKind] += performance.now() - lastTick;
+    return [
+      live.pre > 50 ? "pre-pass " + (live.pre / 1000).toFixed(1) + "s" : "",
+      live.decode > 50 ? "decode " + (live.decode / 1000).toFixed(1) + "s" : "",
+    ].filter(Boolean).join(" · ");
+  };
+  let lastDone = 0;
+  const tick = setInterval(() => {
+    const secs = (performance.now() - t0) / 1000;
+    el("elapsed").textContent = "· elapsed " + secs.toFixed(1) + "s" +
+      (lastDone > 0.5 ? " · " + (lastDone / secs).toFixed(1) + "× realtime" : "");
+    el("split").textContent = splitNow();
+  }, 200);
+
+  const model = el("model").value;
+  // Every segment this run has produced, in arrival order. The runtime promises
+  // each one exactly once and in order, so this is an append and never a merge:
+  // de-duplicating would be undoing a guarantee.
+  const live = [];
+
+  const opts = {
+    path,
+    model,
+    task: P.task,
+    vad: P.vad,
+    onSegment: (s) => {
+      live.push(s);
+      queueLive(live, model);
+    },
+    onProgress: (job) => {
+      // Close the interval this tick ends before deciding what the next one is.
+      charge();
+      lastKind = job.total ? "decode" : "pre";
+      if (lastKind === "pre") {
+        // Name the stage where the row names it — `detail` first, `state` as
+        // the fallback — and collect the names rather than the last one, since
+        // a diarized run has two pre-passes and reporting only the later one
+        // would credit the whole span to it. A stage that arrives nameless adds
+        // nothing to the list: its time is still counted, it is simply not
+        // claimed for a name the row never gave.
+        const name = (job.detail || job.state || "").trim();
+        if (name && !span.stages.includes(name)) span.stages.push(name);
+      }
+      // Progress here is SECONDS OF AUDIO — not bytes, not steps.
+      lastDone = job.done || 0;
+      if (job.total) {
+        el("bar").max = job.total;
+        el("bar").value = job.done || 0;
+        el("clock").textContent = clock(job.done || 0) + " / " + clock(job.total);
+      } else {
+        // A stage with no total — the diarization pre-pass and the model fetches
+        // it does — is INDETERMINATE, not zero. Painting "0:00 / 0:00" under an
+        // empty bar is the same picture as a run that has stalled, so the bar
+        // goes back to travelling and the clock says nothing rather than a lie.
+        el("bar").removeAttribute("value");
+        el("bar").removeAttribute("max");
+        el("clock").textContent = "working…";
+      }
+      el("progressDetail").textContent = job.detail || job.state || "";
+    },
+  };
+  if (P.lang) opts.language = P.lang;
+  if (wantSpeakers) {
+    opts.diarize = true;
+    // The key is LEFT OFF rather than sent as null when the count is to be
+    // estimated. The runtime reads undefined, null and "" as the same "I did
+    // not say", so all three would work — omitting it is the spelling that
+    // cannot be misread as "zero speakers" by anything downstream, and it is
+    // what makes `estimatedSpeakers` come back on the reply.
+    if (count.n !== null) opts.speakers = count.n;
+  }
+
+  try {
+    // The resolve REPLACES the live stand-in; it does not append to it.
+    // `rec.segments` is the same list `onSegment` was feeding us — the runtime
+    // reconciles by count and delivers whatever the tail missed before it
+    // resolves — so the two are the same words, and the swap is only how the
+    // fields we could not know live (url, duration, language, the speaker
+    // legend) arrive. Appending, or merging, would double the transcript.
+    result = await fused.ai.transcribe(opts);
+    // The tail — last report to resolve — is charged to the stage the run was
+    // in when it last reported, which is what the row last said and the only
+    // thing there is to go on. In practice that is decoding, since the pre-
+    // passes finish before the first determinate tick.
+    charge();
+    const segs = result.segments || [];
+    timing = {
+      totalMs: performance.now() - t0,
+      preMs: span.pre,
+      decodeMs: span.decode,
+      // Counted but never named: see `charge`. It is the difference between the
+      // total row and the two beneath it, which is where it stays visible.
+      unknownMs: span.unknown,
+      stages: span.stages.slice(),
+      loadMs: pendingLoadMs,          // non-zero only when this run had to load the model
+      audioSec: result.duration || (segs.length ? segs[segs.length - 1].end : lastDone),
+    };
+    pendingLoadMs = 0;
+    el("progressCard").classList.add("hidden");
+    drawResult();
+    el("resultCard").scrollIntoView({ behavior: "smooth", block: "nearest" });
+  } catch (err) {
+    el("progressCard").classList.add("hidden");
+    // Whatever decoded before the run ended is still worth having, and there
+    // are two places it can be: on screen already (everything `onSegment`
+    // delivered — the runtime settles its last reads BEFORE rejecting, so this
+    // list is final by now), and in the `.partial.jsonl` the worker leaves
+    // behind on a FAILED run. Prefer whichever is longer, since the file also
+    // survives the case where the job row aged out mid-run.
+    await keepWhatSurvived(err, live, model);
+    // Whether anything survived is a question about `result`, not about the
+    // rejection: the salvage above may have found more on disk than this tab
+    // ever saw, and on a cancelled run it will usually have found nothing.
+    const kept = result && result.partial
+      ? " — the " + (result.segments || []).length + " segments that decoded are above, and can be copied or saved as .srt"
+      : "";
+    if (err.type === "cancelled") {
+      notice("Stopped — no transcript file was written" + kept + ".");
+    } else if (err.type === "unavailable") {
+      notice("<b>Speech recognition is not available on this machine.</b><br>" + esc(err.message), "error");
+    } else if (err.type === "model_loading") {
+      await watchModelLoad(err.jobId, "Loading the speech model");
+      running = false; el("go").disabled = recorder !== null; el("stop").disabled = true;
+      return transcribe();                                // weights are resident now
+    } else if (err.type === "bad_request") {
+      notice("<b>Bad request.</b> " + esc(err.message), "error");
+    } else {
+      notice("<b>" + esc(err.type || "error") + "</b> — " + esc(err.message) + esc(kept), "error");
+    }
+  } finally {
+    clearInterval(tick);
+    // A queued live redraw would fire on the NEXT frame — i.e. after the code
+    // above has already put the real (or salvaged) transcript in `result` — and
+    // paint the stand-in back over it.
+    if (livePending) { cancelAnimationFrame(livePending); livePending = 0; }
+    el("elapsed").textContent = "";
+    el("split").textContent = "";
+    if (running) { running = false; el("go").disabled = recorder !== null; el("stop").disabled = true; }
+    refreshRuntime();
+  }
+}
+
+let pendingLoadMs = 0;   // model load charged to the next transcription's timing
+
+async function watchModelLoad(jobId, title) {
+  const loadT0 = performance.now();
+  el("progressCard").classList.remove("hidden");
+  el("progressTitle").textContent = title;
+  el("bar").removeAttribute("value");
+  el("clock").textContent = "";
+  el("progressDetail").textContent = "downloading weights…";
+  try {
+    await fused.watchJob(jobId).watch((job) => {
+      if (job.total) { el("bar").max = job.total; el("bar").value = job.done || 0; }
+      el("clock").textContent = bytes(job.done) + " / " + bytes(job.total);
+      el("progressDetail").textContent = job.detail || job.state || "";
+    });
+  } finally {
+    pendingLoadMs = performance.now() - loadT0;
+    el("progressCard").classList.add("hidden");
+    refreshRuntime();
+  }
+}
+
+// ── Where the run's time went, as a picture ────────────────────────────────
+function drawTiming() {
+  const box = el("timing");
+  if (!timing || !timing.totalMs) { box.classList.add("hidden"); return; }
+  box.classList.remove("hidden");
+
+  const totalSec = timing.totalMs / 1000;
+  const preSec = (timing.preMs || 0) / 1000;
+  const decodeSec = (timing.decodeMs || 0) / 1000;
+  const loadSec = (timing.loadMs || 0) / 1000;
+  const audioSec = timing.audioSec || 0;
+  const scale = Math.max(audioSec, totalSec, loadSec, 0.001);
+  const pct = (v) => (Math.max(v, 0) / scale * 100).toFixed(1) + "%";
+  const secs = (v) => (v >= 60 ? clock(v) : v.toFixed(1) + "s");
+
+  const row = (cls, label, value, text) =>
+    `<div class="trow"><span class="tlab">${label}</span>` +
+    `<div class="ttrack"><div class="tfill ${cls}" style="width:${pct(value)}"></div></div>` +
+    `<span class="tval mono">${text}</span></div>`;
+
+  // ×realtime is still measured against the WHOLE run, because that is the wait
+  // the user actually sat through — the breakdown underneath is what says how
+  // much of it was decoding. A rate against the decode alone would flatter the
+  // engine on exactly the recordings the pre-passes dominate.
+  const rtf = audioSec > 0 ? audioSec / totalSec : 0;
+  // Named stages, when the row named any. A run with none says nothing here
+  // rather than inventing a label for time it can only place, not identify.
+  const stages = (timing.stages || []).join(", ").toLowerCase().replace(/…/g, "");
+  const split = (preSec > 0.05 && decodeSec > 0.05)
+    ? " — of which " + secs(preSec) + " before a word was decoded" +
+      (stages ? " (" + esc(stages) + ")" : "") + " and " + secs(decodeSec) + " decoding"
+    : "";
+  box.innerHTML =
+    row("audio", "audio", audioSec, secs(audioSec)) +
+    row("total", "run", totalSec, secs(totalSec)) +
+    (preSec > 0.05 ? row("pre", "pre-pass", preSec, secs(preSec)) : "") +
+    (decodeSec > 0.05 ? row("decode", "decode", decodeSec, secs(decodeSec)) : "") +
+    (loadSec > 0.05 ? row("load", "model load", loadSec, secs(loadSec)) : "") +
+    (rtf
+      ? `<div class="rtf"><b>${rtf >= 1 ? rtf.toFixed(1) + "×" : "0" + rtf.toFixed(2).slice(1) + "×"}</b> ` +
+        (rtf >= 1
+          ? "faster than realtime — " + secs(audioSec) + " of audio in " + secs(totalSec)
+          : "of realtime — " + secs(audioSec) + " of audio took " + secs(totalSec)) +
+        split +
+        (loadSec > 0.05 ? ". Model load: " + secs(loadSec) + ", once per session" : "") +
+        "</div>"
+      : "");
+}
+
+function toSrt(segments) {
+  const stamp = (s) => {
+    const ms = Math.floor((s % 1) * 1000), t = Math.floor(s);
+    return [Math.floor(t / 3600), Math.floor((t % 3600) / 60), t % 60]
+      .map((n) => String(n).padStart(2, "0")).join(":") + "," + String(ms).padStart(3, "0");
+  };
+  return segments.map((s, i) =>
+    (i + 1) + "\n" + stamp(s.start) + " --> " + stamp(s.end) + "\n" + (s.text || "").trim() + "\n"
+  ).join("\n");
+}
+
+async function saveSrt() {
+  if (!result || !(result.segments || []).length) return;
+  const target = P.file.replace(/\.[^./]+$/, "") + ".srt";
+  const body = toSrt(result.segments);
+  try {
+    await fused.writeFile(target, body, { create: true });
+    notice("Wrote <span class='mono'>" + esc(target) + "</span>");
+  } catch (err) {
+    if (err.type === "exists") {
+      if (!confirm(target + "\n\nalready exists. Overwrite it?")) return;
+      await fused.writeFile(target, body);
+      notice("Overwrote <span class='mono'>" + esc(target) + "</span>");
+    } else {
+      notice("<b>Could not write the .srt</b> — " + esc(err.message), "error");
+    }
+  }
+}
+
+// ── Draw: read params, reflect them into the controls ──────────────────────
+function draw() {
+  const path = P.file;
+  el("path").value = path;
+  el("roots").value = P.roots;
+  el("task").value = P.task;
+  el("lang").value = P.lang;
+  // …and then whichever of those two the active engine refuses is disabled and
+  // explained. After the values are reflected, because it may move them.
+  syncEngineOptions();
+  el("vad").checked = P.vad;
+  el("diarize").checked = P.diarize;
+  el("speakers").value = P.speakers;
+  syncDiarize();
+  el("q").value = P.q;
+  // A URL can carry a source this build doesn't offer; land on the mode the
+  // capture code would actually use rather than leaving the select blank.
+  el("source").value = CAPTURE[P.source] ? P.source : "mic";
+  syncSourceHints();
+  // The input picker only means anything when a mic is part of the capture;
+  // desktop- and tab-only audio come from a loopback device or the share picker.
+  el("deviceWrap").classList.toggle("hidden", !captureMode(P.source).mic);
+  if (el("model").options.length) {
+    el("model").value = P.model || el("model").value;
+    syncModelMeta();
+  }
+
+  el("selName").textContent = path || "Nothing selected.";
+  const player = el("player");
+  if (path) {
+    const url = fused.rawUrl(path);
+    if (player.getAttribute("src") !== url) { player.src = url; }
+    player.classList.remove("hidden");
+    verifySelection(path);
+  } else {
+    player.classList.add("hidden");
+  }
+  drawFiles();
+  drawResult();
+}
+
+// A bookmarked URL can name a file that has since moved or been deleted — say so
+// rather than showing a player pointed at nothing.
+let verifySeq = 0;
+async function verifySelection(path) {
+  const seq = ++verifySeq;
+  try {
+    await fused.stat(path);
+  } catch (err) {
+    if (seq !== verifySeq || path !== P.file) return;      // selection moved on
+    el("player").classList.add("hidden");
+    el("selName").innerHTML = "<span style='color:var(--err)'>Not on disk any more:</span> " + esc(path);
+  }
+}
+
+// ── Wiring: controls write params, onChange redraws ────────────────────────
+el("path").addEventListener("change", () => fused.params.set("file", el("path").value.trim()));
+el("roots").addEventListener("change", () => { fused.params.set("roots", el("roots").value.trim()); scan(); });
+el("rescan").addEventListener("click", scan);
+el("task").addEventListener("change", () => fused.params.set("task", el("task").value));
+el("lang").addEventListener("change", () => fused.params.set("lang", el("lang").value));
+el("vad").addEventListener("change", () => fused.params.set("vad", el("vad").checked ? "1" : "0"));
+el("diarize").addEventListener("change", () => fused.params.set("diarize", el("diarize").checked ? "1" : "0"));
+// Typing shows the verdict live; leaving the field is when the value is CLAMPED
+// and written, so the URL only ever carries a count the runtime would accept —
+// a param a bookmark can restore into a submit.
+el("speakers").addEventListener("input", syncDiarize);
+el("speakers").addEventListener("change", () => {
+  const raw = el("speakers").value.trim();
+  // Empty STAYS empty — it is the request to estimate, not a hole for a default
+  // to fill. A number input also reports "" for typed junk, so junk lands on
+  // "estimate" as well; that is visible rather than silent, because the note
+  // under the field then says the count will be estimated.
+  const typed = raw === "" ? NaN : Number(raw);
+  // Clamping, not rejecting, for a number that is merely out of range: 0 or 300
+  // is a count someone meant, and the nearest one the runtime accepts is a
+  // better answer than a red note over an empty submit. Junk is the case that
+  // has no nearest value, and it falls through to estimating.
+  const count = speakerCount();
+  const n = count.ok && count.n !== null ? String(count.n)
+    : Number.isFinite(typed) ? String(Math.min(MAX_SPEAKERS, Math.max(1, Math.round(typed))))
+    : "";
+  el("speakers").value = n;
+  fused.params.set("speakers", n);
+  // Resync directly: when the clamp lands on the value the param ALREADY holds
+  // (type junk over a 2 and it clamps back to 2), `set` applies no change and
+  // fires no onChange — and the note would sit there in red under a field that
+  // is now perfectly valid.
+  syncDiarize();
+});
+el("model").addEventListener("change", () => fused.params.set("model", el("model").value));
+el("q").addEventListener("input", () => fused.params.set("q", el("q").value));
+el("viewSegments").addEventListener("click", () => fused.params.set("view", "segments"));
+el("viewText").addEventListener("click", () => fused.params.set("view", "text"));
+el("go").addEventListener("click", transcribe);
+el("rec").addEventListener("click", () => (recorder ? stopRecording() : startRecording()));
+el("source").addEventListener("change", () => fused.params.set("source", el("source").value));
+el("device").addEventListener("change", () => fused.params.set("device", el("device").value));
+el("devices").addEventListener("click", listDevices);
+
+el("stop").addEventListener("click", async () => {
+  // cancel() defaults to text-generation, so the capability must be named.
+  el("stop").disabled = true;
+  try { await fused.ai.cancel(ASR); } catch (err) { notice("Stop failed — " + esc(err.message), "error"); }
+});
+
+el("copy").addEventListener("click", async () => {
+  if (!result) return;
+  try {
+    await navigator.clipboard.writeText(result.text || "");
+    el("copy").textContent = "Copied";
+    setTimeout(() => (el("copy").textContent = "Copy"), 1200);
+  } catch (err) {
+    notice("Clipboard blocked — the transcript is also on disk at <span class='mono'>" + esc(result.outputText || result.output || "") + "</span>");
+  }
+});
+
+el("srt").addEventListener("click", saveSrt);
+
+el("load").addEventListener("click", async () => {
+  if (!IS_LOCAL) return;
+  el("load").disabled = true;
+  try {
+    // The capability travels with the request. Without it the API defaults to
+    // text generation, so a speech repo is handed to the chat runner and the
+    // load fails with "No safetensors found" — a message about a model that is
+    // perfectly fine, from a runner that was never meant to read it.
+    const { jobId } = await fused.ai.models.load(el("model").value, { capability: ASR });
+    await watchModelLoad(jobId, "Preloading " + el("model").value);
+  } catch (err) {
+    notice("<b>" + esc(err.type || "error") + "</b> — " + esc(err.message), "error");
+  } finally {
+    // Not a blanket re-enable: whether Preload is offered again depends on what
+    // is resident NOW, which refreshRuntime has just re-read.
+    await refreshRuntime();
+  }
+});
+
+el("unload").addEventListener("click", async () => {
+  if (!IS_LOCAL) return;
+  el("notices").innerHTML = "";
+  try {
+    // By capability, not by id: another page may have loaded something else.
+    const { stopped } = await fused.ai.models.unload({ capability: ASR });
+    // Said out loud, because the silent version is indistinguishable from a
+    // dead button: an unload with nothing resident is a no-op, and the status
+    // line beside it already read "nothing resident" before the click.
+    notice(stopped
+      ? "<b>Unloaded.</b> The speech model has released its memory."
+      : "<b>Nothing to unload.</b> No speech model was resident.");
+  } catch (err) {
+    notice("<b>" + esc(err.type || "error") + "</b> — " + esc(err.message), "error");
+  }
+  refreshRuntime();
+});
+
+el("player").addEventListener("timeupdate", syncActiveSegment);
+
+fused.params.onChange(draw);
+
+(async function init() {
+  if (!IS_LOCAL) {
+    notice("<b>This demo is local-only.</b> An exported copy has no speech runner to call.", "error");
+  }
+  await fillModels();
+  await listDevices();
+  draw();
+  await refreshRuntime();
+  if (IS_LOCAL && asrRunner === null) {
+    notice("<b>This fused-render build has no speech runner.</b> " +
+      "<span class='mono'>fused.ai.transcribe</span> needs one of the three that serve this " +
+      "capability — MLX Whisper or Parakeet TDT on Apple Silicon, faster-whisper (CTranslate2) " +
+      "anywhere — and this build registers none of them.", "error");
+  }
+  scan();
+})();
+</script>
+</body>
+</html>

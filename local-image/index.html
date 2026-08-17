@@ -1,325 +1,1304 @@
 <!DOCTYPE html>
-<html>
+<html data-fused-theme="shell">
 <head>
-<meta name="fused-app">
-<meta charset="utf-8">
-<title>FLUX.2 Klein — Text to Image</title>
+<meta charset="utf-8" />
+<meta name="fused-app" />
+<title>Local image generation</title>
 <style>
-  :root { color-scheme: dark; }
+  :root {
+    color-scheme: dark;
+    --bg: #0e1116; --panel: #14181f; --panel-2: #191e27; --text: #dce2ea;
+    --muted: #8b93a1; --line: #262c37; --line-soft: #1d222b;
+    --accent: #9db4f0; --accent-dim: #2c3856; --warn: #e0b463; --err: #e2807f;
+    --sel: #1f2533; --shade: #0a0d12;
+    --ease: cubic-bezier(.2, .7, .3, 1);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --bg: #f6f7f9; --panel: #ffffff; --panel-2: #f1f3f6; --text: #171b21;
+    --muted: #626a78; --line: #dce0e7; --line-soft: #e8ebf0;
+    --accent: #3457a8; --accent-dim: #ccd8f4; --warn: #96650d; --err: #b3403f;
+    --sel: #e8edf7; --shade: #e9ecf1;
+  }
+  @media (prefers-reduced-motion: reduce) { * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; } }
   * { box-sizing: border-box; }
   body {
-    margin: 0;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    background: #16171a;
-    color: #e6e6e6;
-    display: flex;
-    height: 100vh;
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   }
-  #panel {
-    width: 340px;
-    flex-shrink: 0;
-    padding: 20px;
-    border-right: 1px solid #2a2b2f;
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .hidden { display: none !important; }
+  ::selection { background: var(--sel); }
+
+  header {
+    display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
+    padding: 15px 20px 13px; border-bottom: 1px solid var(--line); background: var(--panel);
   }
-  h1 { font-size: 15px; margin: 0 0 4px; font-weight: 600; }
-  .sub { font-size: 12px; color: #9a9ba0; margin: -10px 0 6px; }
-  label { font-size: 12px; color: #b6b7bc; display: block; margin-bottom: 4px; }
-  textarea, input[type=text], input[type=number] {
-    width: 100%;
-    background: #1f2024;
-    border: 1px solid #33343a;
-    border-radius: 6px;
-    color: #e6e6e6;
-    padding: 8px;
-    font-size: 13px;
-    font-family: inherit;
+  header h1 { font-size: 14px; margin: 0; letter-spacing: .01em; }
+  header .sub { color: var(--muted); font-size: 12px; }
+  #runtime { margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); display: inline-block; flex: none; transition: background .2s var(--ease); }
+  .dot.on { background: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
+  .dot.off { background: var(--err); }
+
+  nav { display: flex; gap: 2px; padding: 0 16px; background: var(--panel); border-bottom: 1px solid var(--line); }
+  nav button {
+    background: none; border: none; border-bottom: 2px solid transparent; border-radius: 0;
+    padding: 9px 14px; color: var(--muted); cursor: pointer; font: inherit;
+    transition: color .15s var(--ease), border-color .15s var(--ease);
   }
-  textarea { resize: vertical; min-height: 70px; }
-  .row { display: flex; gap: 10px; }
-  .row > div { flex: 1; }
-  #advanced { border: 1px solid #2a2b2f; border-radius: 6px; padding: 0 12px; }
-  #advanced summary {
-    cursor: pointer;
-    font-size: 12px;
-    font-weight: 600;
-    color: #c7c8cc;
-    padding: 10px 0;
-    user-select: none;
+  nav button:hover { color: var(--text); }
+  nav button[aria-current="true"] { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
+
+  .layout { display: grid; grid-template-columns: 292px 1fr; min-height: calc(100vh - 86px); }
+  aside { border-right: 1px solid var(--line); background: var(--panel); padding: 16px; }
+  main { padding: 20px; min-width: 0; }
+
+  .group { margin-bottom: 17px; }
+  .group > label, .glabel {
+    display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .08em;
+    color: var(--muted); margin-bottom: 6px;
   }
-  #advanced .advanced-body { display: flex; flex-direction: column; gap: 14px; padding-bottom: 14px; }
-  .hint { font-size: 11px; color: #6f7075; margin-top: 4px; }
-  input[type=range] { width: 100%; }
-  .rangeval { font-size: 11px; color: #9a9ba0; float: right; }
+  input[type="text"], input[type="number"], select, textarea {
+    width: 100%; background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--line); border-radius: 6px; padding: 7px 9px; font: inherit;
+    transition: border-color .15s var(--ease), box-shadow .15s var(--ease);
+  }
+  textarea { resize: vertical; line-height: 1.5; }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
+  input[type="range"] { width: 100%; accent-color: var(--accent); }
+  .row { display: flex; gap: 8px; align-items: center; }
+  .row > * { min-width: 0; }
+  .check { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12px; }
+  .hint { color: var(--muted); font-size: 11px; margin-top: 5px; }
+  /* The meta row and the file path are empty while a render is in flight and
+     one line tall once it lands, so without a reserved line the card grows
+     under the reader at the exact moment the preview sharpens into the result.
+     (px is the fallback for engines without `lh`.) */
+  #resultMeta { min-height: 15px; min-height: 1lh; }
+  #resultPath { min-height: 14px; min-height: 1lh; }
+  .hint b { color: var(--text); font-weight: 500; }
+  .between { display: flex; justify-content: space-between; align-items: baseline; }
+  .between .val { font-size: 12px; font-variant-numeric: tabular-nums; }
+  .extremes { display: flex; justify-content: space-between; color: var(--muted); font-size: 10px; }
+  .chips { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 8px; }
+  .chip { padding: 3px 9px; font-size: 11px; border-radius: 999px; color: var(--muted); }
+  .chip:hover:not(:disabled) { color: var(--text); }
+  .chip.active { background: var(--accent-dim); border-color: var(--accent); color: var(--text); }
+  kbd {
+    font: 10px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted);
+    border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px;
+    padding: 1px 4px; background: var(--panel-2);
+  }
+
+  /* Advanced: the three settings most renders never touch. Collapsed by
+     default, but the summary carries their current values, so folding them
+     away never hides a setting that is doing something unexpected. */
+  details.adv { margin-bottom: 16px; border-top: 1px solid var(--line-soft); padding-top: 12px; }
+  details.adv > summary {
+    display: flex; align-items: baseline; gap: 6px; cursor: pointer; list-style: none;
+    font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted);
+  }
+  details.adv > summary::-webkit-details-marker { display: none; }
+  details.adv > summary:hover { color: var(--text); }
+  details.adv > summary:focus-visible { outline: none; color: var(--text); }
+  details.adv > summary .caret { transition: transform .15s var(--ease); flex: none; font-size: 9px; }
+  details.adv[open] > summary .caret { transform: rotate(90deg); }
+  details.adv > summary .summary-val {
+    margin-left: auto; text-transform: none; letter-spacing: 0; font-size: 11px;
+    font-variant-numeric: tabular-nums; color: var(--muted);
+  }
+  details.adv[open] > summary .summary-val { opacity: 0; }
+  details.adv .adv-body { padding-top: 13px; }
+  details.adv .group:last-child { margin-bottom: 0; }
+
   button {
-    background: #4c7dff;
-    color: white;
-    border: none;
-    border-radius: 6px;
-    padding: 10px 14px;
-    font-size: 13px;
-    font-weight: 600;
-    cursor: pointer;
+    font: inherit; color: var(--text); background: var(--panel-2);
+    border: 1px solid var(--line); border-radius: 6px; padding: 7px 12px; cursor: pointer;
+    transition: border-color .15s var(--ease), background .15s var(--ease), transform .1s var(--ease);
   }
-  button:disabled { background: #33343a; color: #77787d; cursor: default; }
-  button.secondary {
-    background: transparent;
-    border: 1px solid #33343a;
-    color: #c7c8cc;
-    font-weight: 500;
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:active:not(:disabled) { transform: translateY(1px); }
+  button:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-dim); }
+  button:disabled { opacity: .45; cursor: default; }
+  button.primary { background: var(--accent-dim); border-color: var(--accent); font-weight: 600; }
+  button.tiny { padding: 4px 8px; font-size: 11px; }
+  button.link { background: none; border: none; padding: 0; color: var(--accent); text-decoration: underline; cursor: pointer; }
+  button.icon-close {
+    background: none; border: none; cursor: pointer; color: var(--muted);
+    width: 22px; height: 22px; padding: 0; border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 15px; line-height: 1;
   }
-  #status {
-    font-size: 12px;
-    color: #9a9ba0;
-    min-height: 16px;
+  button.icon-close:hover { background: var(--accent-dim); color: var(--text); }
+
+  .card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    padding: 16px; margin-bottom: 16px;
   }
-  #status.error { color: #ff8080; white-space: pre-wrap; }
-  #jobinfo { font-size: 11px; color: #6f7075; word-break: break-all; white-space: pre-wrap; }
-  #main {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 24px;
-    position: relative;
+  .card h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 10px; font-weight: 600; }
+  .banner {
+    border-left: 3px solid var(--warn); padding: 10px 13px; background: var(--panel);
+    border-radius: 0 7px 7px 0; margin-bottom: 14px; color: var(--muted);
   }
-  #imgwrap {
-    max-width: 100%;
-    max-height: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+  .banner.error { border-left-color: var(--err); }
+  .banner b { color: var(--text); }
+  .empty { color: var(--muted); padding: 14px; font-size: 12px; text-align: center; }
+
+  progress { width: 100%; height: 6px; accent-color: var(--accent); border-radius: 3px; overflow: hidden; border: none; background: var(--panel-2); }
+  progress::-webkit-progress-bar { background: var(--panel-2); border-radius: 3px; }
+  progress::-webkit-progress-value { background: var(--accent); border-radius: 3px; transition: width .2s var(--ease); }
+  .meta { display: flex; gap: 14px; flex-wrap: wrap; color: var(--muted); font-size: 12px; }
+  .meta b { color: var(--text); font-weight: 500; font-variant-numeric: tabular-nums; }
+  .meta .diff { color: var(--warn); }
+
+  .shot { background: var(--shade); border: 1px solid var(--line-soft); border-radius: 7px; overflow: hidden; display: grid; place-items: center; }
+  .shot img { display: block; max-width: 100%; height: auto; }
+
+  /* The result box holds the image. Its aspect ratio is set from the render, so
+     the picture appearing or changing never moves the page under the reader. */
+  #shot { max-width: 512px; }
+  #shot img {
+    width: 100%; height: 100%; object-fit: contain;
+    transition: filter .35s var(--ease), transform .35s var(--ease);
   }
-  #imgwrap img {
-    max-width: 100%;
-    max-height: calc(100vh - 48px);
-    border-radius: 8px;
-    box-shadow: 0 8px 30px rgba(0,0,0,0.5);
-  }
-  #placeholder { color: #55565c; font-size: 13px; text-align: center; }
-  .spinner {
-    width: 28px; height: 28px;
-    border: 3px solid #33343a;
-    border-top-color: #4c7dff;
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-    margin: 0 auto 10px;
-  }
-  @keyframes spin { to { transform: rotate(360deg); } }
+  /* While the image is the render's live preview it is blurred: that thumbnail
+     is ~32px, and a hard upscale reads as a broken image. Removing the class
+     un-blurs over the transition above, so the finished render sharpens where
+     it already is rather than looking like a second picture. */
+  #shot.previewing img { filter: blur(6px); transform: scale(1.08); }
+  /* Same trick in the Prompt Lab's per-variant rows, but the row's markup is
+     rebuilt wholesale each tick, so there is no persistent img to transition —
+     the blur just says "not final" while the row is running. The box carries the
+     render's aspect ratio and the picture fills it, because the preview is a
+     ~32px thumbnail: left at its natural size it renders as a stamp, and
+     stretched without the ratio it renders at the wrong shape. */
+  .variant .out .shot img { width: 100%; height: 100%; object-fit: contain; }
+  .variant .shot.previewing img { filter: blur(6px); transform: scale(1.08); }
+  .toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+  .toolbar .grow { flex: 1; min-width: 120px; }
+
+  /* Contact sheet + gallery grid */
+  .sheet { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
+  .cell { border: 1px solid var(--line-soft); border-radius: 7px; overflow: hidden; background: var(--panel-2); transition: border-color .15s var(--ease), transform .15s var(--ease); }
+  .cell .box { position: relative; background: var(--shade); display: grid; place-items: center; }
+  .cell .box img { display: block; width: 100%; height: 100%; object-fit: contain; }
+  .cell .box .ph { color: var(--muted); font-size: 11px; padding: 10px; text-align: center; }
+  .cell .cap { padding: 7px 9px; font-size: 11px; display: flex; justify-content: space-between; gap: 8px; }
+  .cell .cap b { font-variant-numeric: tabular-nums; }
+  .cell .cap span { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .cell.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent-dim); }
+  .cell.failed .box .ph { color: var(--err); }
+  .cell.clickable { cursor: pointer; }
+  .cell.clickable:hover { border-color: var(--accent); transform: translateY(-1px); }
+
+  .tile .box { aspect-ratio: 1; }
+  .tile .cap { display: block; }
+  .tile .cap b { display: block; font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  mark { background: var(--accent-dim); color: var(--text); border-radius: 2px; }
+
+  /* Prompt Lab variant rows */
+  .variant { border: 1px solid var(--line-soft); border-radius: 7px; padding: 11px; margin-bottom: 10px; background: var(--panel-2); }
+  .variant textarea { background: var(--panel); }
+  .variant .acts { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; align-items: center; }
+  .variant .out { margin-top: 10px; }
+  .variant .out .shot { max-width: 320px; }
+
+  dl.kv { display: grid; grid-template-columns: max-content 1fr; gap: 5px 14px; margin: 0; font-size: 12px; }
+  dl.kv dt { color: var(--muted); }
+  dl.kv dd { margin: 0; word-break: break-word; }
+  .foot { color: var(--muted); font-size: 11px; margin-top: 12px; border-top: 1px solid var(--line-soft); padding-top: 10px; }
 </style>
 </head>
 <body>
-  <div id="panel">
-    <div>
-      <h1>Text to image</h1>
-      <div class="sub" id="subtitle">Text-to-image</div>
-    </div>
+  <header>
+    <h1>Local image generation</h1>
+    <span class="sub">text&nbsp;→&nbsp;image on this machine, via <span class="mono">fused.ai.image</span></span>
+    <div id="runtime"><span class="dot" id="runtimeDot"></span><span id="runtimeText">checking runner…</span></div>
+  </header>
 
-    <div>
-      <label for="prompt">Prompt</label>
-      <textarea id="prompt" placeholder="A cat holding a sign that says hello world"></textarea>
-    </div>
+  <nav id="tabs">
+    <button data-tab="studio">Studio</button>
+    <button data-tab="lab">Prompt Lab</button>
+    <button data-tab="gallery">Gallery</button>
+  </nav>
 
-    <details id="advanced">
-      <summary>Advanced</summary>
-      <div class="advanced-body">
-        <div class="row">
-          <div>
-            <label for="width">Width <span class="rangeval" id="widthval"></span></label>
-            <input type="number" id="width" min="256" max="2048" step="64">
+  <div class="layout">
+    <aside>
+      <div class="group">
+        <label for="model">Model</label>
+        <select id="model"></select>
+        <div id="modelNote" class="hint"></div>
+        <div class="row" style="margin-top:8px">
+          <button id="preload" class="tiny">Preload</button>
+          <button id="unload" class="tiny">Unload</button>
+        </div>
+        <!-- Says what the two buttons WOULD do from here. A disabled button with
+             no sentence beside it is its own kind of confusing. -->
+        <div id="modelState" class="hint"></div>
+      </div>
+
+      <!-- Render settings: shared by Studio and Prompt Lab, because the
+           thing that varies between those surfaces is never the size. -->
+      <div id="renderSettings">
+        <div class="group">
+          <span class="glabel">Size</span>
+          <div class="row">
+            <input id="w" type="number" min="256" max="2048" step="16" aria-label="width" />
+            <span class="hint" style="margin:0">×</span>
+            <input id="h" type="number" min="256" max="2048" step="16" aria-label="height" />
           </div>
-          <div>
-            <label for="height">Height <span class="rangeval" id="heightval"></span></label>
-            <input type="number" id="height" min="256" max="2048" step="64">
+          <div class="chips" id="sizePresets">
+            <button class="chip" data-size="512x512">512²</button>
+            <button class="chip" data-size="768x768">768²</button>
+            <button class="chip" data-size="1024x1024">1024²</button>
+            <button class="chip" data-size="768x512" title="landscape 3:2">3:2</button>
+            <button class="chip" data-size="512x768" title="portrait 2:3">2:3</button>
+            <button class="chip" data-size="912x512" title="widescreen 16:9">16:9</button>
           </div>
+          <div id="snapNote" class="hint"></div>
         </div>
 
-        <div>
-          <label for="steps">Steps <span class="rangeval" id="stepsval"></span></label>
-          <input type="range" id="steps" min="1" max="50" step="1">
-        </div>
+        <details class="adv" id="advanced">
+          <summary>
+            <span class="caret">▶</span>
+            <span>Advanced</span>
+            <span class="summary-val" id="advSummary"></span>
+          </summary>
+          <div class="adv-body">
+            <div class="group">
+              <div class="between"><label for="steps" style="margin:0">Steps</label><span class="val" id="stepsVal"></span></div>
+              <input id="steps" type="range" min="2" max="100" step="1" />
+              <div class="extremes"><span>faster</span><span>finer</span></div>
+            </div>
 
-        <div>
-          <label for="guidance">Guidance scale <span class="rangeval" id="guidanceval"></span></label>
-          <input type="range" id="guidance" min="0" max="10" step="0.1">
-        </div>
+            <div class="group">
+              <div class="between"><label for="guidance" style="margin:0">Guidance</label><span class="val" id="guidanceVal"></span></div>
+              <input id="guidance" type="range" min="0" max="20" step="0.5" />
+              <div class="extremes"><span>looser</span><span>literal</span></div>
+            </div>
 
-        <div>
-          <label for="seed">Seed</label>
-          <input type="number" id="seed" min="0" step="1">
+            <div class="group">
+              <label for="seed">Seed</label>
+              <input id="seed" type="number" min="0" max="2147483647" placeholder="server picks one" class="mono" />
+              <div class="row" style="margin-top:7px">
+                <button id="dice" class="tiny">Random</button>
+                <button id="clearSeed" class="tiny">Clear</button>
+              </div>
+              <div class="hint">Empty means the server chooses — and tells you which, so any render can be repeated.</div>
+            </div>
+          </div>
+        </details>
+
+        <div class="group">
+          <label class="check"><input id="autosave" type="checkbox" /> Save each render to <span class="mono">./gallery/</span></label>
         </div>
       </div>
-    </details>
 
-    <button id="go">Generate</button>
-    <button id="cancel" class="secondary" style="display:none;">Cancel</button>
-    <button id="rand" class="secondary">Randomize seed</button>
+      <!-- Prompt Lab-only controls -->
+      <div id="labSettings" class="hidden">
+        <div class="group">
+          <div class="between"><label for="variants" style="margin:0">Variants</label><span class="val" id="variantsVal"></span></div>
+          <input id="variants" type="range" min="2" max="6" step="1" />
+        </div>
+        <div class="group">
+          <label for="style">Style</label>
+          <select id="style">
+            <option value="">No steer — let it choose</option>
+            <option value="photographic">Photographic</option>
+            <option value="illustration">Illustration</option>
+            <option value="3d">3D render</option>
+            <option value="diagram">Technical diagram</option>
+          </select>
+        </div>
+      </div>
 
-    <div id="status"></div>
-    <div id="jobinfo"></div>
-  </div>
+      <div class="row" id="actions">
+        <button id="go" class="primary" style="flex:1">Generate</button>
+        <button id="stop" disabled>Stop</button>
+      </div>
+    </aside>
 
-  <div id="main">
-    <div id="imgwrap">
-      <div id="placeholder">Enter a prompt and click Generate.<br>First run downloads/loads the model and can take a while.</div>
-    </div>
+    <main>
+      <div id="notices"></div>
+
+      <!-- ── Studio ─────────────────────────────────────────────────────── -->
+      <section id="tab-studio">
+        <div class="card">
+          <h2>Prompt</h2>
+          <textarea id="prompt" rows="4" placeholder="a topographic map of a volcanic island, engraved on aged paper"></textarea>
+          <div class="hint">One prompt, one image — press <kbd>⌘</kbd><kbd>↩</kbd> to generate. Everything the server decided about the render is shown beside it.</div>
+        </div>
+
+        <div class="card hidden" id="progressCard">
+          <h2 id="progressTitle">Rendering</h2>
+          <progress id="bar"></progress>
+          <div class="meta" style="margin-top:8px">
+            <span id="progressStep" class="mono"></span>
+            <span id="progressElapsed" class="mono"></span>
+            <span id="progressDetail"></span>
+          </div>
+        </div>
+
+        <!-- The image lives here. During a render it is the live preview; when
+             the render lands it is the full-resolution PNG. The toolbar acts on
+             the file, so it waits until there is one. -->
+        <div class="card hidden" id="resultCard">
+          <h2>Result</h2>
+          <div class="toolbar">
+            <button id="reuseSeed" class="tiny">Reuse seed</button>
+            <button id="saveShot" class="tiny">Save to gallery</button>
+            <button id="copyPrompt" class="tiny">Copy prompt</button>
+            <button id="download" class="tiny">Download</button>
+          </div>
+          <!-- The <img> lives in the markup, not in a template string: swapping
+               `src` on the node already on screen is what keeps the preview and
+               the finished render one picture rather than two. -->
+          <div class="shot" id="shot"><img id="shotImg" alt="" hidden /></div>
+          <div class="meta" id="resultMeta" style="margin-top:10px"></div>
+          <div class="hint" id="resultPath"></div>
+          <div class="hint">Same prompt + same seed + same settings → the same image.</div>
+        </div>
+      </section>
+
+      <!-- ── Prompt Lab ─────────────────────────────────────────────────── -->
+      <section id="tab-lab" class="hidden">
+        <div class="card">
+          <h2>Idea</h2>
+          <textarea id="idea" rows="3" placeholder="a cosy reading nook — press ⌘↩ to expand"></textarea>
+          <div class="toolbar" style="margin:10px 0 0">
+            <button id="expand" class="primary">Expand into prompts</button>
+            <span class="hint" id="expandMeta" style="margin:0"></span>
+          </div>
+          <div class="hint">
+            A language model writes the prompts; the image model renders them —
+            <span class="mono">fused.ai</span> and <span class="mono">fused.ai.image</span>, one bridge.
+          </div>
+        </div>
+        <div class="card hidden" id="rawCard">
+          <h2>Raw response</h2>
+          <pre class="mono" id="rawText" style="white-space:pre-wrap;margin:0;font-size:12px"></pre>
+        </div>
+        <div class="card hidden" id="variantsCard">
+          <h2>Prompts</h2>
+          <div class="toolbar">
+            <button id="renderAll" class="primary tiny">Render all</button>
+            <span class="hint" id="labProgress" style="margin:0"></span>
+            <button id="showRaw" class="link tiny" style="margin-left:auto">show raw response</button>
+          </div>
+          <div id="variantList"></div>
+        </div>
+        <div class="foot">
+          This page is <b>local-only by design</b>. The exporter refuses any file containing
+          <span class="mono">fused.ai(</span> — the expansion call above — because an exported page has
+          neither the Claude CLI nor a local worker to answer it.
+        </div>
+      </section>
+
+      <!-- ── Gallery ────────────────────────────────────────────────────── -->
+      <section id="tab-gallery" class="hidden">
+        <div class="card">
+          <h2>Saved renders</h2>
+          <div class="toolbar">
+            <input id="q" type="text" class="grow" placeholder="Search prompts…" />
+            <button id="reloadGallery" class="tiny">Reload</button>
+            <span class="hint" id="galleryNote" style="margin:0"></span>
+          </div>
+          <div class="sheet" id="galleryGrid"></div>
+        </div>
+        <div class="card hidden" id="detailCard">
+          <h2>Detail</h2>
+          <div class="toolbar">
+            <button id="openInStudio" class="tiny">Open in Studio</button>
+            <button id="copyDetailPrompt" class="tiny">Copy prompt</button>
+            <button id="deleteShot" class="tiny">Delete</button>
+            <button id="closeDetail" class="icon-close" style="margin-left:auto" aria-label="Close" title="Close">&times;</button>
+          </div>
+          <div class="shot" id="detailShot"></div>
+          <dl class="kv" id="detailMeta" style="margin-top:12px"></dl>
+        </div>
+      </section>
+    </main>
   </div>
 
 <script>
-// A thin client. Everything that made an image — torch, diffusers, a GGUF
-// checkpoint, a detached worker, a job directory, a status file, a progress
-// reporter — belongs to fused-render now (SPEC AI-9), reached through one call:
-//
-//   fused.ai.image({prompt, ...}) -> {path, url, seed, ...}
-//
-// That deleted worker.py (358 lines), generate.py (188), a pyproject.toml
-// declaring several GB of dependencies and a 1361-line uv.lock. It also deleted
-// this page's job reporting: the render is the server's work now, so the server
-// puts the row in the download manager and the ✕ there really stops it.
-//
-// The model is no longer named in this app either. `fused.ai.image` uses
-// whichever image model the app has curated, and the panel says which one.
-const el = id => document.getElementById(id);
-const promptEl = el("prompt"), widthEl = el("width"), heightEl = el("height"),
-      stepsEl = el("steps"), guidanceEl = el("guidance"), seedEl = el("seed"),
-      goBtn = el("go"), randBtn = el("rand"), cancelBtn = el("cancel"),
-      statusEl = el("status"), imgwrap = el("imgwrap");
+// ── This page is local-only, twice over. Prompt Lab's `fused.ai(` is a TEXTUAL
+// match the exporter refuses, so the page cannot be exported at all. The dotted
+// calls (fused.ai.image, fused.ai.models.*) would slip past that match and then
+// fail at the reader — a hosted page has no worker — so they are gated by hand.
+// See specs/assumptions.md §5.
+const IS_LOCAL = fused.env === "local";
+const T2I = "text-to-image";
+// Last resort only: used when catalog() cannot be read at all, never as the
+// default path. A repo id belongs to a BACKEND, not a capability.
+const FALLBACK_MODELS = [
+  { id: "black-forest-labs/FLUX.2-klein-4B", label: "FLUX.2 klein 4B", size_gb: 2.6,
+    note: "Quantized transformer — the full-precision one OOMs on 16GB machines." },
+];
+const MAX_SEED = 2147483647;
 
-const DEFAULTS = { prompt: "", width: "1024", height: "1024", steps: "3", guidance: "1.0", seed: "0" };
-let watching = null;   // the job handle while a render runs
+const el = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
+const snap16 = (n) => clamp(Math.trunc(n), 256, 2048) - (clamp(Math.trunc(n), 256, 2048) % 16);
+const secs = (ms) => (ms / 1000).toFixed(1) + "s";
+const bytes = (n) => {
+  if (!n) return "—";
+  const u = ["B", "KB", "MB", "GB", "TB"];
+  let i = 0; while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+  return n.toFixed(i > 1 ? 1 : 0) + " " + u[i];
+};
 
-const getParam = (k) => fused.params.get(k) || DEFAULTS[k];
+// ── Params are the state ───────────────────────────────────────────────────
+const P = {
+  get tab()      { return fused.params.get("tab") || "studio"; },
+  get model()    { return fused.params.get("model") || ""; },
+  get prompt()   { return fused.params.get("prompt") || ""; },
+  get w()        { return parseInt(fused.params.get("w") || "512", 10) || 512; },
+  get h()        { return parseInt(fused.params.get("h") || "512", 10) || 512; },
+  get steps()    { return parseInt(fused.params.get("steps") || "4", 10) || 4; },
+  get guidance() { return parseFloat(fused.params.get("guidance") || "1") || 0; },
+  get seed()     { return fused.params.get("seed") || ""; },
+  get autosave() { return (fused.params.get("autosave") || "1") !== "0"; },
+  get idea()     { return fused.params.get("idea") || ""; },
+  get variants() { return clamp(parseInt(fused.params.get("variants") || "3", 10) || 3, 2, 6); },
+  get style()    { return fused.params.get("style") || ""; },
+  get q()        { return fused.params.get("q") || ""; },
+};
+const setP = (k, v) => fused.params.set(k, String(v));
 
-function reflectControls() {
-  promptEl.value = getParam("prompt");
-  widthEl.value = getParam("width");
-  heightEl.value = getParam("height");
-  stepsEl.value = getParam("steps");
-  guidanceEl.value = getParam("guidance");
-  seedEl.value = getParam("seed");
-  el("stepsval").textContent = stepsEl.value;
-  el("guidanceval").textContent = guidanceEl.value;
+// ── Mutable, non-view state (never what draw() reads from) ─────────────────
+let runner = undefined;      // the text-to-image runtime entry: undefined until read, then entry|null
+let resident = null;         // the model resident for text-to-image, or null
+let catalogModels = [];      // what the ACTIVE engine can load, straight from catalog()
+let running = false;         // any surface is rendering — the app serialises renders
+let abandon = false;         // a Stop was pressed: give up the remaining queue
+let residencyStale = false;  // a render has touched the worker: re-read the runtime when idle
+let result = null;           // Studio's last resolved image
+let rendering = false;       // Studio has a render in flight: the result card is open without a result yet
+let variants = [];           // Prompt Lab rows: {prompt, image|null, error|null}
+let rawReply = "";           // last expansion reply, verbatim
+let gallery = [];            // last gallery listing
+let detail = null;           // the gallery record being shown
+
+// ── Notices ────────────────────────────────────────────────────────────────
+// Keyed by cause, so a repeated failure replaces its banner rather than stacking.
+function notice(key, html, kind) {
+  let node = document.querySelector(`.banner[data-key="${key}"]`);
+  if (!html) { if (node) node.remove(); return; }
+  if (!node) {
+    node = document.createElement("div");
+    node.dataset.key = key;
+    el("notices").appendChild(node);
+  }
+  node.className = "banner" + (kind === "error" ? " error" : "");
+  node.innerHTML = html;
 }
 
-function setImage(url) {
-  imgwrap.innerHTML = "";
-  const img = document.createElement("img");
-  img.src = url;
-  imgwrap.appendChild(img);
+// Route a typed rejection to the right surface (specs/app.md §6). `cancelled`
+// is the user asking to stop — it is not a failure and gets no banner.
+function reportError(key, err, what) {
+  if (err && err.type === "cancelled") { notice(key, ""); return; }
+  const type = (err && err.type) || "error";
+  const msg = (err && err.message) || String(err);
+  // The worker drops a job's row out from under a poll now and then — the
+  // render itself may have finished fine, but nothing was left to read the
+  // result off of. That is a dropped status update, not a broken model, so
+  // say "try again" instead of leaving the raw job-tracking wording standalone.
+  const droppedJob = type === "ai_error" && /no longer being reported/i.test(msg);
+  const suffix = droppedJob
+    ? " — the worker lost track of this job's status. Press render again."
+    : "";
+  notice(key, `<b>${esc(what)} failed</b> — ${esc(msg)} <span class="mono">(${esc(type)})</span>${suffix}`, "error");
 }
 
-function setStatusText(text, isError) {
-  statusEl.textContent = text;
-  statusEl.className = isError ? "error" : "";
+// ── Runtime and model strip (specs/app.md §4) ──────────────────────────────
+async function refreshRuntime() {
+  if (!IS_LOCAL) {
+    runner = null;
+    el("runtimeDot").className = "dot off";
+    el("runtimeText").textContent = "hosted copy — local AI unavailable";
+    notice("local", "<b>This is a hosted copy.</b> Image generation needs a worker process on your machine, which an exported page does not have.", "error");
+    syncEnabled();
+    return;
+  }
+  try {
+    const rt = await fused.ai.models.list();
+    runner = (rt.runners || []).find((r) => r.capability === T2I) || null;
+    resident = (rt.loaded || []).find((m) => m.capability === T2I) || null;
+  } catch (err) {
+    runner = null; resident = null;
+    reportError("runtime", err, "reading the runtime");
+  }
+  drawRuntime();
+  syncEnabled();
 }
 
-const fmtEta = (s) => s == null ? "estimating…"
-  : s < 60 ? Math.max(1, Math.round(s)) + "s" : (s / 60).toFixed(1) + " min";
+function drawRuntime() {
+  const dot = el("runtimeDot"), text = el("runtimeText");
+  // `undefined` is "not asked yet", `null` is "asked, there is none". Collapsing
+  // the two would flash a false "unavailable" banner on every load, in the
+  // moment before the first list() returns.
+  if (runner === undefined) {
+    dot.className = "dot";
+    text.textContent = "checking runner…";
+    return;
+  }
+  if (!runner || !runner.available) {
+    dot.className = "dot off";
+    const why = (runner && runner.reason) || "no image runner on this machine";
+    text.textContent = why;
+    notice("runner", `<b>Image generation is unavailable here.</b> ${esc(why)}`, "error");
+    el("modelState").textContent = "";
+    return;
+  }
+  notice("runner", "");
+  dot.className = "dot on";
+  const chosen = catalogModels.find((m) => m.id === currentModel());
+  if (resident) {
+    text.textContent = `${runner.label} · ${shortName(resident.model)} resident`;
+  } else {
+    const gb = chosen && chosen.size_gb ? ` ${chosen.size_gb} GB` : "";
+    text.textContent = `${runner.label} · first render loads${gb}`;
+  }
+  // The buttons say what they WOULD do, and Unload names what is actually
+  // resident — which may not be what the dropdown shows.
+  el("modelState").textContent = resident
+    ? `Resident: ${shortName(resident.model)}${resident.residentBytes ? " · " + bytes(resident.residentBytes) : ""}`
+    : "Nothing resident — the first render loads the model inside its own job.";
+}
 
-// The job record IS the progress: done/total are denoising steps once the model
-// is resident, and bytes while its weights come down. Both already carry a
-// human sentence in `detail`, so this only has to draw it.
-function showProgress(job) {
-  setStatusText(job.detail || "Working…");
-  if (job.total && job.done !== null && job.unit !== "bytes") {
-    imgwrap.innerHTML = '<div id="placeholder"><div class="spinner"></div>' +
-      `Step ${job.done}/${job.total}</div>`;
+const shortName = (id) => String(id || "").split("/").pop();
+const currentModel = () => P.model || (catalogModels[0] && catalogModels[0].id) || FALLBACK_MODELS[0].id;
+
+async function fillModels() {
+  let block = null;
+  if (IS_LOCAL) {
+    try {
+      const cat = await fused.ai.models.catalog();
+      block = (cat.capabilities || []).find((c) => c.capability === T2I) || null;
+    } catch (err) {
+      notice("catalog", "<b>Could not read the model catalog.</b> Falling back to a built-in list, which may not match this machine's engine.", "error");
+    }
+  }
+  catalogModels = (block && block.models && block.models.length) ? block.models : FALLBACK_MODELS;
+  if (block) notice("catalog", "");
+  const sel = el("model");
+  sel.innerHTML = catalogModels
+    .map((m) => `<option value="${esc(m.id)}">${esc(m.label || shortName(m.id))}${m.size_gb ? ` · ${m.size_gb} GB` : ""}</option>`)
+    .join("");
+  if (!P.model && block && block.default) setP("model", block.default);
+}
+
+function syncModelNote() {
+  const m = catalogModels.find((x) => x.id === currentModel());
+  el("modelNote").textContent = m && m.note ? m.note : "";
+}
+
+// Every generate control obeys one rule: local, a runner, and nothing running.
+function syncEnabled() {
+  const ok = IS_LOCAL && runner && runner.available && !running;
+  el("go").disabled = !ok;
+  el("stop").disabled = !running;
+  el("renderAll").disabled = !ok || !variants.length;
+  el("preload").disabled = !IS_LOCAL || !runner || !runner.available || running;
+  el("expand").disabled = !IS_LOCAL || running;
+  // Unload lives here, not in drawRuntime: it depends on `running` as well as on
+  // what is resident, and unloading the weights out from under a live job is the
+  // one press this panel must not accept.
+  el("unload").disabled = !IS_LOCAL || !resident || running;
+  // The result toolbar acts on a FILE. While the card is showing a preview
+  // there is no file yet, so the four buttons say so rather than looking live
+  // and doing nothing when pressed.
+  for (const id of ["reuseSeed", "saveShot", "copyPrompt", "download"]) el(id).disabled = !result;
+}
+
+// The two transitions of `running`, so the "app went idle" moment exists once.
+function beginRun() { running = true; abandon = false; el("go").textContent = "Rendering…"; syncEnabled(); }
+function endRun() {
+  running = false;
+  el("go").textContent = "Generate";
+  syncEnabled();
+  // One runtime read per burst — a variants run marks residency stale on every
+  // row and settles it here, when the queue is done, not per row and never per
+  // denoising tick.
+  if (residencyStale) { residencyStale = false; refreshRuntime(); }
+}
+
+// ── Shared render call ─────────────────────────────────────────────────────
+// One place that talks to fused.ai.image, so the settled-params rule and the
+// progress semantics are implemented ONCE (specs/assumptions.md §1–§2).
+async function render(overrides, onTick) {
+  const opts = {
+    prompt: overrides.prompt,
+    model: currentModel(),
+    width: P.w, height: P.h,
+    steps: P.steps, guidance: P.guidance,
+    ...overrides,
+    onProgress: onTick,
+  };
+  if (opts.seed === "" || opts.seed === undefined || opts.seed === null) delete opts.seed;
+  else opts.seed = Number(opts.seed);
+  const started = Date.now();
+  try {
+    let res;
+    try {
+      res = await fused.ai.image(opts);
+    } catch (err) {
+      // The job losing its own tracking mid-render is a worker hiccup, not a
+      // bad prompt or model — one silent retry before this reads as a failure
+      // to the user.
+      if (err && err.type === "ai_error" && /no longer being reported/i.test(err.message || "")) {
+        res = await fused.ai.image(opts);
+      } else {
+        throw err;
+      }
+    }
+    res.elapsedMs = Date.now() - started;
+    return res;
+  } finally {
+    // A render brings the worker up and leaves it RESIDENT — on every way out,
+    // including a failure and a Stop, which end the job but not the weights.
+    // Recorded at the one call rather than at each caller, so a surface added
+    // later cannot forget it and leave Unload lying about what is loaded.
+    residencyStale = true;
   }
 }
 
-function setSaved(result) {
-  el("jobinfo").textContent = `Saved to: ${result.path}\nSeed ${result.seed} · ` +
-    `${result.width}×${result.height} · ${result.steps} steps`;
+async function stopRender() {
+  abandon = true;
+  try { await fused.ai.cancel(T2I); } catch (err) { /* nothing to stop is not an error */ }
+}
+
+// Auto-save, and the manual Save button, are the same call.
+async function saveToGallery(res, surface) {
+  const rec = await fused.runPython("./gallery.py", {
+    action: "save", src: res.path, prompt: res.prompt, model: res.model,
+    width: String(res.width), height: String(res.height), steps: String(res.steps),
+    guidance: String(res.guidance), seed: String(res.seed), surface,
+  }, { key: null });   // saves must all finish; they must not cancel each other
+  if (rec && rec.error) throw Object.assign(new Error(rec.error), { type: "save_failed" });
+  return rec;
+}
+
+async function maybeAutosave(res, surface) {
+  if (!P.autosave) return;
+  try {
+    await saveToGallery(res, surface);
+    notice("save", "");
+  } catch (err) {
+    // The PNG still exists at res.path — losing the copy must not read as
+    // losing the render.
+    notice("save", `<b>Saved to the gallery failed</b> — ${esc(err.message)}. The image is still at <span class="mono">${esc(res.path)}</span>.`, "error");
+  }
+}
+
+// ── Studio ─────────────────────────────────────────────────────────────────
+function drawProgress(job, prefix, nodes) {
+  const total = job && Number(job.total) || 0;
+  const done = job && Number(job.done) || 0;
+  if (total > 0) {
+    nodes.bar.max = total; nodes.bar.value = done;
+    nodes.step.textContent = `step ${done} / ${total}`;
+    nodes.detail.textContent = job.detail || "";
+  } else {
+    // No total means the model is still loading — its BYTES are on their own
+    // row in the download manager, not this one. Drawing 0% here would read as
+    // a stalled render, which is the worst thing a first run could say.
+    nodes.bar.removeAttribute("value");
+    nodes.step.textContent = "";
+    nodes.detail.textContent = "waiting for the model…";
+  }
+  if (prefix) nodes.title.textContent = prefix;
+}
+
+// ── The result image ───────────────────────────────────────────────────────
+// One box, one <img>: during a render the picture it holds is the live preview,
+// and `preview` is the only difference between that and the finished PNG. Both
+// go through here, which is what makes the last swap read as the same picture
+// sharpening rather than as a second image appearing.
+function showImage(url, preview) {
+  el("shot").classList.toggle("previewing", preview);
+  el("shotImg").src = url;
+  el("shotImg").hidden = false;
+}
+
+// The box takes the render's aspect ratio BEFORE there is anything to show, so
+// the picture arriving does not move the page, and neither does the finished
+// image replacing the preview.
+function frameImage(w, h) { el("shot").style.aspectRatio = `${w} / ${h}`; }
+
+// Every tick carries `previewUrl` — a ready-made /api/fs/raw url for a ~32px
+// thumbnail of the image so far, rewritten by the worker each step and
+// cache-busted per step, so keeping the <img> pointed at it is the whole job.
+// It is null on the terminal tick (the file is deleted as the real PNG lands)
+// and null throughout for a model with no preview support, so a missing url
+// leaves the last frame up rather than blanking the box: drawResult swaps in
+// the full-resolution picture a moment later.
+function drawPreview(job) {
+  if (!job || !job.previewUrl) return;
+  showImage(job.previewUrl, true);
+}
+
+// A render opens the card, so everything describing a finished file — the meta
+// row, the path, the picture itself — is cleared here. The previous render's
+// image must not sit there under a fresh step counter, blurred or otherwise,
+// and framing the empty box now means the card does not reflow twice.
+function clearResult() {
+  result = null;
+  rendering = true;
+  el("resultCard").classList.remove("hidden");
+  el("shot").classList.remove("previewing");
+  el("shotImg").hidden = true;
+  el("shotImg").removeAttribute("src");
+  el("shotImg").alt = "";
+  el("resultMeta").textContent = "";
+  el("resultPath").textContent = "";
+  frameImage(P.w, P.h);
+  syncEnabled();
 }
 
 async function generate() {
-  const prompt = promptEl.value.trim();
-  if (!prompt) { setStatusText("Enter a prompt first.", true); return; }
-
-  for (const [k, v] of Object.entries({
-    prompt, width: widthEl.value, height: heightEl.value,
-    steps: stepsEl.value, guidance: guidanceEl.value, seed: seedEl.value,
-  })) fused.params.set(k, String(v));
-
-  goBtn.disabled = true;
-  imgwrap.innerHTML = '<div id="placeholder"><div class="spinner"></div>Starting…</div>';
-  setStatusText("Starting…");
-  el("jobinfo").textContent = "";
-
+  const prompt = P.prompt.trim();
+  if (!prompt) { notice("prompt", "<b>Write a prompt first.</b> The render needs something to render.", "error"); return; }
+  notice("prompt", "");
+  beginRun();
+  el("progressCard").classList.remove("hidden");
+  const nodes = { bar: el("bar"), step: el("progressStep"), detail: el("progressDetail"), title: el("progressTitle") };
+  clearResult();
+  drawProgress(null, "Rendering", nodes);
+  const started = Date.now();
+  const ticker = setInterval(() => { el("progressElapsed").textContent = secs(Date.now() - started); }, 200);
   try {
-    // Resolves when the PNG exists. The wait includes downloading and loading
-    // the model on a first run — this page no longer has to know that happened,
-    // only that it is taking a while and why.
-    const result = await fused.ai.image({
-      prompt,
-      width: Number(widthEl.value),
-      height: Number(heightEl.value),
-      steps: Number(stepsEl.value),
-      guidance: Number(guidanceEl.value),
-      // 0 has always meant "the seed I typed" here, and Randomize writes a real
-      // one — so it is passed through rather than left out.
-      seed: Number(seedEl.value),
-      // Cancel appears only once there is a job to cancel — a button that
-      // silently does nothing for the first second is worse than one that
-      // arrives a moment late.
-      onProgress: (job) => { watching = job; cancelBtn.style.display = ""; showProgress(job); },
+    result = await render({ prompt, seed: P.seed }, (job) => {
+      drawProgress(job, "Rendering", nodes);
+      drawPreview(job);
     });
-    setImage(result.url);
-    setSaved(result);
-    setStatusText("Done.");
-    // The server may have snapped the size or invented nothing at all; reflect
-    // what actually ran so a second Generate repeats THIS picture.
-    fused.params.set("seed", String(result.seed));
-    seedEl.value = result.seed;
+    rendering = false;
+    drawResult();
+    await maybeAutosave(result, "studio");
   } catch (err) {
-    if (err.type === "cancelled") {
-      setStatusText("Cancelled.");
-      imgwrap.innerHTML = '<div id="placeholder">Generation cancelled.</div>';
+    reportError("render", err, "the render");
+    // A stopped or failed render leaves nothing on disk to reuse, save or
+    // download, so the half-denoised preview goes with the card rather than
+    // sitting in the Result card beside four buttons that cannot act on it. The
+    // typed banner is what stays on screen. (drawResult hides an empty card.)
+    rendering = false;
+    drawResult();
+  } finally {
+    clearInterval(ticker);
+    el("progressCard").classList.add("hidden");
+    endRun();
+  }
+}
+
+function drawResult() {
+  // draw() runs on every param change — including every keystroke in the prompt
+  // box — so this is also the guard that a mid-render edit does not tear the
+  // preview down: with no result yet, the card belongs on screen exactly while
+  // a render is still filling it.
+  if (!result) { el("resultCard").classList.toggle("hidden", !rendering); return; }
+  el("resultCard").classList.remove("hidden");
+  // Same box, same <img>, blur dropped: the picture sharpens where it already
+  // is. The box is re-framed off the resolved size — the server may have
+  // snapped the sides — before the src changes, so the swap cannot jump.
+  frameImage(result.width, result.height);
+  el("shotImg").alt = result.prompt;
+  showImage(result.url, false);
+  // Read ENTIRELY off the resolved object. Where the server settled on
+  // something other than what was asked, say so — a meta row built from the
+  // request mislabels the picture beside it (specs/assumptions.md §1).
+  const askedSize = `${P.w} × ${P.h}`;
+  const gotSize = `${result.width} × ${result.height}`;
+  const sizeCell = gotSize === askedSize
+    ? `<b>${gotSize}</b>`
+    : `<b>${gotSize}</b> <span class="diff">(asked ${askedSize})</span>`;
+  const stepsCell = result.steps === P.steps
+    ? `<b>${result.steps}</b>`
+    : `<b>${result.steps}</b> <span class="diff">(asked ${P.steps})</span>`;
+  el("resultMeta").innerHTML = [
+    `${esc(shortName(result.model))}`,
+    `size ${sizeCell}`,
+    `steps ${stepsCell}`,
+    `guidance <b>${result.guidance}</b>`,
+    `seed <b>${result.seed}</b>`,
+    `<b>${secs(result.elapsedMs)}</b>`,
+  ].join(" · ");
+  el("resultPath").innerHTML = `Written to <span class="mono">${esc(result.path)}</span>`;
+  syncEnabled();   // there is a file now: the toolbar can act on it
+}
+
+// Params only — the sheet hands settings to Studio through the URL, which is
+// what makes the result a shareable "this exact image" link.
+function openInStudio(image) {
+  setP("seed", image.seed);
+  setP("steps", image.steps);
+  setP("guidance", image.guidance);
+  setP("w", image.width);
+  setP("h", image.height);
+  if (image.prompt) setP("prompt", image.prompt);
+  if (image.model) setP("model", image.model);
+  setP("tab", "studio");
+  // Same reason as Reuse seed: this hands over steps, guidance and a seed, all
+  // of which live in the advanced panel.
+  el("advanced").open = true;
+}
+
+// ── Prompt Lab (specs/app-prompt-lab.md) ───────────────────────────────────
+const STYLE_STEER = {
+  photographic: "Every prompt should describe a photograph: lens, lighting and film character.",
+  illustration: "Every prompt should describe an illustration: medium, line quality and palette.",
+  "3d": "Every prompt should describe a 3D render: materials, lighting rig and camera.",
+  diagram: "Every prompt should describe a clean technical diagram: labelled parts, flat colour, no photographic texture.",
+};
+
+function expandSystem(n) {
+  return [
+    "You write prompts for a text-to-image model.",
+    `Given a rough idea, return exactly ${n} finished image prompts.`,
+    "Each must be self-contained, 25 to 50 words, and materially different from the others —",
+    "different composition, setting or treatment, not the same scene reworded.",
+    STYLE_STEER[P.style] || "",
+    "Reply with a bare JSON array of strings and NOTHING else: no prose, no numbering, no code fence.",
+  ].filter(Boolean).join(" ");
+}
+
+// A chatty model is a normal outcome to handle, not an exception to propagate.
+function parseVariants(text, want) {
+  const cleaned = String(text || "").replace(/^\s*```(?:json)?/i, "").replace(/```\s*$/, "").trim();
+  const open = cleaned.indexOf("["), close = cleaned.lastIndexOf("]");
+  if (open !== -1 && close > open) {
+    try {
+      const arr = JSON.parse(cleaned.slice(open, close + 1));
+      if (Array.isArray(arr)) {
+        const out = arr.filter((s) => typeof s === "string" && s.trim()).map((s) => s.trim());
+        if (out.length) return out.slice(0, want);
+      }
+    } catch (err) { /* fall through to the line split */ }
+  }
+  const lines = cleaned.split("\n")
+    .map((l) => l.replace(/^\s*(?:[-*•]|\d+[.)])\s*/, "").replace(/^["'\s]+|["',\s]+$/g, "").trim())
+    .filter((l) => l.length > 15);
+  return lines.slice(0, want);
+}
+
+async function expand() {
+  const idea = P.idea.trim();
+  if (!idea) { notice("idea", "<b>Describe an idea first</b> — even a few words is enough to expand.", "error"); return; }
+  notice("idea", "");
+  const want = P.variants;
+  el("expand").disabled = true;
+  el("expandMeta").textContent = "thinking…";
+  try {
+    // Claude path deliberately: model pinned to sonnet, and none of
+    // temperature/history/raw, which are local-model-only and would be refused with a 400 here.
+    const res = await fused.ai(`Idea: ${idea}`, { systemPrompt: expandSystem(want), effort: "low", model: "sonnet" });
+    rawReply = res.text;
+    const parsed = parseVariants(res.text, want);
+    if (!parsed.length) {
+      notice("expand", "<b>Could not read any prompts out of the reply.</b> The raw response is below.", "error");
+      el("rawText").textContent = rawReply;
+      el("rawCard").classList.remove("hidden");
+      return;
+    }
+    notice("expand", "");
+    variants = parsed.map((p) => ({ prompt: p, image: null, error: null, state: "idle" }));
+    const u = res.usage;
+    el("expandMeta").textContent = `${shortName(res.model)}${u ? ` · ${u.input_tokens} in / ${u.output_tokens} out` : ""}`;
+    renderVariants();
+  } catch (err) {
+    if (err && err.type === "ai_unavailable") {
+      // A first-class state, not a traceback. The rest of the app is fine —
+      // image generation does not go through the CLI.
+      notice("expand", `<b>The Claude CLI is not available.</b> ${esc(err.message)}<br />Studio and Gallery still work — only prompt expansion needs it.`, "error");
+    } else if (err && err.type === "timeout") {
+      notice("expand", `<b>The expansion timed out.</b> ${esc(err.message)} — try again.`, "error");
     } else {
-      setStatusText(err.message || "Generation failed.", true);
-      imgwrap.innerHTML = '<div id="placeholder">Generation failed.</div>';
+      reportError("expand", err, "prompt expansion");
+    }
+    el("expandMeta").textContent = "";
+  } finally {
+    syncEnabled();
+  }
+}
+
+function renderVariants() {
+  el("variantsCard").classList.toggle("hidden", !variants.length);
+  el("variantList").innerHTML = variants.map((v, i) => {
+    let out = "";
+    // The box is sized off the render, not off the picture in it: the preview
+    // thumbnail knows nothing about the aspect ratio it stands in for, and the
+    // server may have snapped the sides for the finished PNG.
+    const ratio = (w, h) => ` style="aspect-ratio:${w} / ${h}"`;
+    if (v.image) {
+      out = `<div class="out"><div class="shot"${ratio(v.image.width, v.image.height)}><img src="${esc(v.image.url)}" alt="${esc(v.prompt)}" loading="lazy" /></div>
+             <div class="meta" style="margin-top:6px">seed <b>${v.image.seed}</b> · <b>${secs(v.image.elapsedMs)}</b></div></div>`;
+    } else if (v.error) {
+      out = `<div class="out hint" style="color:var(--err)">${esc(v.error)}</div>`;
+    } else if (v.state === "running") {
+      out = `<div class="out">${
+        v.previewUrl
+          ? `<div class="shot previewing"${ratio(v.w || P.w, v.h || P.h)}><img src="${esc(v.previewUrl)}" alt="" /></div>`
+          : ""
+      }<div class="hint"${v.previewUrl ? ' style="margin-top:6px"' : ""}>${esc(v.step || "waiting for the model…")}</div></div>`;
+    }
+    return `<div class="variant" data-variant="${i}">
+      <textarea rows="3" data-edit="${i}">${esc(v.prompt)}</textarea>
+      <div class="acts">
+        <button class="tiny" data-act="render" data-i="${i}">Render</button>
+        <button class="tiny" data-act="studio" data-i="${i}">Send to Studio</button>
+        <button class="tiny" data-act="remove" data-i="${i}">Remove</button>
+      </div>${out}</div>`;
+  }).join("");
+  syncEnabled();
+}
+
+async function renderVariant(i) {
+  const v = variants[i];
+  if (!v || !v.prompt.trim()) return;
+  v.state = "running"; v.error = null; v.step = ""; v.previewUrl = null;
+  v.w = P.w; v.h = P.h;   // what this row is being rendered at, so the preview box is the right shape
+  renderVariants();
+  try {
+    v.image = await render({ prompt: v.prompt.trim(), seed: P.seed }, (job) => {
+      v.step = job && job.total ? `step ${job.done} / ${job.total}` : "waiting for the model…";
+      v.previewUrl = (job && job.previewUrl) || null;
+      renderVariants();
+    });
+    v.state = "done"; renderVariants();
+    await maybeAutosave(v.image, "lab");
+  } catch (err) {
+    v.state = "failed";
+    if (err && err.type === "cancelled") { v.state = "idle"; v.error = null; }
+    else v.error = `${err.type || "error"}: ${err.message}`;
+    renderVariants();
+    throw err;
+  }
+}
+
+async function renderAllVariants() {
+  beginRun();
+  try {
+    for (let i = 0; i < variants.length; i++) {
+      if (abandon) break;
+      el("labProgress").textContent = `render ${i + 1} / ${variants.length}`;
+      try {
+        await renderVariant(i);
+      } catch (err) {
+        if (err && err.type === "cancelled") break;   // a failed row does not abort the rest
+      }
     }
   } finally {
-    goBtn.disabled = false;
-    cancelBtn.style.display = "none";
-    watching = null;
+    el("labProgress").textContent = "";
+    endRun();
   }
 }
 
-// The same ✕ the download manager shows, on the page that started it. Both
-// reach the same server-owned job, which really stops the render.
-async function cancel() {
-  if (!watching) return;
-  cancelBtn.disabled = true;
+// ── Gallery (specs/app-gallery.md) ─────────────────────────────────────────
+async function loadGallery() {
   try {
-    await fused.watchJob(watching.id).cancel();
-  } finally {
-    cancelBtn.disabled = false;
+    const res = await fused.runPython("./gallery.py", { action: "list" });
+    gallery = res.items || [];
+    el("galleryNote").textContent = res.skipped
+      ? `${gallery.length} saved · ${res.skipped} unreadable and skipped`
+      : `${gallery.length} saved`;
+    notice("gallery", "");
+  } catch (err) {
+    gallery = [];
+    notice("gallery", `<b>Could not read the gallery</b> — ${esc(err.type || "error")}: ${esc(err.message)}`, "error");
+  }
+  drawGallery();
+}
+
+const highlight = (text, q) => {
+  const safe = esc(text);
+  if (!q) return safe;
+  return safe.replace(new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "ig"), (m) => `<mark>${m}</mark>`);
+};
+
+function drawGallery() {
+  const q = P.q.trim().toLowerCase();
+  const shown = q ? gallery.filter((r) => String(r.prompt || "").toLowerCase().includes(q)) : gallery;
+  const grid = el("galleryGrid");
+  if (!shown.length) {
+    // Two different facts, two different messages — one message for both sends
+    // people looking for a bug that isn't there.
+    grid.innerHTML = `<div class="empty" style="grid-column:1/-1">${
+      gallery.length
+        ? `No saved render matches “${esc(P.q)}”.`
+        : "Nothing saved yet — renders you save will appear here."
+    }</div>`;
+    return;
+  }
+  grid.innerHTML = shown.map((r) => `
+    <div class="cell tile clickable" data-shot="${esc(r.name)}">
+      <div class="box"><img src="${esc(fused.rawUrl(r.png))}" alt="${esc(r.prompt)}" loading="lazy" /></div>
+      <div class="cap"><b>${highlight(r.prompt || "(no prompt)", P.q.trim())}</b><span>seed ${esc(String(r.seed))}</span></div>
+    </div>`).join("");
+}
+
+function drawDetail() {
+  el("detailCard").classList.toggle("hidden", !detail);
+  if (!detail) return;
+  el("detailShot").innerHTML = `<img src="${esc(fused.rawUrl(detail.png))}" alt="${esc(detail.prompt)}" />`;
+  const rows = [
+    ["Prompt", detail.prompt], ["Model", detail.model],
+    ["Size", `${detail.width} × ${detail.height}`], ["Steps", detail.steps],
+    ["Guidance", detail.guidance], ["Seed", detail.seed],
+    ["Saved", detail.saved_at], ["From", detail.surface],
+    ["File", detail.png], ["Rendered to", detail.source_path],
+  ];
+  el("detailMeta").innerHTML = rows
+    .map(([k, v]) => `<dt>${esc(k)}</dt><dd class="${k === "File" || k === "Rendered to" ? "mono" : ""}">${esc(String(v ?? "—"))}</dd>`)
+    .join("");
+}
+
+async function deleteShot() {
+  if (!detail) return;
+  if (!confirm(`Delete “${detail.prompt || detail.name}” from the gallery?\n\nThis removes the copy in ./gallery/ — the original render stays where the server wrote it.`)) return;
+  try {
+    const res = await fused.runPython("./gallery.py", { action: "delete", name: detail.name }, { key: null });
+    if (res && res.error) throw Object.assign(new Error(res.error), { type: "delete_failed" });
+    detail = null; drawDetail();
+    await loadGallery();   // the disk is the source of truth, not our array
+  } catch (err) {
+    notice("gallery", `<b>Delete failed</b> — ${esc(err.message)}`, "error");
   }
 }
 
-goBtn.addEventListener("click", generate);
-cancelBtn.addEventListener("click", cancel);
-randBtn.addEventListener("click", () => {
-  seedEl.value = Math.floor(Math.random() * 1e9);
-  fused.params.set("seed", String(seedEl.value));
+// ── Tabs and the single re-render path ─────────────────────────────────────
+const TABS = ["studio", "lab", "gallery"];
+
+function draw() {
+  const tab = TABS.includes(P.tab) ? P.tab : "studio";
+  for (const t of TABS) el("tab-" + t).classList.toggle("hidden", t !== tab);
+  for (const b of el("tabs").children) b.setAttribute("aria-current", String(b.dataset.tab === tab));
+
+  // Which aside groups apply to this surface.
+  el("renderSettings").classList.toggle("hidden", tab === "gallery");
+  el("labSettings").classList.toggle("hidden", tab !== "lab");
+  el("actions").classList.toggle("hidden", tab === "gallery" || tab === "lab");
+
+  // Reflect params INTO controls — never the other way round.
+  el("model").value = currentModel();
+  el("prompt").value = P.prompt;
+  el("idea").value = P.idea;
+  el("w").value = P.w; el("h").value = P.h;
+  el("steps").value = P.steps; el("stepsVal").textContent = P.steps;
+  el("guidance").value = P.guidance; el("guidanceVal").textContent = P.guidance.toFixed(1);
+  el("seed").value = P.seed;
+  el("autosave").checked = P.autosave;
+  el("variants").value = P.variants; el("variantsVal").textContent = P.variants;
+  el("style").value = P.style;
+  el("q").value = P.q;
+
+  // The snap is shown, not hidden — the server owns the clamp, we only predict
+  // it so the reply is never a surprise (specs/app-studio.md §2).
+  const sw = snap16(P.w), sh = snap16(P.h);
+  el("snapNote").innerHTML = (sw !== P.w || sh !== P.h)
+    ? `Sides snap to a multiple of 16: rendered at <b>${sw} × ${sh}</b>.`
+    : "Sides snap to a multiple of 16, clamped to 256–2048.";
+  for (const c of el("sizePresets").children) c.classList.toggle("active", c.dataset.size === `${P.w}x${P.h}`);
+
+  // The collapsed summary is the whole reason folding these away is safe:
+  // it names every value inside, including a pinned seed.
+  el("advSummary").textContent = [
+    `${P.steps} steps`,
+    `g ${P.guidance.toFixed(1)}`,
+    P.seed ? `seed ${P.seed}` : "auto seed",
+  ].join(" · ");
+
+  syncModelNote();
+  drawRuntime();
+  drawResult();
+  drawGallery();
+  drawDetail();
+  syncEnabled();
+}
+
+// ── Wiring ─────────────────────────────────────────────────────────────────
+const bindParam = (id, key, transform) =>
+  el(id).addEventListener("input", () => setP(key, transform ? transform(el(id).value) : el(id).value));
+
+el("tabs").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-tab]");
+  if (!b) return;
+  setP("tab", b.dataset.tab);
+  if (b.dataset.tab === "gallery") loadGallery();
 });
-stepsEl.addEventListener("input", () => el("stepsval").textContent = stepsEl.value);
-guidanceEl.addEventListener("input", () => el("guidanceval").textContent = guidanceEl.value);
 
-reflectControls();
+bindParam("model", "model");
+bindParam("prompt", "prompt");
+bindParam("idea", "idea");
+bindParam("steps", "steps");
+bindParam("guidance", "guidance");
+bindParam("seed", "seed");
+bindParam("variants", "variants");
+bindParam("style", "style");
+bindParam("q", "q");
+el("w").addEventListener("input", () => setP("w", el("w").value));
+el("h").addEventListener("input", () => setP("h", el("h").value));
+el("autosave").addEventListener("change", () => setP("autosave", el("autosave").checked ? "1" : "0"));
 
-// Which model this actually uses is the app's answer, not this page's — so it
-// is read rather than hardcoded, and a change to the catalog shows up here.
-fused.ai.models.catalog().then((catalog) => {
-  const group = (catalog.capabilities || []).find((c) => c.capability === "text-to-image");
-  if (!group) return;
-  if (group.default) el("subtitle").textContent = "Text-to-image · " + group.default;
-  if (!group.available && group.reason) setStatusText(group.reason, true);
-}, () => {});
+el("dice").addEventListener("click", () => setP("seed", Math.floor(Math.random() * MAX_SEED)));
+el("clearSeed").addEventListener("click", () => setP("seed", ""));
+
+el("sizePresets").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-size]");
+  if (!b) return;
+  const [w, h] = b.dataset.size.split("x");
+  setP("w", w); setP("h", h);
+});
+
+el("go").addEventListener("click", generate);
+el("stop").addEventListener("click", stopRender);
+
+// An early tick legitimately 404s: the first denoising step writes no frame,
+// because the estimate needs two latents to guess at a picture. That is
+// ordinary, not a failure — hide the picture and let the next step fill it in,
+// keeping the sized box so the card does not resize under the reader. Only
+// while previewing: a finished PNG that fails to load is a real fault, and
+// swallowing it would leave an empty box claiming to be the result.
+el("shotImg").addEventListener("error", () => {
+  if (el("shot").classList.contains("previewing")) el("shotImg").hidden = true;
+});
+
+// ⌘/Ctrl+Enter submits the textarea you are typing in; Escape closes the
+// gallery detail. Small keys, but they are the difference between a demo
+// you click through and a tool you live in.
+el("prompt").addEventListener("keydown", (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && !el("go").disabled) generate();
+});
+el("idea").addEventListener("keydown", (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && !el("expand").disabled) expand();
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && detail) { detail = null; drawDetail(); }
+});
+
+// Copy buttons answer in place — a copy with no acknowledgement reads as a
+// button that did nothing.
+function flashLabel(btn, text) {
+  if (btn.dataset.flashing) return;
+  btn.dataset.flashing = "1";
+  const old = btn.textContent;
+  btn.textContent = text;
+  setTimeout(() => { btn.textContent = old; delete btn.dataset.flashing; }, 1200);
+}
+
+el("preload").addEventListener("click", async () => {
+  const id = currentModel();
+  el("preload").disabled = true;
+  try {
+    // Named: a load with no capability defaults to text generation, which routes
+    // a FLUX repo to the language runner and dies on a missing config.json.
+    const { jobId } = await fused.ai.models.load(id, { capability: T2I });
+    el("modelState").textContent = `Loading ${shortName(id)}…`;
+    await fused.watchJob(jobId).watch((job) => {
+      el("modelState").textContent = job && job.total
+        ? `Loading ${shortName(id)} — ${bytes(job.done)} / ${bytes(job.total)}`
+        : `Loading ${shortName(id)}…`;
+    });
+  } catch (err) {
+    reportError("load", err, "loading the model");
+  } finally {
+    await refreshRuntime();
+  }
+});
+el("unload").addEventListener("click", async () => {
+  el("unload").disabled = true;
+  try {
+    // By CAPABILITY, never by id — the resident model may not be the one our
+    // dropdown shows (specs/assumptions.md §4).
+    await fused.ai.models.unload({ capability: T2I });
+  } catch (err) {
+    reportError("load", err, "unloading the model");
+  }
+  await refreshRuntime();
+});
+
+// Reusing a seed writes a control inside the collapsed panel — open it, so the
+// press has a visible effect instead of silently changing a hidden setting.
+el("reuseSeed").addEventListener("click", () => {
+  if (!result) return;
+  setP("seed", result.seed);
+  el("advanced").open = true;
+});
+el("copyPrompt").addEventListener("click", () => {
+  if (!result) return;
+  navigator.clipboard.writeText(result.prompt);
+  flashLabel(el("copyPrompt"), "Copied ✓");
+});
+el("download").addEventListener("click", () => {
+  if (!result) return;
+  const a = document.createElement("a");
+  a.href = result.url;
+  a.download = `render-${result.seed}.png`;
+  a.click();
+});
+el("saveShot").addEventListener("click", async () => {
+  if (!result) return;
+  el("saveShot").disabled = true;
+  try {
+    await saveToGallery(result, "studio");
+    notice("save", "Saved to <span class='mono'>./gallery/</span>.");
+  } catch (err) {
+    notice("save", `<b>Save failed</b> — ${esc(err.message)}`, "error");
+  } finally {
+    el("saveShot").disabled = false;
+  }
+});
+
+el("expand").addEventListener("click", expand);
+el("renderAll").addEventListener("click", renderAllVariants);
+el("showRaw").addEventListener("click", () => {
+  el("rawText").textContent = rawReply || "(nothing yet)";
+  el("rawCard").classList.toggle("hidden");
+});
+el("variantList").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-act]");
+  if (!b) return;
+  const i = Number(b.dataset.i);
+  if (b.dataset.act === "render") {
+    beginRun();
+    renderVariant(i).catch(() => {}).finally(endRun);
+  } else if (b.dataset.act === "studio") {
+    setP("prompt", variants[i].prompt); setP("tab", "studio");
+  } else if (b.dataset.act === "remove") {
+    variants.splice(i, 1); renderVariants();
+  }
+});
+el("variantList").addEventListener("input", (e) => {
+  const t = e.target.closest("textarea[data-edit]");
+  if (t) variants[Number(t.dataset.edit)].prompt = t.value;
+});
+
+el("reloadGallery").addEventListener("click", loadGallery);
+el("galleryGrid").addEventListener("click", (e) => {
+  const node = e.target.closest("[data-shot]");
+  if (!node) return;
+  detail = gallery.find((r) => r.name === node.dataset.shot) || null;
+  drawDetail();
+  el("detailCard").scrollIntoView({ behavior: "smooth", block: "nearest" });
+});
+el("closeDetail").addEventListener("click", () => { detail = null; drawDetail(); });
+el("openInStudio").addEventListener("click", () => { if (detail) openInStudio(detail); });
+el("copyDetailPrompt").addEventListener("click", () => {
+  if (!detail) return;
+  navigator.clipboard.writeText(detail.prompt || "");
+  flashLabel(el("copyDetailPrompt"), "Copied ✓");
+});
+el("deleteShot").addEventListener("click", deleteShot);
+
+// ── Boot ───────────────────────────────────────────────────────────────────
+fused.params.onChange(draw);
+draw();
+(async () => {
+  await fillModels();
+  await refreshRuntime();
+  draw();
+  if (P.tab === "gallery") loadGallery();
+})();
 </script>
 </body>
 </html>

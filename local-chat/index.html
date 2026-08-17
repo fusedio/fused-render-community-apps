@@ -1,578 +1,1468 @@
 <!DOCTYPE html>
-<html>
+<html data-fused-theme="shell">
 <head>
-<meta name="fused-app">
-<meta charset="utf-8">
-<title>Local LLM — Chat</title>
+<meta charset="utf-8" />
+<!-- Declares this page a fused app's entry — keep it near the top of <head>
+     (detection reads only the first 4 KiB). -->
+<meta name="fused-app" />
+<title>Local chat — text generation on this machine</title>
 <style>
-  :root { color-scheme: dark; }
+  /* Two :root blocks, ONE token set, no colour literal anywhere else.
+     (specs/app.md §9 — the shell writes data-theme before this parses.) */
+  :root {
+    color-scheme: dark;
+    --bg: #0f1012;
+    --sidebar: #161719;
+    --panel: #1c1e22;
+    --panel-2: #24272d;
+    --text: #ececf1;
+    --muted: #9aa1ac;
+    --faint: #6d747f;
+    --line: #2b2f36;
+    --line-soft: #212429;
+    --accent: #7f8cff;
+    --accent-ink: #0f1012;
+    --accent-soft: #212645;
+    --ok: #55c47b;
+    --err: #f07171;
+    --warn: #e0b050;
+    --user: #262a33;
+    --hover: #23262c;
+    --shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --bg: #ffffff;
+    --sidebar: #f7f7f8;
+    --panel: #ffffff;
+    --panel-2: #f1f2f4;
+    --text: #1e2126;
+    --muted: #5d626b;
+    --faint: #8b909a;
+    --line: #e3e5e9;
+    --line-soft: #eceef1;
+    --accent: #4c5fd7;
+    --accent-ink: #ffffff;
+    --accent-soft: #e9ebfb;
+    --ok: #2e8b4f;
+    --err: #c33b3b;
+    --warn: #9a6b12;
+    --user: #f0f1f5;
+    --hover: #ececee;
+    --shadow: 0 8px 30px rgba(16, 20, 28, 0.09);
+  }
+
   * { box-sizing: border-box; }
+  html, body { height: 100%; }
   body {
     margin: 0;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    background: #16171a;
-    color: #e6e6e6;
-    display: flex;
-    height: 100vh;
-  }
-  #panel {
-    width: 320px;
-    flex-shrink: 0;
-    padding: 20px;
-    border-right: 1px solid #2a2b2f;
-    overflow-y: auto;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 15px;
+    line-height: 1.6;
+    color: var(--text);
+    background: var(--bg);
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    -webkit-font-smoothing: antialiased;
   }
-  h1 { font-size: 15px; margin: 0 0 4px; font-weight: 600; }
-  .sub { font-size: 12px; color: #9a9ba0; margin: -10px 0 6px; }
-  label { font-size: 12px; color: #b6b7bc; display: block; margin-bottom: 4px; }
-  select, textarea, input[type=number] {
-    width: 100%;
-    background: #1f2024;
-    border: 1px solid #33343a;
-    border-radius: 6px;
-    color: #e6e6e6;
-    padding: 8px;
-    font-size: 13px;
-    font-family: inherit;
-  }
-  textarea { resize: vertical; }
-  .row { display: flex; gap: 10px; }
-  .row > div { flex: 1; }
-  .hint { font-size: 11px; color: #6f7075; margin-top: 4px; }
-  input[type=range] { width: 100%; }
-  .rangeval { font-size: 11px; color: #9a9ba0; float: right; }
-  button {
-    background: #4c7dff;
-    color: white;
-    border: none;
-    border-radius: 6px;
-    padding: 10px 14px;
-    font-size: 13px;
-    font-weight: 600;
-    cursor: pointer;
-  }
-  button:disabled { background: #33343a; color: #77787d; cursor: default; }
-  button.secondary {
-    background: transparent;
-    border: 1px solid #33343a;
-    color: #c7c8cc;
-    font-weight: 500;
-  }
-  #advanced { border: 1px solid #2a2b2f; border-radius: 6px; padding: 0 12px; }
-  #advanced summary {
-    cursor: pointer; font-size: 12px; font-weight: 600;
-    color: #c7c8cc; padding: 10px 0; user-select: none;
-  }
-  #advanced .body { display: flex; flex-direction: column; gap: 14px; padding-bottom: 14px; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 
-  #serverstate { font-size: 12px; color: #9a9ba0; white-space: pre-wrap; min-height: 16px; }
-  #serverstate.error { color: #ff8080; }
-  .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; }
-  .dot.ready { background: #4ade80; }
-  .dot.busy { background: #fbbf24; }
-  .dot.off { background: #55565b; }
-  .dot.bad { background: #ff8080; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb {
+    background: var(--line); border-radius: 6px;
+    border: 3px solid transparent; background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover { background: var(--faint); background-clip: content-box; }
+  ::-webkit-scrollbar-track { background: transparent; }
 
+  /* ---------- layout ---------- */
+  .layout { flex: 1; display: grid; grid-template-columns: 272px 1fr; min-height: 0; }
+  aside {
+    background: var(--sidebar); border-right: 1px solid var(--line-soft);
+    display: flex; flex-direction: column; min-height: 0;
+  }
+  .side-head { padding: 14px 12px 8px; display: flex; flex-direction: column; gap: 12px; }
+  .brand { display: flex; align-items: center; gap: 9px; padding: 0 4px; }
+  .brand .mark {
+    width: 24px; height: 24px; border-radius: 7px; flex: none;
+    background: linear-gradient(140deg, var(--accent), var(--ok));
+  }
+  .brand b { font-size: 14px; font-weight: 600; letter-spacing: -0.01em; }
+  .side-scroll { flex: 1; overflow: auto; padding: 4px 12px 12px; min-height: 0; }
+  .side-foot { border-top: 1px solid var(--line-soft); padding: 8px 12px 12px; }
+  main { min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
 
-  #main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-  #transcript {
-    flex: 1; overflow-y: auto; padding: 24px 28px;
-    display: flex; flex-direction: column; gap: 18px;
+  /* ---------- top bar ---------- */
+  .topbar {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 16px; border-bottom: 1px solid var(--line-soft);
   }
-  .msg { max-width: 760px; }
-  .msg .body {
-    font-size: 14px; line-height: 1.62; white-space: pre-wrap;
-    word-wrap: break-word;
+  .topbar .spacer { flex: 1; }
+  #model {
+    width: auto; max-width: 320px; font-size: 14px; font-weight: 500;
+    background: transparent; border: 1px solid transparent; border-radius: 8px;
+    padding: 5px 8px; cursor: pointer;
   }
-  .msg.user { align-self: flex-end; }
-  .msg.user .body {
-    background: #23252b; border: 1px solid #2f3138;
-    border-radius: 10px; padding: 10px 13px;
+  #model:hover, #mode:hover { background: var(--hover); }
+  #mode {
+    width: auto; font-size: 13px; color: var(--muted);
+    background: transparent; border: 1px solid var(--line); border-radius: 8px;
+    padding: 4px 8px; cursor: pointer;
   }
-  .msg.assistant .body { color: #e6e6e6; }
-  /* The model's workings, not its answer — quieter than the reply, and folded
-     away once there is a reply to read. */
-  .think { margin-bottom: 8px; border-left: 2px solid #33343a; padding-left: 10px; }
-  .think summary {
-    cursor: pointer; font-size: 12px; color: #7a7b80;
-    user-select: none; list-style: none;
+  #strip { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); }
+  #strip .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); flex: none; }
+  #strip.on .dot { background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 22%, transparent); }
+  #strip.off .dot { background: var(--err); box-shadow: 0 0 0 3px color-mix(in srgb, var(--err) 22%, transparent); }
+
+  /* ---------- form controls ---------- */
+  .group { margin-bottom: 16px; }
+  .group > h2 {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em;
+    color: var(--faint); margin: 0 0 8px 4px; font-weight: 600;
   }
-  .think summary::before { content: "▸ "; }
-  .think[open] summary::before { content: "▾ "; }
-  .think .thinkbody {
-    margin-top: 6px; font-size: 12.5px; line-height: 1.55;
-    color: #8f9095; white-space: pre-wrap; word-wrap: break-word;
+  label.field { display: block; margin-bottom: 12px; font-size: 12px; color: var(--muted); }
+  label.field > span.lab { display: flex; justify-content: space-between; margin-bottom: 5px; }
+  label.field > span.lab b { color: var(--text); font-weight: 500; font-variant-numeric: tabular-nums; }
+  input[type="text"], input[type="number"], textarea, select {
+    width: 100%; font: inherit; font-size: 13px; color: var(--text);
+    background: var(--panel-2); border: 1px solid transparent; border-radius: 9px;
+    padding: 7px 10px;
   }
-  .msg.assistant.pending .body::after {
-    content: "▍"; color: #4c7dff; animation: blink 1s steps(2) infinite;
+  textarea { resize: vertical; line-height: 1.5; }
+  input[type="range"] {
+    width: 100%; accent-color: var(--accent); height: 18px;
+  }
+  input:focus, textarea:focus, select:focus { outline: none; border-color: var(--accent); }
+  .hint { font-size: 11px; color: var(--faint); margin-top: 5px; line-height: 1.45; }
+
+  .search { position: relative; margin-bottom: 10px; }
+  .search input { padding-left: 30px; border-radius: 10px; }
+  .search::before {
+    content: "⌕"; position: absolute; left: 10px; top: 50%; transform: translateY(-52%);
+    color: var(--faint); font-size: 15px; pointer-events: none;
+  }
+
+  button.btn {
+    appearance: none; cursor: pointer; font: inherit; font-size: 13px;
+    background: var(--panel-2); color: var(--text);
+    border: 1px solid transparent; border-radius: 9px; padding: 6px 12px;
+    transition: background 0.12s, color 0.12s, border-color 0.12s, opacity 0.12s;
+  }
+  button.btn:hover:not(:disabled) { background: var(--hover); border-color: var(--line); }
+  button.btn:disabled { opacity: 0.4; cursor: default; }
+  button.btn.primary {
+    background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 500;
+  }
+  button.btn.primary:hover:not(:disabled) { background: var(--accent); filter: brightness(1.08); }
+  button.btn.ghost { background: transparent; }
+  button.btn.ghost:hover:not(:disabled) { background: var(--hover); border-color: transparent; }
+  button.btn.danger:hover:not(:disabled) { color: var(--err); border-color: transparent; }
+  .row { display: flex; gap: 6px; flex-wrap: wrap; }
+
+  .new-chat {
+    display: flex; align-items: center; gap: 8px; width: 100%;
+    justify-content: flex-start; font-size: 13.5px; font-weight: 500;
+    background: var(--panel-2); border: 1px solid var(--line); border-radius: 11px; padding: 9px 12px;
+  }
+  .new-chat .plus { font-size: 15px; line-height: 1; color: var(--accent); }
+
+  /* settings drawer at the foot of the sidebar */
+  details.settings > summary {
+    cursor: pointer; list-style: none; display: flex; align-items: center; gap: 7px;
+    font-size: 12.5px; color: var(--muted); padding: 7px 8px; border-radius: 9px;
+  }
+  details.settings > summary::-webkit-details-marker { display: none; }
+  details.settings > summary::before { content: "⚙"; font-size: 13px; }
+  details.settings > summary::after { content: "▸"; margin-left: auto; font-size: 9px; color: var(--faint); }
+  details.settings[open] > summary::after { content: "▾"; }
+  details.settings > summary:hover { background: var(--hover); color: var(--text); }
+  details.settings .inner { padding: 10px 8px 2px; max-height: 46vh; overflow: auto; }
+
+  /* ---------- notices ---------- */
+  #notices { padding: 10px 16px 0; max-width: 860px; margin: 0 auto; width: 100%; }
+  #notices:empty { padding: 0; }
+  .notice {
+    border: 1px solid var(--line); border-left-width: 3px; border-radius: 10px;
+    padding: 9px 12px; margin-bottom: 8px; font-size: 12.5px; color: var(--muted);
+    background: var(--panel);
+  }
+  .notice.warn { border-left-color: var(--warn); }
+  .notice.error { border-left-color: var(--err); color: var(--text); }
+  .notice b { color: var(--text); }
+
+  /* ---------- pane ---------- */
+  section.pane { display: flex; flex: 1; min-height: 0; flex-direction: column; }
+  .scroll { flex: 1; overflow: auto; padding: 24px 18px 12px; min-height: 0; }
+
+  .empty { color: var(--muted); font-size: 14px; padding: 12vh 0 40px; text-align: center; }
+  .empty b {
+    color: var(--text); display: block; margin-bottom: 8px; font-weight: 600;
+    font-size: 24px; letter-spacing: -0.02em; line-height: 1.3;
+  }
+
+  /* ---------- chat ---------- */
+  .turn { margin: 0 auto 24px; max-width: 760px; }
+  .turn.user { display: flex; flex-direction: column; align-items: flex-end; }
+  .turn.user .who { display: none; }
+  .turn .who {
+    display: flex; align-items: center; gap: 7px;
+    font-size: 12px; color: var(--muted); margin-bottom: 8px; font-weight: 500;
+  }
+  .turn .who::before {
+    content: ""; width: 18px; height: 18px; border-radius: 5px;
+    background: linear-gradient(140deg, var(--accent), var(--ok));
+  }
+  .bubble { white-space: pre-wrap; word-wrap: break-word; }
+  .turn.user .bubble {
+    background: var(--user); border-radius: 18px 18px 5px 18px;
+    padding: 10px 15px; max-width: 85%;
+  }
+  .turn.assistant .bubble { padding-left: 25px; }
+  .meta {
+    font-size: 11px; color: var(--faint); margin-top: 8px; padding-left: 25px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    opacity: 0; transition: opacity 0.15s;
+  }
+  .turn:hover .meta { opacity: 1; }
+  /* ---------- thinking ---------- */
+  details.think {
+    margin: 0 0 13px; border-left: 2px solid var(--line); padding-left: 12px;
+  }
+  details.think > summary {
+    cursor: pointer; list-style: none; display: flex; align-items: center; gap: 6px;
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--faint);
+  }
+  details.think > summary::-webkit-details-marker { display: none; }
+  details.think > summary::before { content: "▸"; font-size: 9px; line-height: 1; }
+  details.think[open] > summary::before { content: "▾"; }
+  details.think > summary:hover { color: var(--muted); }
+  details.think.live { border-left-color: var(--accent); }
+  details.think.live > summary { color: var(--accent); animation: pulse 1.4s ease-in-out infinite; }
+  details.think .body { color: var(--muted); font-size: 12.5px; margin-top: 7px; }
+  .think-inline {
+    border-left: 2px solid var(--line); padding-left: 11px;
+    color: var(--muted); font-size: 12.5px; margin-bottom: 11px;
+  }
+  @keyframes pulse { 50% { opacity: 0.45; } }
+  .cursor::after {
+    content: "▍"; color: var(--accent); animation: blink 1s steps(2) infinite;
   }
   @keyframes blink { 50% { opacity: 0; } }
-  #empty { margin: auto; color: #55565b; font-size: 13px; text-align: center; }
 
-  #composer {
-    border-top: 1px solid #2a2b2f; padding: 14px 20px;
-    display: flex; flex-direction: column; gap: 8px;
+  /* ---------- rendered markdown (assistant answers + thinking) ---------- */
+  .md { white-space: normal; }
+  .md > :first-child { margin-top: 0; }
+  .md > :last-child { margin-bottom: 0; }
+  .md p { margin: 0 0 0.7em; }
+  .md h1, .md h2, .md h3, .md h4, .md h5, .md h6 {
+    margin: 1.15em 0 0.45em; line-height: 1.3; font-weight: 600; letter-spacing: -0.01em;
   }
-  #input {
-    width: 100%; min-height: 62px; max-height: 220px; resize: none;
-    background: #1f2024; border: 1px solid #33343a; border-radius: 8px;
-    color: #e6e6e6; padding: 10px 12px; font-size: 14px;
-    font-family: inherit; line-height: 1.5;
+  .md h1 { font-size: 1.3em; }
+  .md h2 { font-size: 1.16em; }
+  .md h3 { font-size: 1.05em; }
+  .md h4, .md h5, .md h6 { font-size: 1em; color: var(--muted); }
+  .md ul, .md ol { margin: 0 0 0.7em; padding-left: 1.4em; }
+  .md li { margin: 0.15em 0; }
+  .md li > ul, .md li > ol { margin: 0.15em 0 0.2em; }
+  .md blockquote {
+    margin: 0 0 0.7em; padding-left: 0.85em;
+    border-left: 2px solid var(--line); color: var(--muted);
   }
-  #input:focus { outline: none; border-color: #4c7dff; }
-  #composerbar { display: flex; align-items: center; gap: 10px; }
-  #meta { flex: 1; font-size: 11px; color: #6f7075; }
-  #meta.error { color: #ff8080; }
+  .md hr { border: 0; border-top: 1px solid var(--line); margin: 1.1em 0; }
+  .md a { color: var(--accent); }
+  .md code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.88em; background: var(--panel-2); border: 1px solid var(--line);
+    border-radius: 4px; padding: 0.08em 0.32em;
+  }
+  .md pre {
+    margin: 0 0 0.7em; padding: 9px 11px; overflow-x: auto; white-space: pre;
+    background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px;
+  }
+  .md pre code {
+    background: none; border: 0; padding: 0; font-size: 12.5px; line-height: 1.5;
+  }
+  .md pre[data-lang]::before {
+    content: attr(data-lang); display: block; margin-bottom: 6px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--faint);
+  }
+  .md table {
+    border-collapse: collapse; margin: 0 0 0.7em; font-size: 0.95em;
+    display: block; overflow-x: auto; max-width: 100%;
+  }
+  .md th, .md td { border: 1px solid var(--line); padding: 4px 9px; text-align: left; }
+  .md th { background: var(--panel-2); font-weight: 600; }
+
+  /* ---------- composer ---------- */
+  .composer { padding: 6px 18px 16px; }
+  .composer .inner { max-width: 760px; margin: 0 auto; }
+  .composer .box {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 24px;
+    padding: 12px 12px 9px 18px; box-shadow: var(--shadow);
+    transition: border-color 0.15s;
+  }
+  .composer .box:focus-within { border-color: var(--accent); }
+  .composer textarea {
+    display: block; background: none; border: 0; padding: 0; resize: none;
+    font-size: 15px; line-height: 1.55; max-height: 220px; overflow-y: auto;
+  }
+  .composer .actions { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
+  .composer .actions .spacer { flex: 1; }
+  .composer .note { font-size: 11.5px; color: var(--faint); }
+  .icon-btn {
+    width: 32px; height: 32px; padding: 0; border-radius: 50%; flex: none;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 15px; line-height: 1;
+  }
+  .composer .foot {
+    text-align: center; font-size: 11px; color: var(--faint); margin-top: 8px;
+  }
+
+  .loading {
+    display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--muted);
+    margin: 0 auto 16px; max-width: 760px; padding-left: 25px;
+  }
+  .track { flex: 1; height: 4px; border-radius: 2px; background: var(--panel-2); overflow: hidden; }
+  .track > i { display: block; height: 100%; background: var(--accent); width: 0; transition: width 0.3s; }
+  .track.indeterminate > i { width: 35%; animation: slide 1.3s ease-in-out infinite; }
+  @keyframes slide { 0% { margin-left: -35%; } 100% { margin-left: 100%; } }
+
+  /* ---------- saved chats (in the aside) ---------- */
+  .item {
+    padding: 8px 10px; border-radius: 9px; margin-bottom: 2px;
+    cursor: pointer; transition: background 0.12s;
+  }
+  .item:hover { background: var(--hover); }
+  .item[aria-current="true"] { background: var(--accent-soft); }
+  .item .title {
+    font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .item .sub { font-size: 11px; color: var(--faint); margin-top: 1px; }
+  .item .acts { display: none; gap: 6px; margin-top: 6px; }
+  .item:hover .acts, .item[aria-current="true"] .acts { display: flex; }
+  .item .acts button { font-size: 11px; padding: 2px 8px; }
+  .item.bad { cursor: default; color: var(--muted); }
+  .count { font-size: 11px; color: var(--faint); margin: 0 0 6px 4px; }
+  .empty.small { padding: 18px 0; font-size: 12.5px; }
+  .empty.small b { font-size: 13px; margin-bottom: 6px; }
+
+  @media (max-width: 860px) {
+    .layout { grid-template-columns: 1fr; }
+    aside { border-right: 0; border-bottom: 1px solid var(--line); max-height: 42vh; }
+    .turn.assistant .bubble, .meta, .loading { padding-left: 0; }
+  }
 </style>
 </head>
 <body>
 
-<div id="panel">
-  <h1>Local LLM</h1>
-  <div class="sub">Runs entirely on this machine via MLX. No network after the model downloads.</div>
-
-  <div>
-    <label for="model">Model</label>
-    <select id="model"></select>
-    <div class="hint" id="modelnote"></div>
-  </div>
-
-  <div>
-    <div id="serverstate"></div>
-  </div>
-
-  <div class="row">
-    <div><button id="startbtn">Load model</button></div>
-    <div><button id="stopbtn" class="secondary">Unload</button></div>
-  </div>
-
-  <div>
-    <label for="mode">Mode</label>
-    <select id="mode">
-      <option value="chat">Chat — multi-turn conversation</option>
-      <option value="completion">Completion — continue raw text</option>
-    </select>
-    <div class="hint" id="modenote"></div>
-  </div>
-
-  <details id="advanced">
-    <summary>Settings</summary>
-    <div class="body">
-      <div>
-        <label for="system">System prompt <span class="hint">(chat mode)</span></label>
-        <textarea id="system" rows="3" placeholder="You are a helpful assistant."></textarea>
-      </div>
-      <div>
-        <label for="temp">Temperature <span class="rangeval" id="tempval"></span></label>
-        <input id="temp" type="range" min="0" max="1.5" step="0.05">
-      </div>
-      <div>
-        <label for="maxtok">Max tokens</label>
-        <input id="maxtok" type="number" min="16" max="8192" step="16">
-      </div>
-      <div><button id="clearbtn" class="secondary" style="width:100%">Clear conversation</button></div>
+<div class="layout">
+  <aside>
+    <div class="side-head">
+      <div class="brand"><span class="mark"></span><b>Local chat</b></div>
+      <button class="btn new-chat" id="clear"><span class="plus">＋</span>New chat</button>
     </div>
-  </details>
-</div>
 
-<div id="main">
-  <div id="transcript"><div id="empty">Load a model, then say something.</div></div>
-  <div id="composer">
-    <textarea id="input" placeholder="Message… (↵ to send, ⇧↵ for a new line)"></textarea>
-    <div id="composerbar">
-      <div id="meta"></div>
-      <button id="stopgen" class="secondary" style="display:none">Stop</button>
-      <button id="send">Send</button>
+    <div class="side-scroll">
+      <div class="group">
+        <div class="search">
+          <input type="text" id="find" placeholder="Search chats" />
+        </div>
+        <div class="count" id="libCount"></div>
+        <div id="libList"></div>
+      </div>
     </div>
-  </div>
+
+    <div class="side-foot">
+      <details class="settings">
+        <summary>Settings</summary>
+        <div class="inner">
+          <div class="group">
+            <h2>Model</h2>
+            <div class="hint" id="modelNote"></div>
+            <div class="row" style="margin-top:8px">
+              <button class="btn" id="preload">Preload</button>
+              <button class="btn" id="unload">Unload</button>
+            </div>
+          </div>
+
+          <div class="group">
+            <h2>Sampling</h2>
+            <label class="field">
+              <span class="lab">System prompt</span>
+              <textarea id="system" rows="3" placeholder="empty — the model's own default"></textarea>
+            </label>
+            <label class="field">
+              <span class="lab">Temperature <b id="tempV">0.70</b></span>
+              <input type="range" id="temp" min="0" max="2" step="0.05" />
+            </label>
+            <label class="field">
+              <span class="lab">Top-p <b id="toppV">0.95</b></span>
+              <input type="range" id="topp" min="0" max="1" step="0.05" />
+            </label>
+            <label class="field">
+              <span class="lab">Max tokens <b id="maxtokV">1024</b></span>
+              <input type="range" id="maxtok" min="64" max="8192" step="64" />
+            </label>
+            <label class="field" style="display:flex;gap:7px;align-items:center">
+              <input type="checkbox" id="think" style="width:auto" />
+              <span>Collapse thinking blocks</span>
+            </label>
+          </div>
+
+          <div class="hint" id="libDir"></div>
+        </div>
+      </details>
+    </div>
+  </aside>
+
+  <main>
+    <div class="topbar">
+      <select id="model"></select>
+      <select id="mode" title="How your text reaches the model">
+        <option value="chat">Chat</option>
+        <option value="raw">Completion</option>
+      </select>
+      <span class="spacer"></span>
+      <span id="strip"><span class="dot"></span><span id="stripText">reading runtime…</span></span>
+    </div>
+
+    <div id="notices"></div>
+
+    <section class="pane">
+      <div class="scroll" id="transcript"></div>
+      <div class="composer">
+        <div class="inner">
+          <div class="box">
+            <textarea id="draft" rows="1" placeholder="Message the model…"></textarea>
+            <div class="actions">
+              <span class="note" id="chatNote"></span>
+              <span class="spacer"></span>
+              <button class="btn ghost" id="save">Save chat</button>
+              <button class="btn icon-btn" id="stop" title="Stop generating" hidden>■</button>
+              <button class="btn primary icon-btn" id="send" title="Send (Enter)">↑</button>
+            </div>
+          </div>
+          <div class="foot">Runs entirely on this machine through <code class="mono">fused.ai</code> — Enter to send, Shift + Enter for a new line.</div>
+        </div>
+      </div>
+    </section>
+
+  </main>
 </div>
 
 <script>
-// A thin client. Everything slow — holding the model in memory, downloading it,
-// streaming tokens — belongs to fused-render now (SPEC §40), reached through
-// `fused.ai`. What is left here is a chat UI and one data file that remembers
-// the transcript.
-//
-// What that deleted: a long-lived MLX server process, a per-message streaming
-// worker, pid files and process groups, a bootstrap timeout, a curated model
-// list, an environment scrub for the packaged app's interpreter, a
-// `pyproject.toml` and a 1124-line `uv.lock`. None of it was about chatting,
-// and every app that wanted a local model had to write it again.
-const $ = (id) => document.getElementById(id);
-const CAPABILITY = "text-generation";
-const DEFAULTS = { mode: "chat", temp: "0.7", max_tokens: "1024", system: "" };
+"use strict";
+/* ===================================================================
+   specs/app.md is the contract for everything below. In short:
+   params are the settings, `draw()` is the single re-render path and
+   never writes a param, and `generate()` is the ONE fused.ai call site.
+   =================================================================== */
 
-let MODELS = [];          // the app's curated shortlist, from the server
-let conversation = [];    // committed turns, from disk
-let pending = null;       // {text} while a reply streams
-let runtimeTimer = null;
+const IS_LOCAL = fused.env === "local";
+const CAP = "text-generation";
 
-const param = (k) => fused.params.get(k) ?? DEFAULTS[k] ?? "";
-// A URL param read as a number, or undefined. Undefined and not NaN: NaN
-// serializes to null and the server reads that as "not sent", which is the same
-// silence these two controls already had once — a hand-edited `?temp=warm`
-// should fall back to the model's own default, not look like a working slider.
-const num = (k) => {
-  const value = Number(param(k));
-  return Number.isFinite(value) ? value : undefined;
+/* Paths beside this page. `readFile` resolves a relative path page-relative
+   (it goes through `rawUrl`, which sends the page's own path as `base`), but
+   `stat` and `writeFile` DO NOT — they send the path bare, so the server
+   resolves it against its own working directory and a relative one 404s. So
+   every file path this page uses is made absolute here, from the page's own
+   URL, the same way the runtime builds `base`. (specs/assumptions.md §8) */
+const PAGE_PATH = new URLSearchParams(window.location.search).get("path") || "";
+const PAGE_DIR = PAGE_PATH.includes("/") ? PAGE_PATH.slice(0, PAGE_PATH.lastIndexOf("/")) : "";
+const here = (rel) => (PAGE_DIR ? PAGE_DIR + "/" + rel : "./" + rel);
+
+/* ---------- params (specs/app.md §2) ---------- */
+const DEFAULTS = {
+  model: "", system: "", temp: "0.7", topp: "0.95", maxtok: "1024",
+  think: "1", find: "", chat: "", mode: "chat",
 };
-const selectedModel = () => $("model").value;
+/* Completion, not conversation: the model continues the text it is handed, with
+   no chat template wrapped round it and no prior turns (specs/app-chat.md §9).
+   `raw` and `history` are mutually exclusive at the bridge, and a system prompt
+   has nowhere to go without a template. */
+const isRaw = () => P.get("mode") === "raw";
+const P = {
+  get: (k) => { const v = fused.params.get(k); return v === undefined || v === "" ? DEFAULTS[k] : v; },
+  raw: (k) => fused.params.get(k) || "",
+  num: (k) => parseFloat(P.get(k)),
+  int: (k) => parseInt(P.get(k), 10),
+  set: (k, v) => fused.params.set(k, String(v)),
+};
 
-// ---------- transcript ----------
+/* ---------- state ---------- */
+let convo = [];          // [{role, content, meta}] — NOT a param (specs/app.md §2)
+let loadedChat = null;   // which ./chats/ file `convo` came from
+let chatMtime = null;    // for the optimistic lock on re-save
+let catalogModels = [];  // [{id, label, size_gb, note}]
+let runner = null;       // the text-generation runner entry
+let resident = null;     // the loaded[] entry for our capability, or null
+let busy = false;        // the app-wide generation lock (specs/app.md §8)
+let stopRequested = false;
+let shownFind = null;    // the `find` the saved-chat list was last built for
 
-// A reasoning model narrates before it answers, inside <think>…</think>, and
-// that narration is not the reply — it is workings the model shows on the way.
-// Rendered verbatim it reads as the model rambling to itself and then starting
-// over, so it goes in a fold of its own, collapsed, above the answer.
-//
-// Split on the CLOSING tag, not with a tag-matching regex: while the reply is
-// still streaming the opening tag has arrived and the closing one has not, and
-// the honest reading of that is "everything so far is still thinking".
-const THINK_OPEN = /^\s*<think(?:ing)?>/i;
-const THINK_CLOSE = /<\/think(?:ing)?>/i;
+const $ = (id) => document.getElementById(id);
+const el = (tag, cls, text) => {
+  const node = document.createElement(tag);
+  if (cls) node.className = cls;
+  if (text !== undefined) node.textContent = text;
+  return node;
+};
+const typed = (type, message) => Object.assign(new Error(message), { type });
+const gb = (n) => (n >= 1 ? n.toFixed(1) + " GB" : Math.round(n * 1024) + " MB");
+const bytes = (n) => {
+  if (!n) return "";
+  const u = ["B", "KB", "MB", "GB"];
+  let i = 0, v = n;
+  while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+  return (i > 1 ? v.toFixed(1) : Math.round(v)) + " " + u[i];
+};
+const labelFor = (id) => {
+  const hit = catalogModels.find((m) => m.id === id);
+  return hit ? hit.label : (id || "unknown model");
+};
 
+/* ---------- notices (specs/app.md §7) ---------- */
+function notice(text, kind, cause) {
+  const key = cause || kind || "warn";
+  const box = $("notices");
+  const prior = box.querySelector('[data-cause="' + key + '"]');
+  if (prior) prior.remove();
+  if (!text) return;
+  const node = el("div", "notice " + (kind || "warn"));
+  node.dataset.cause = key;
+  node.textContent = text;
+  box.appendChild(node);
+}
+function routeError(err, cause) {
+  // Only the types the text path can actually raise (specs/assumptions.md §4).
+  // `cancelled` and `unavailable` are image/transcription types and cannot
+  // reach here — a branch for them would read as handled and never fire.
+  const type = err && err.type;
+  if (type === "ai_unavailable") refreshRuntime();
+  notice((type ? type + ": " : "") + (err && err.message ? err.message : String(err)), "error", cause);
+}
+
+/* ===================================================================
+   Runtime + model strip (specs/app.md §4)
+   =================================================================== */
+async function refreshRuntime() {
+  if (!IS_LOCAL) {
+    setStrip("off", "hosted copy — local models are not available here");
+    return;
+  }
+  let list = null, catalog = null;
+  try { list = await fused.ai.models.list(); } catch (err) { /* strip says so below */ }
+  try { catalog = await fused.ai.models.catalog(); } catch (err) { /* ditto */ }
+
+  runner = list ? (list.runners || []).find((r) => r.capability === CAP && r.available)
+                || (list.runners || []).find((r) => r.capability === CAP) : null;
+  resident = list ? (list.loaded || []).find((l) => l.capability === CAP) || null : null;
+
+  const block = catalog ? (catalog.capabilities || []).find((c) => c.capability === CAP) : null;
+  if (block && block.models && block.models.length) {
+    catalogModels = block.models;
+    if (!P.raw("model")) P.set("model", block.default || block.models[0].id);
+  } else {
+    // Last resort, not the default path (specs/assumptions.md §5).
+    catalogModels = resident ? [{ id: resident.model, label: resident.model, size_gb: 0, note: "" }] : [];
+    notice("The model catalog could not be read — showing only what is resident.", "warn", "catalog");
+  }
+  // Whatever is resident belongs in the picker whether or not the catalog
+  // mentions it. `catalog()` already carries the models found on this disk
+  // (`source: "cached"`), so this is the narrow remaining case: a repo loaded
+  // from the AI Models page that the catalog has not caught up with. Without
+  // it the strip says a model is resident and the dropdown cannot select it.
+  if (resident && !catalogModels.some((m) => m.id === resident.model)) {
+    catalogModels = catalogModels.concat([{
+      id: resident.model, label: resident.model, size_gb: 0, note: "Loaded from elsewhere.",
+      downloaded: true, loaded: true,
+    }]);
+  }
+  if (catalogModels.length && !catalogModels.some((m) => m.id === P.raw("model"))) {
+    P.set("model", (block && block.default) || catalogModels[0].id);
+  }
+
+  if (!runner || !runner.available) {
+    const why = (runner && runner.reason) || "no text-generation runner is available on this machine";
+    setStrip("off", why);
+    notice(why, "error", "runner");
+  } else {
+    notice("", "error", "runner");
+    if (resident && resident.state !== "ready") {
+      setStrip("on", runner.label + " · " + labelFor(resident.model) + " " + resident.state + "…");
+    } else if (resident) {
+      setStrip("on", runner.label + " · " + labelFor(resident.model) + " resident"
+        + (resident.residentBytes ? " (" + bytes(resident.residentBytes) + ")" : ""));
+    } else {
+      // Nothing is resident — so say what the first message will actually cost,
+      // which is a load off disk for a model already downloaded and a multi-GB
+      // fetch for one that is not. Announcing a download either way is the
+      // difference between "this will take a moment" and "this will take ten".
+      const chosen = catalogModels.find((m) => m.id === P.raw("model")) || {};
+      setStrip("on", runner.label + " · " + (chosen.downloaded
+        ? "first message loads " + chosen.label + " from disk"
+        : "first message downloads " + (chosen.size_gb ? gb(chosen.size_gb) : "the model")));
+    }
+  }
+  fillModels();
+  syncEnabled();
+}
+
+function setStrip(kind, text) {
+  $("strip").className = kind;
+  $("stripText").textContent = text;
+}
+
+/* What picking this row would COST — the one thing the size alone cannot say.
+   `loaded` comes from `resident` rather than the catalog's own flag, because
+   `list()` is read in the same refresh and is the authoritative answer to what
+   a worker is holding right now. */
+function stateOf(m) {
+  if (resident && resident.model === m.id) return "resident";
+  if (m.downloaded) return "on disk";
+  return m.size_gb ? gb(m.size_gb) + " download" : "downloads on first use";
+}
+
+function fillModels() {
+  const sel = $("model");
+  const want = P.raw("model");
+  sel.innerHTML = "";
+  catalogModels.forEach((m) => {
+    const opt = el("option", null, m.label + "  ·  " + stateOf(m));
+    opt.value = m.id;
+    sel.appendChild(opt);
+  });
+  sel.value = want;
+  const chosen = catalogModels.find((m) => m.id === sel.value);
+  $("modelNote").textContent = chosen && chosen.note ? chosen.note : "";
+
+  const size = chosen && chosen.size_gb ? gb(chosen.size_gb) : "";
+  $("preload").textContent = resident && resident.model === sel.value
+    ? "Resident" : "Preload" + (size ? " " + size : "");
+  $("preload").disabled = !IS_LOCAL || busy || !!(resident && resident.model === sel.value);
+  // Named by what is ACTUALLY resident, not by what the dropdown shows.
+  $("unload").textContent = resident ? "Unload " + labelFor(resident.model) : "Unload";
+  $("unload").disabled = !IS_LOCAL || busy || !resident;
+}
+
+async function preload() {
+  const id = P.raw("model");
+  try {
+    setBusy(true);
+    const started = await fused.ai.models.load(id, { capability: CAP });
+    notice("Loading " + labelFor(id) + "…", "warn", "load");
+    await fused.watchJob(started.jobId).watch((job) => {
+      const done = job.total ? " " + bytes(job.done) + " / " + bytes(job.total) : "";
+      notice("Loading " + labelFor(id) + "…" + done, "warn", "load");
+    });
+    notice("", "warn", "load");
+  } catch (err) {
+    routeError(err, "load");
+  } finally {
+    setBusy(false);
+    await refreshRuntime();
+  }
+}
+
+async function unload() {
+  try {
+    // By capability, never by id (specs/assumptions.md §5).
+    await fused.ai.models.unload({ capability: CAP });
+  } catch (err) {
+    routeError(err, "load");
+  }
+  await refreshRuntime();
+}
+
+/* ===================================================================
+   generate() — the one fused.ai call site (specs/app.md §5)
+   =================================================================== */
+function setBusy(value) {
+  busy = value;
+  syncEnabled();
+}
+
+function syncEnabled() {
+  $("send").disabled = busy || !IS_LOCAL || !runner || !runner.available || !catalogModels.length;
+  $("stop").hidden = !busy;
+  $("preload").disabled = !IS_LOCAL || busy || !!(resident && resident.model === P.raw("model"));
+  $("unload").disabled = !IS_LOCAL || busy || !resident;
+}
+
+async function generate(spec) {
+  if (busy) throw typed("bad_request", "one generation at a time");
+  if (!IS_LOCAL) throw typed("ai_unavailable", "local models need the fused-render app, not an exported copy");
+
+  const opts = { model: P.raw("model") };
+  opts.temperature = P.num("temp");
+  opts.topP = P.num("topp");
+  opts.maxTokens = P.int("maxtok");
+  if (spec.raw) {
+    // Neither `history` nor `systemPrompt` is sent here, and neither is dropped
+    // quietly: a raw call has no chat template to put a system turn in, and the
+    // bridge refuses `raw` together with `history` with a 400 rather than
+    // picking one. The UI says so too, so the settings that stop applying are
+    // visibly out of play (specs/app-chat.md §9).
+    opts.raw = true;
+  } else {
+    const system = P.get("system").trim();
+    if (system) opts.systemPrompt = system;        // omitted when empty, so the worker's own default applies
+    if (spec.history && spec.history.length) opts.history = spec.history;
+  }
+  if (spec.onChunk) opts.onChunk = spec.onChunk;
+
+  setBusy(true);
+  let clock = performance.now();
+  let cold = false;
+  try {
+    let res;
+    try {
+      res = await fused.ai(spec.prompt, opts);
+    } catch (err) {
+      // Text fails FAST on a cold model, having started the load
+      // (specs/assumptions.md §2). Watch it, then retry exactly once.
+      if (err.type !== "model_loading") throw err;
+      cold = true;
+      if (spec.onLoading) spec.onLoading(null);
+      await fused.watchJob(err.jobId).watch((job) => { if (spec.onLoading) spec.onLoading(job); });
+      if (spec.onLoading) spec.onLoading(undefined);
+      clock = performance.now();   // the download is not generation; keep it out of tok/s
+      res = await fused.ai(spec.prompt, opts);
+    }
+    const seconds = (performance.now() - clock) / 1000;
+    // Our own clock, because usage.seconds is absent on every stopped run
+    // (specs/assumptions.md §3).
+    return { text: res.text || "", model: res.model, usage: res.usage || {}, seconds, cold };
+  } finally {
+    setBusy(false);
+    if (cold) refreshRuntime();
+  }
+}
+
+/* ===================================================================
+   Thinking blocks (specs/app-chat.md §6)
+   =================================================================== */
 function splitThinking(text) {
-  const body = text || "";
-  if (!THINK_OPEN.test(body)) return { thinking: "", answer: body };
-  const close = body.search(THINK_CLOSE);
+  const open = text.indexOf("<think>");
+  if (open === -1) {
+    // Some runners never emit the opening tag — the reasoning IS the start
+    // of the stream, only the close is marked. Until "</think>" shows up
+    // there is no way to tell this apart from a model with no thinking at
+    // all, so it renders as a plain answer until then.
+    const bare = text.indexOf("</think>");
+    if (bare === -1) return { thinking: "", answer: text };
+    return { thinking: text.slice(0, bare), answer: text.slice(bare + 8).trim() };
+  }
+  const close = text.indexOf("</think>", open);
   if (close === -1) {
-    // Still inside the block: no answer yet, and saying so beats showing the
-    // reasoning as though it were one.
-    return { thinking: body.replace(THINK_OPEN, ""), answer: "", open: true };
+    // Still streaming, or the token budget ran out mid-thought.
+    return { thinking: text.slice(open + 7), answer: text.slice(0, open) };
   }
   return {
-    thinking: body.slice(0, close).replace(THINK_OPEN, "").trim(),
-    answer: body.slice(close).replace(THINK_CLOSE, "").trim(),
+    thinking: text.slice(open + 7, close),
+    answer: (text.slice(0, open) + text.slice(close + 8)).trim(),
   };
 }
 
-const escape = (text) => {
-  const div = document.createElement("div");
-  div.textContent = text || "";
-  return div.innerHTML;
-};
+/* ===================================================================
+   Markdown — enough of it for what a chat model emits, and no more.
+   Runs on every streamed chunk, so it stays a single pass over the
+   lines with no library behind it (there is no network here anyway).
+   =================================================================== */
+const ESCAPES = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" };
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ESCAPES[c]);
 
-function renderTranscript() {
-  const el = $("transcript");
-  const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-  const items = conversation.slice();
-  if (pending) items.push({ role: "assistant", content: pending.text, pending: true });
+function inlineMd(src) {
+  // Code spans come out first so no emphasis rule can reach inside them.
+  const spans = [];
+  let s = String(src).replace(/`([^`\n]+)`/g, (_, code) => {
+    spans.push(code);
+    return "\u0000" + (spans.length - 1) + "\u0000";
+  });
+  s = esc(s)
+    .replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g,
+             '<a href="$2" target="_blank" rel="noreferrer">$1</a>')
+    .replace(/(\*\*|__)(?=\S)([\s\S]*?\S)\1/g, "<strong>$2</strong>")
+    .replace(/(^|[\s(])([*_])(?=\S)([^*_\n]*?\S)\2/g, "$1<em>$3</em>")
+    .replace(/~~(?=\S)([\s\S]*?\S)~~/g, "<del>$1</del>");
+  return s.replace(/\u0000(\d+)\u0000/g, (_, i) => "<code>" + esc(spans[+i]) + "</code>");
+}
 
-  if (!items.length) {
-    el.innerHTML = '<div id="empty">Pick a model and say something.</div>';
+const BLOCK_START = /^\s*(?:```|#{1,6}\s|>|[-*+]\s|\d+[.)]\s|(?:[-*_]\s*){3,}$)/;
+const LIST_ITEM = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/;
+const TABLE_RULE = /^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$/;
+const cells = (line) => line.replace(/^\s*\|/, "").replace(/\|\s*$/, "").split("|").map((c) => c.trim());
+
+function mdHtml(src) {
+  const lines = String(src || "").replace(/\r\n?/g, "\n").split("\n");
+  const out = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    // fenced code — an unterminated fence is normal mid-stream, so EOF closes it
+    const fence = /^\s*```(.*)$/.exec(line);
+    if (fence) {
+      const lang = fence[1].trim();
+      const buf = [];
+      i++;
+      while (i < lines.length && !/^\s*```/.test(lines[i])) buf.push(lines[i++]);
+      i++;
+      out.push("<pre" + (lang ? ' data-lang="' + esc(lang) + '"' : "")
+        + "><code>" + esc(buf.join("\n")) + "</code></pre>");
+      continue;
+    }
+
+    if (!line.trim()) { i++; continue; }
+
+    const head = /^\s*(#{1,6})\s+(.*?)\s*#*$/.exec(line);
+    if (head) {
+      const n = head[1].length;
+      out.push("<h" + n + ">" + inlineMd(head[2]) + "</h" + n + ">");
+      i++;
+      continue;
+    }
+
+    if (/^\s*(?:[-*_]\s*){3,}$/.test(line)) { out.push("<hr />"); i++; continue; }
+
+    // pipe table — only when the row under the header is the |---|---| rule
+    if (line.includes("|") && i + 1 < lines.length
+        && lines[i + 1].includes("-") && TABLE_RULE.test(lines[i + 1])) {
+      const head2 = cells(line);
+      i += 2;
+      const rows = [];
+      while (i < lines.length && lines[i].includes("|") && lines[i].trim()) rows.push(cells(lines[i++]));
+      out.push("<table><thead><tr>"
+        + head2.map((c) => "<th>" + inlineMd(c) + "</th>").join("")
+        + "</tr></thead><tbody>"
+        + rows.map((r) => "<tr>" + head2.map((_, c) => "<td>" + inlineMd(r[c] || "") + "</td>").join("") + "</tr>").join("")
+        + "</tbody></table>");
+      continue;
+    }
+
+    if (/^\s*>/.test(line)) {
+      const buf = [];
+      while (i < lines.length && (/^\s*>/.test(lines[i]) || (buf.length && lines[i].trim()))) {
+        buf.push(lines[i++].replace(/^\s*>\s?/, ""));
+      }
+      out.push("<blockquote>" + mdHtml(buf.join("\n")) + "</blockquote>");
+      continue;
+    }
+
+    const item = LIST_ITEM.exec(line);
+    if (item) {
+      const ordered = /\d/.test(item[2]);
+      const base = item[1].length;
+      const parts = [];
+      while (i < lines.length) {
+        const next = LIST_ITEM.exec(lines[i]);
+        if (next && next[1].length <= base) {
+          if (/\d/.test(next[2]) !== ordered) break;   // a different list starts here
+          parts.push([next[3]]);
+          i++;
+          continue;
+        }
+        // deeper indent, or a plain wrapped line: it belongs to the open item
+        if (parts.length && lines[i].trim() && (next || /^\s\s+\S/.test(lines[i]))) {
+          parts[parts.length - 1].push(lines[i].slice(Math.min(base + 2, lines[i].search(/\S/))));
+          i++;
+          continue;
+        }
+        break;
+      }
+      const tag = ordered ? "ol" : "ul";
+      const start = ordered ? parseInt(item[2], 10) : 1;
+      out.push("<" + tag + (start > 1 ? ' start="' + start + '"' : "") + ">"
+        + parts.map((p) => "<li>" + (p.length > 1 ? mdHtml(p.join("\n")) : inlineMd(p[0])) + "</li>").join("")
+        + "</" + tag + ">");
+      continue;
+    }
+
+    // paragraph — a single newline inside one stays a line break, because a
+    // model's own line structure (verse, addresses, transcripts) is often the point
+    const para = [];
+    while (i < lines.length && lines[i].trim() && !BLOCK_START.test(lines[i])) para.push(lines[i++]);
+    out.push("<p>" + para.map(inlineMd).join("<br />") + "</p>");
+  }
+  return out.join("");
+}
+
+/* One `<li>` whose only child is a `<p>` reads as a stray blank line. */
+function mdInto(node, text) {
+  node.innerHTML = mdHtml(text).replace(/<li><p>([\s\S]*?)<\/p>(?=<\/li>|<[uo]l)/g, "<li>$1");
+  return node;
+}
+
+function renderAnswer(into, text, streaming) {
+  into.innerHTML = "";
+  const parts = splitThinking(text);
+  const thinking = parts.thinking.trim();
+  const answer = parts.answer.trim();
+  // Thinking still arriving: nothing has closed it and no answer follows it yet.
+  const live = streaming && !!thinking && !answer;
+
+  if (thinking) {
+    if (P.get("think") === "1") {
+      const box = el("details", "think" + (live ? " live" : ""));
+      // Open while it is being written, shut once the answer starts — unless
+      // the reader has said otherwise on this bubble, which wins either way.
+      const choice = into.dataset.thinkOpen;
+      box.open = choice === undefined ? live : choice === "1";
+      const words = thinking.split(/\s+/).length;
+      const summary = el("summary", null,
+        live ? "thinking…" : "thought for " + words + " word" + (words === 1 ? "" : "s"));
+      // Recorded on the click, not on `toggle`: a programmatic open above
+      // fires `toggle` too, and would forge a choice the reader never made.
+      summary.addEventListener("click", () => { into.dataset.thinkOpen = box.open ? "0" : "1"; });
+      box.appendChild(summary);
+      box.appendChild(mdInto(el("div", "body md"), thinking));
+      into.appendChild(box);
+    } else {
+      into.appendChild(mdInto(el("div", "think-inline md"), thinking));
+    }
+  }
+
+  const body = mdInto(el("div", "md"), parts.answer);
+  into.appendChild(body);
+  if (streaming) {
+    // On the last block, so the caret trails the text rather than the bubble.
+    const tail = live ? into.querySelector("details.think .md > :last-child, .think-inline > :last-child")
+                      : body.lastElementChild;
+    (tail || body).classList.add("cursor");
+  }
+}
+
+/* The turn's meta as an OBJECT — it is what goes on disk (specs/app-library.md
+   §2) and what a reopened transcript renders from. `output_tokens` is the only
+   token count on this path; `input_tokens` does not exist here
+   (specs/assumptions.md §1). */
+function metaOf(res, stopped, raw) {
+  const tokens = res.usage && typeof res.usage.output_tokens === "number"
+    ? res.usage.output_tokens : null;
+  return {
+    model: res.model, tokens: tokens, seconds: Number(res.seconds.toFixed(2)),
+    stopped: !!stopped, cold: !!res.cold, raw: !!raw,
+  };
+}
+
+/* The meta for a turn that streamed and then FAILED. There is no `res` to read
+   — the call rejected — so the counts the server would have carried are absent
+   and only what the page itself knows is recorded (specs/app-chat.md §4). */
+function partialMeta() {
+  return {
+    model: (resident && resident.model) || P.raw("model"),
+    tokens: null, seconds: null, stopped: false, cold: false, failed: true, raw: isRaw(),
+  };
+}
+
+function metaLine(meta) {
+  if (!meta) return "";
+  const bits = [labelFor(meta.model)];
+  if (typeof meta.tokens === "number") bits.push(meta.tokens + " tokens");
+  if (typeof meta.seconds === "number") bits.push(meta.seconds.toFixed(1) + " s");
+  if (meta.tokens && meta.seconds > 0.05) bits.push((meta.tokens / meta.seconds).toFixed(1) + " tok/s");
+  if (meta.raw) bits.push("raw completion");
+  if (meta.stopped) bits.push("stopped");
+  if (meta.failed) bits.push("incomplete — the generation failed");
+  if (meta.cold) {
+    const size = (catalogModels.find((m) => m.id === meta.model) || {}).size_gb;
+    bits.push("after a " + (size ? gb(size) : "cold") + " load");
+  }
+  return bits.join(" · ");
+}
+
+/* ===================================================================
+   Chat (specs/app-chat.md)
+   =================================================================== */
+function paintConvo() {
+  const box = $("transcript");
+  box.innerHTML = "";
+  if (!convo.length) {
+    const empty = el("div", "empty");
+    empty.appendChild(el("b", null, isRaw() ? "Write the opening." : "What should we work on?"));
+    empty.appendChild(document.createTextNode(isRaw()
+      ? "The model continues your text — no chat template, no history."
+      : (resident
+        ? labelFor(resident.model) + " is loaded and waiting."
+        : labelFor(P.raw("model")) + " loads on your first message.")));
+    box.appendChild(empty);
     return;
   }
-  el.innerHTML = items.map((m) => {
-    const cls = "msg " + m.role + (m.pending ? " pending" : "");
-    if (m.role !== "assistant") {
-      return `<div class="${cls}"><div class="body">${escape(m.content)}</div></div>`;
-    }
-    const { thinking, answer, open } = splitThinking(m.content);
-    // Open only while it is ALL there is to show — a fold that pops back shut
-    // the moment the answer starts is the right behaviour, because by then the
-    // answer is the thing you want to read.
-    const fold = thinking
-      ? `<details class="think"${open ? " open" : ""}>` +
-        `<summary>Thinking${open ? "…" : ""}</summary>` +
-        `<div class="thinkbody">${escape(thinking)}</div></details>`
-      : "";
-    return `<div class="${cls}">${fold}<div class="body">${escape(answer)}</div></div>`;
-  }).join("");
-  if (atBottom || pending) el.scrollTop = el.scrollHeight;
+  convo.forEach((turn) => box.appendChild(turnNode(turn)));
+  box.scrollTop = box.scrollHeight;
 }
 
-const setMeta = (text, isError) => {
-  $("meta").textContent = text || "";
-  $("meta").classList.toggle("error", !!isError);
-};
-
-// ---------- what the machine is holding ----------
-// One read of fused.ai.models.list() answers everything the old server_status
-// action did, for every page at once — and the download it describes has a row
-// in the shell's download manager whether or not this page is open. That is why
-// this app no longer reports jobs itself: the work is not its to report.
-
-function fmtBytes(n) {
-  if (!n) return "";
-  const gb = n / 1073741824;
-  return gb >= 1 ? gb.toFixed(1) + " GB" : Math.round(n / 1048576) + " MB";
+function turnNode(turn) {
+  const wrap = el("div", "turn " + turn.role);
+  // Named by whichever model actually answered, falling back to the chosen one
+  // while the turn is still streaming and has no meta yet.
+  const answered = labelFor((turn.meta && turn.meta.model) || P.raw("model"))
+    + (turn.meta && turn.meta.raw ? " · continuing your text" : "");
+  wrap.appendChild(el("div", "who", turn.role === "user" ? "you" : answered));
+  const bubble = el("div", "bubble");
+  if (turn.role === "user") bubble.textContent = turn.content;
+  else renderAnswer(bubble, turn.content, false);
+  wrap.appendChild(bubble);
+  if (turn.meta) wrap.appendChild(el("div", "meta", metaLine(turn.meta)));
+  return wrap;
 }
 
-function renderRuntime(rt) {
-  const el = $("serverstate");
-  const dot = (k) => `<span class="dot ${k}"></span>`;
-  const loaded = (rt.loaded || []).find((m) => m.capability === CAPABILITY);
-  const fetching = (rt.downloading || []).find((d) => d.capability === CAPABILITY);
-  const runner = (rt.runners || []).find((r) => r.capability === CAPABILITY);
-  const selected = selectedModel();
-
-  let busy = false;
-  el.classList.remove("error");
-  if (runner && !runner.available) {
-    el.classList.add("error");
-    el.innerHTML = dot("bad") + (runner.reason || "no text runner on this machine");
-  } else if (loaded && loaded.state === "error") {
-    el.classList.add("error");
-    el.innerHTML = dot("bad") + "Error: " + (loaded.error || "unknown");
-  } else if (loaded && loaded.state === "ready") {
-    const mem = fmtBytes(loaded.residentBytes);
-    el.innerHTML = dot("ready") +
-      (loaded.model === selected ? "Ready" : "Ready — but running " + loaded.model) +
-      (mem ? `\n${mem} resident` : "");
-  } else if (loaded) {
-    busy = true;
-    el.innerHTML = dot("busy") + (loaded.detail || loaded.state + "…");
-  } else if (fetching) {
-    busy = true;
-    el.innerHTML = dot("busy") + "Downloading " + fetching.model + "…";
-  } else {
-    el.innerHTML = dot("off") + "Not loaded";
+// The bridge has no repetition/frequency-penalty knob for local models (only
+// temperature/topP/maxTokens reach them), so a runaway model rides all the way
+// to `maxTokens` with nothing to stop it sampling-side. This is the same
+// fallback local-model harnesses (llama.cpp, text-generation-webui, LM Studio)
+// use when that knob isn't available: watch the streamed tail for a literal
+// unit repeating three times back-to-back, and treat that as stuck.
+function loopingTail(text) {
+  const tail = text.slice(-800);
+  for (let period = 12; period <= 200; period++) {
+    const need = period * 3;
+    if (tail.length < need) continue;
+    const window = tail.slice(-need);
+    if (window === window.slice(0, period).repeat(3)) return true;
   }
-
-  const ready = !!loaded && loaded.state === "ready";
-  const matches = ready && loaded.model === selected;
-  $("startbtn").disabled = busy || matches || (runner && !runner.available);
-  $("startbtn").textContent = matches ? "Loaded" : (loaded ? "Switch model" : "Load model");
-  $("stopbtn").disabled = !loaded;
-  // Send stays enabled with nothing loaded: fused.ai starts the load itself
-  // and tells us which job to watch, so typing first is a legitimate way in.
-  $("send").disabled = !!pending || (runner && !runner.available);
-
-  clearTimeout(runtimeTimer);
-  if (busy) runtimeTimer = setTimeout(pollRuntime, 800);
+  return false;
 }
-
-async function pollRuntime() {
-  try {
-    renderRuntime(await fused.ai.models.list());
-  } catch (err) {
-    setMeta("could not read the model runtime: " + err.message, true);
-  }
-}
-
-// ---------- the model picker ----------
-// The shortlist is the SERVER's now (fused.ai.models.catalog()), the same one
-// the AI Models page shows — so a model curated in one place is offered in
-// both, and this app stopped carrying its own copy to drift.
-
-function renderControls() {
-  $("mode").value = param("mode");
-  $("system").value = param("system");
-  $("temp").value = param("temp");
-  $("tempval").textContent = param("temp");
-  $("maxtok").value = param("max_tokens");
-  if (param("model")) $("model").value = param("model");
-
-  const m = MODELS.find((x) => x.id === selectedModel());
-  $("modelnote").textContent = m
-    ? (m.size_gb ? `${m.size_gb} GB download · ` : "") + m.note
-    : "";
-  $("modenote").textContent = $("mode").value === "completion"
-    ? "Raw continuation of your text — no chat template, no history."
-    : "The conversation so far is sent with each turn.";
-  $("system").parentElement.style.opacity = $("mode").value === "completion" ? 0.45 : 1;
-}
-
-// ---------- load / unload ----------
-
-async function loadModel() {
-  const model = selectedModel();
-  if (!model) return;
-  try {
-    await fused.ai.models.load(model, { capability: CAPABILITY });
-    pollRuntime();
-  } catch (err) {
-    setMeta(err.message, true);
-  }
-}
-
-async function unloadModel() {
-  try {
-    // By CAPABILITY, not by the dropdown's value. One model is resident per
-    // capability and it need not be the one this page is showing — selecting B
-    // while A is loaded, or loading something from the AI Models page, both
-    // leave the two disagreeing. Unloading the selection then frees nothing and
-    // leaves the real resident model in memory, under a button that reported
-    // success.
-    renderRuntime(await fused.ai.models.unload({ capability: CAPABILITY }));
-  } catch (err) {
-    setMeta(err.message, true);
-  }
-}
-
-// ---------- sending ----------
 
 async function send() {
-  const text = $("input").value.trim();
-  if (!text || pending) return;
-  const mode = param("mode");
-  const raw = mode === "completion";
+  const draft = $("draft").value.trim();
+  if (!draft || busy) return;
+  const raw = isRaw();
+  $("draft").value = "";
+  growDraft();
 
-  // The turn is committed BEFORE the reply: an answer that fails halfway should
-  // still leave the question in the transcript, because that is what happened.
-  if (!raw) await fused.runPython("./chat.py", { action: "append", role: "user", content: text }, { key: "store" });
+  const box = $("transcript");
+  if (!convo.length) box.innerHTML = "";
+  convo.push({ role: "user", content: draft });
+  box.appendChild(turnNode(convo[convo.length - 1]));
 
-  $("input").value = "";
-  conversation.push({ role: "user", content: text });
-  pending = { text: "" };
-  $("stopgen").style.display = "";
-  setMeta("Thinking…");
-  renderTranscript();
-  renderRuntime(await fused.ai.models.list().catch(() => ({})));
+  // Everything before the turn being asked now — computed BEFORE the empty
+  // assistant turn joins `convo`, so the new question is never sent twice
+  // (specs/app-chat.md §3).
+  //
+  // An assistant turn goes back WITHOUT its thinking (specs/app-chat.md §6). It
+  // was the model's workings on the way to an answer, not the answer, and
+  // Qwen3's own template guidance is to drop prior reasoning from a multi-turn
+  // history — kept, it spends the context window on monologue the model has
+  // already finished with, and by turn five that is most of the prompt. The
+  // fallback matters: a turn that is ALL unclosed thinking has no answer to
+  // send, and an empty `content` is a `bad_request`.
+  const history = convo.slice(0, -1).map((t) => ({
+    role: t.role,
+    content: t.role === "assistant" ? (splitThinking(t.content).answer || t.content) : t.content,
+  }));
 
-  const started = Date.now();
+  const answer = { role: "assistant", content: "" };
+  convo.push(answer);
+  const node = turnNode(answer);
+  const bubble = node.querySelector(".bubble");
+  box.appendChild(node);
+  box.scrollTop = box.scrollHeight;
+
+  const loading = el("div", "loading");
+  const track = el("div", "track indeterminate");
+  track.appendChild(el("i"));
+  const loadText = el("span", null, "");
+  loading.appendChild(loadText);
+  loading.appendChild(track);
+
+  let acc = "";
+  let loopBroken = false;
   try {
-    const result = await fused.ai(text, {
-      model: selectedModel(),
-      raw: raw || undefined,
-      // Prior turns only — `text` is this turn and the API appends it. An
-      // assistant turn is sent WITHOUT its thinking: that was the model's
-      // workings on the way to an answer, not the answer, and feeding it back
-      // spends context on reasoning the model has already finished with. The
-      // transcript on disk keeps the whole thing, so the fold survives a reload.
-      history: raw ? undefined : conversation.slice(0, -1).map((m) => ({
-        role: m.role,
-        content: m.role === "assistant"
-          ? (splitThinking(m.content).answer || m.content)
-          : m.content,
-      })),
-      systemPrompt: raw ? undefined : (param("system") || undefined),
-      // The two controls on screen. They were displayed and persisted in the
-      // URL from the start and passed to nothing — sliders that changed the
-      // number under them and nothing about the answer.
-      temperature: num("temp"),
-      maxTokens: num("max_tokens"),
-      onChunk: (chunk) => { pending.text += chunk; renderTranscript(); },
+    const res = await generate({
+      prompt: draft,        // the turn being asked NOW
+      history: history,     // everything before it (ignored in completion mode)
+      raw: raw,
+      onChunk: (chunk) => {
+        acc += chunk;
+        if (!stopRequested && loopingTail(acc)) { loopBroken = true; stopGenerating(); }
+        const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
+        renderAnswer(bubble, acc, true);
+        if (atBottom) box.scrollTop = box.scrollHeight;
+      },
+      onLoading: (job) => {
+        if (job === undefined) { loading.remove(); return; }
+        if (!loading.isConnected) box.insertBefore(loading, node);
+        if (job && job.total) {
+          track.className = "track";
+          track.firstChild.style.width = Math.round((job.done / job.total) * 100) + "%";
+          loadText.textContent = "loading " + labelFor(P.raw("model")) + " — "
+            + bytes(job.done) + " / " + bytes(job.total);
+        } else {
+          loadText.textContent = "loading " + labelFor(P.raw("model")) + "…";
+        }
+      },
     });
-    const reply = result.text || pending.text;
-    finish();
-    conversation.push({ role: "assistant", content: reply });
-    if (!raw && reply) {
-      await fused.runPython("./chat.py", { action: "append", role: "assistant", content: reply }, { key: "store" });
-    }
-    const seconds = ((Date.now() - started) / 1000).toFixed(1);
-    setMeta(`${seconds}s` + (result.usage && result.usage.output_tokens ? ` · ${result.usage.output_tokens} tokens` : ""));
-    renderTranscript();
+    loading.remove();
+    // Stop RESOLVES with the partial text (specs/assumptions.md §3) — the turn
+    // is kept, not discarded, and only the meta line mentions it.
+    const stopped = stopRequested;
+    answer.content = res.text || acc;
+    answer.meta = metaOf(res, stopped, raw);
+    renderAnswer(bubble, answer.content, false);
+    node.appendChild(el("div", "meta", metaLine(answer.meta)));
+    chatNote(stopped
+      ? (loopBroken ? "Stopped — the model was repeating itself, the partial answer is kept."
+                    : "Stopped — the partial answer is kept, ask it to continue.")
+      : "");
   } catch (err) {
-    // A model that is not resident answers with the load it just started, so
-    // the honest reply is "it is coming", not "it failed".
-    if (err.type === "model_loading") {
-      // The question was never asked, so it must not stay asked. Committing the
-      // turn before the reply is right when a generation fails HALFWAY — the
-      // words happened — but nothing happened here: the model was not resident,
-      // the load just started, and no token was ever produced. Left in place,
-      // the turn becomes history for the next message, so the model is handed a
-      // question it never answered and the user retypes it into a duplicate.
-      // So the send is undone entirely and the text goes back in the composer,
-      // where it is the user's again.
-      conversation.pop();
-      if (!raw) {
-        await fused.runPython("./chat.py", { action: "drop", role: "user", content: text },
-                              { key: "store" });
-      }
-      $("input").value = text;
-      finish();
-      renderTranscript();
-      setMeta(err.message + " — watch the download manager, then send again");
-      pollRuntime();
+    loading.remove();
+    if (acc.trim()) {
+      // The stream produced words and then died. Those words are a real turn —
+      // the reader watched them arrive — and throwing them away to show an
+      // error instead loses the only copy. Kept, with a meta line that says the
+      // turn is incomplete, so it reads as a record rather than as an answer.
+      answer.content = acc;
+      answer.meta = partialMeta();
+      renderAnswer(bubble, answer.content, false);
+      node.appendChild(el("div", "meta", metaLine(answer.meta)));
+    } else {
+      convo.pop();        // nothing streamed: drop the empty assistant turn, and
+      node.remove();      // the question stays, so Send retries it without retyping
+    }
+    routeError(err, "generate");
+  } finally {
+    stopRequested = false;
+    box.scrollTop = box.scrollHeight;
+    // Whatever the turn ended as — answered, stopped, or failed — the pane is
+    // now settled, and the autosave mirrors the pane (specs/app-library.md §5).
+    saveSession();
+  }
+}
+
+async function stopGenerating() {
+  stopRequested = true;
+  try {
+    // Argless: the default capability IS text-generation (specs/assumptions.md §3).
+    await fused.ai.cancel();
+  } catch (err) {
+    routeError(err, "generate");
+  }
+}
+
+function chatNote(text) { $("chatNote").textContent = text; }
+
+/* ===================================================================
+   Library (specs/app-library.md)
+   =================================================================== */
+function slugFor(text) {
+  const slug = text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
+  return slug || "chat";
+}
+function stamp() {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, "0");
+  return d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + "-"
+       + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds());
+}
+
+function record() {
+  return JSON.stringify({
+    version: 1,
+    saved: new Date().toISOString().slice(0, 19),
+    // The id that answered the LAST turn; per-turn meta.model stays
+    // authoritative when the resident model changed mid-conversation.
+    model: ((convo.filter((t) => t.role === "assistant" && t.meta).pop() || {}).meta || {}).model
+           || P.raw("model"),
+    system: P.get("system"),
+    settings: {
+      temperature: P.num("temp"), top_p: P.num("topp"), max_tokens: P.int("maxtok"),
+      mode: P.get("mode"),
+    },
+    turns: convo.map((t) => ({ role: t.role, content: t.content, meta: t.meta || null })),
+  }, null, 2);
+}
+
+async function saveChat() {
+  if (!convo.length) { chatNote("nothing to save yet"); return; }
+  const json = record();
+  try {
+    if (loadedChat) {
+      // Re-saving a conversation that came from disk: same name, optimistic lock.
+      const fresh = await fused.writeFile(here("chats/" + loadedChat), json,
+        chatMtime ? { expectedMtime: chatMtime } : {});
+      chatMtime = fresh.mtime;
+      chatNote("saved to " + loadedChat);
+      libraryLoad();     // the turn count and preview in the list just changed
       return;
     }
-    keepPartial();
-    setMeta(err.message || "generation failed", true);
-  }
-}
-
-// A cancelled or failed stream still produced words; they belong in the
-// transcript rather than disappearing with the error. Committed to disk only
-// for a chat — a raw completion is display-only here, as it always was, since
-// it is not a conversation to come back to.
-function keepPartial() {
-  const partial = pending && pending.text;
-  finish();
-  if (partial) {
-    conversation.push({ role: "assistant", content: partial });
-    if (param("mode") !== "completion") {
-      fused.runPython("./chat.py", { action: "append", role: "assistant", content: partial }, { key: "store" });
+    const base = stamp() + "-" + slugFor((convo.find((t) => t.role === "user") || {}).content || "");
+    for (let attempt = 1; attempt <= 20; attempt++) {
+      const name = base + (attempt === 1 ? "" : "-" + attempt) + ".json";
+      try {
+        const fresh = await fused.writeFile(here("chats/" + name), json, { create: true });
+        loadedChat = name;
+        chatMtime = fresh.mtime;
+        P.set("chat", name);
+        chatNote("saved to chats/" + name);
+        libraryLoad();   // a new row belongs in the list now
+        return;
+      } catch (err) {
+        if (err.type !== "exists") throw err;
+      }
     }
+    throw typed("ai_error", "could not find a free filename in ./chats/");
+  } catch (err) {
+    if (err.type === "conflict") {
+      notice("chats/" + loadedChat + " changed on disk since it was opened — "
+        + "clear the chat and save it again to keep both copies.", "error", "save");
+      return;
+    }
+    routeError(err, "save");
   }
-  renderTranscript();
 }
 
-function finish() {
-  pending = null;
-  $("stopgen").style.display = "none";
-  $("send").disabled = false;
-  renderTranscript();
+/* ---------- the autosave (specs/app-library.md §5) ----------
+   An unsaved conversation used to die with the tab, which made every reload a
+   decision the reader had to make in advance. The open transcript is written
+   after each finished turn to a dotfile the library does not list, and read
+   back on boot when the URL names no saved chat. It is bookkeeping, not a save:
+   Save is still what puts a conversation in the library under a name. */
+const SESSION = "chats/.session.json";
+
+function saveSession() {
+  // A transcript opened FROM the library is already restored by the `chat`
+  // param, so it needs no session copy — and writing one would mean two files
+  // claiming to be the same conversation.
+  if (loadedChat) return;
+  fused.writeFile(here(SESSION), record()).catch((err) => {
+    // Worth one notice and no more: the conversation on screen is unharmed,
+    // only its safety net is missing.
+    notice("The open conversation could not be autosaved — " + (err.message || String(err))
+      + ". Use Save chat to keep it.", "warn", "session");
+  });
 }
 
-// Stops the generation, NOT the model — the next message answers immediately.
-const stopGeneration = () => fused.ai.cancel(CAPABILITY).catch(() => {});
+async function restoreSession() {
+  if (P.raw("chat") || convo.length) return;
+  // `stat` first: a missing file is the ordinary first run, and only a file
+  // that EXISTS and will not parse is worth telling anyone about.
+  try {
+    await fused.stat(here(SESSION));
+  } catch (err) {
+    return;
+  }
+  try {
+    const parsed = JSON.parse(await fused.readFile(here(SESSION)));
+    if (parsed.version !== 1) throw typed("bad_request", "unknown format version " + parsed.version);
+    convo = (parsed.turns || []).map((t) => ({ role: t.role, content: t.content, meta: t.meta || "" }));
+    if (convo.length) paintConvo();
+  } catch (err) {
+    notice("The last conversation could not be restored — " + (err.message || String(err)),
+      "warn", "session");
+  }
+}
 
-// ---------- wiring ----------
+async function openChat(name) {
+  try {
+    const st = await fused.stat(here("chats/" + name));
+    const parsed = JSON.parse(await fused.readFile(here("chats/" + name)));
+    if (parsed.version !== 1) throw typed("bad_request", "unknown format version " + parsed.version);
+    convo = (parsed.turns || []).map((t) => ({
+      role: t.role, content: t.content, meta: t.meta || "",
+    }));
+    loadedChat = name;
+    chatMtime = st.mtime;
+    // A transcript is only reproducible with the settings that produced it.
+    if (parsed.model) P.set("model", parsed.model);
+    P.set("system", parsed.system || "");
+    const s = parsed.settings || {};
+    if (s.temperature !== undefined) P.set("temp", s.temperature);
+    if (s.top_p !== undefined) P.set("topp", s.top_p);
+    if (s.max_tokens !== undefined) P.set("maxtok", s.max_tokens);
+    // Absent in records written before completion mode existed — those are all
+    // chats, so the default is the honest reading rather than a missing value.
+    P.set("mode", s.mode === "raw" ? "raw" : "chat");
+    notice("", "error", "open");
+    paintConvo();
+    markOpenChat();
+  } catch (err) {
+    loadedChat = null;
+    P.set("chat", "");
+    notice("chats/" + name + " could not be opened — "
+      + (err.message || String(err)), "error", "open");
+  }
+}
 
-const bindParam = (elId, key, ev = "change") =>
-  $(elId).addEventListener(ev, () => fused.params.set(key, String($(elId).value)));
+async function libraryLoad() {
+  const find = P.get("find");
+  try {
+    shownFind = find;   // set before the await, so a fast second call is not queued behind this one
+    const data = await fused.runPython("./chats.py", { action: "list", find: find });
+    paintLibrary(data);
+    $("libDir").textContent = data.dir;
+  } catch (err) {
+    shownFind = null;   // it did not paint, so let the next draw() try again
+    notice((err.type ? err.type + ": " : "") + err.message, "error", "library");
+  }
+}
 
-bindParam("mode", "mode");
-bindParam("system", "system", "input");
-bindParam("temp", "temp", "input");
-bindParam("maxtok", "max_tokens");
-bindParam("model", "model");
+function paintLibrary(data) {
+  const list = $("libList");
+  list.innerHTML = "";
+  $("libCount").textContent = data.total
+    ? data.total + " conversation" + (data.total === 1 ? "" : "s") + " · " + bytes(data.bytes)
+    : "";
 
-$("model").addEventListener("change", pollRuntime);
-$("startbtn").addEventListener("click", loadModel);
-$("stopbtn").addEventListener("click", unloadModel);
-$("send").addEventListener("click", send);
-$("stopgen").addEventListener("click", stopGeneration);
-$("clearbtn").addEventListener("click", async () => {
-  await fused.runPython("./chat.py", { action: "clear" }, { key: "store" });
-  conversation = [];
-  renderTranscript();
+  if (!data.total) {
+    const empty = el("div", "empty small");
+    if (P.get("find")) {
+      empty.appendChild(el("b", null, "Nothing matches “" + P.get("find") + "”"));
+      const clear = el("button", "btn", "Clear search");
+      clear.addEventListener("click", () => P.set("find", ""));
+      empty.appendChild(clear);
+    } else {
+      empty.appendChild(el("b", null, "Nothing saved yet"));
+      empty.appendChild(document.createTextNode("Save keeps a conversation here."));
+    }
+    list.appendChild(empty);
+    return;
+  }
+
+  data.chats.forEach((row) => {
+    const item = el("div", "item" + (row.ok ? "" : " bad"));
+    item.dataset.name = row.name;
+    item.appendChild(el("div", "title", row.ok ? (row.first || row.name) : row.name));
+    item.appendChild(el("div", "sub", row.ok
+      ? [row.turns + " turns", row.saved.slice(0, 10)].filter(Boolean).join(" · ")
+      : "unreadable · " + row.error));
+
+    // The whole row opens it — the buttons inside must not open it as well.
+    if (row.ok) item.addEventListener("click", () => P.set("chat", row.name));
+
+    const acts = el("div", "acts");
+    const del = el("button", "btn danger", "Delete");
+    del.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (del.dataset.armed) { deleteChat(row.name); return; }
+      del.dataset.armed = "1";
+      del.textContent = "Really?";
+      setTimeout(() => { delete del.dataset.armed; del.textContent = "Delete"; }, 4000);
+    });
+    acts.appendChild(del);
+    item.appendChild(acts);
+    list.appendChild(item);
+  });
+  markOpenChat();
+}
+
+/* Which row is the open transcript. Split out of `paintLibrary` because
+   `draw()` runs on every param change and this is the only part of the list
+   that can go stale without a re-read of the directory. */
+function markOpenChat() {
+  document.querySelectorAll("#libList .item").forEach((item) => {
+    item.setAttribute("aria-current", String(item.dataset.name === loadedChat));
+  });
+}
+
+async function deleteChat(name) {
+  try {
+    await fused.runPython("./chats.py", { action: "delete", name: name });
+    if (loadedChat === name) { loadedChat = null; chatMtime = null; P.set("chat", ""); }
+    await libraryLoad();
+  } catch (err) {
+    notice((err.type ? err.type + ": " : "") + err.message, "error", "library");
+  }
+}
+
+/* ===================================================================
+   draw() — the single re-render path (specs/app.md §2).
+   Reflects params into controls. Never generates, never sets a param.
+   =================================================================== */
+function draw() {
+  $("model").value = P.raw("model");
+  $("mode").value = P.get("mode");
+  $("system").value = P.get("system");
+  // In completion mode the system prompt is not sent at all — a raw call has no
+  // chat template to put it in — so the control says so rather than sitting
+  // there looking live (specs/app-chat.md §9).
+  $("system").disabled = isRaw();
+  $("system").parentElement.style.opacity = isRaw() ? 0.45 : 1;
+  $("system").placeholder = isRaw()
+    ? "not sent in completion mode" : "empty — the model's own default";
+  $("draft").placeholder = isRaw()
+    ? "Text for the model to continue…" : "Message the model…";
+  ["temp", "topp", "maxtok"].forEach((k) => { $(k).value = P.get(k); });
+  $("tempV").textContent = P.num("temp").toFixed(2);
+  $("toppV").textContent = P.num("topp").toFixed(2);
+  $("maxtokV").textContent = P.int("maxtok");
+  $("think").checked = P.get("think") === "1";
+  $("find").value = P.get("find");
+
+  // Not while a turn is streaming: a repaint would detach the bubble the
+  // stream is writing into, and the answer would finish into a dead node.
+  if (!busy) paintConvo();
+  syncEnabled();
+
+  // Reads, not writes: opening a saved transcript the URL names.
+  const wanted = P.raw("chat");
+  if (wanted && wanted !== loadedChat) openChat(wanted);
+  if (!wanted && loadedChat) { loadedChat = null; chatMtime = null; }
+
+  // The list is a `runPython` round trip, so it is rebuilt only when the search
+  // it was built for actually changed — not on every temperature nudge. Save
+  // and Delete call `libraryLoad()` themselves; marking the current chat is
+  // cheap and always runs.
+  if (P.get("find") !== shownFind) libraryLoad(); else markOpenChat();
+}
+
+/* ---------- wiring: a control writes its param and nothing else ---------- */
+$("model").addEventListener("change", () => { P.set("model", $("model").value); fillModels(); });
+$("mode").addEventListener("change", () => P.set("mode", $("mode").value));
+$("system").addEventListener("change", () => P.set("system", $("system").value));
+["temp", "topp", "maxtok"].forEach((k) => {
+  $(k).addEventListener("input", () => P.set(k, $(k).value));
+});
+$("think").addEventListener("change", () => P.set("think", $("think").checked ? "1" : "0"));
+
+let findTimer = null;
+$("find").addEventListener("input", () => {
+  clearTimeout(findTimer);
+  const value = $("find").value;
+  findTimer = setTimeout(() => P.set("find", value), 200);
 });
 
-$("input").addEventListener("keydown", (e) => {
+$("preload").addEventListener("click", preload);
+$("unload").addEventListener("click", unload);
+$("send").addEventListener("click", send);
+$("stop").addEventListener("click", stopGenerating);
+$("clear").addEventListener("click", () => {
+  convo = [];
+  loadedChat = null;
+  chatMtime = null;
+  chatNote("");
+  // Emptied here too, so a New chat is not undone by the next reload.
+  saveSession();
+  if (P.raw("chat")) P.set("chat", ""); else paintConvo();
+});
+$("save").addEventListener("click", saveChat);
+/* Enter sends, Shift+Enter opens a line — the habit every chat UI has trained.
+   ⌘/Ctrl+Enter keeps working for anyone who learned this page the other way. */
+$("draft").addEventListener("keydown", (e) => {
   if (e.key !== "Enter" || e.isComposing) return;
-  if (e.shiftKey || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.shiftKey || e.altKey) return;
   e.preventDefault();
   send();
 });
-$("input").addEventListener("input", () => {
-  $("input").style.height = "auto";
-  $("input").style.height = Math.min($("input").scrollHeight, 220) + "px";
-});
+/* The box grows with the draft up to the max-height the stylesheet sets. */
+function growDraft() {
+  const box = $("draft");
+  box.style.height = "auto";
+  box.style.height = box.scrollHeight + "px";
+}
+$("draft").addEventListener("input", growDraft);
 
-fused.params.onChange(renderControls);
-
-(async function init() {
-  const [catalog, stored, runtime] = await Promise.all([
-    fused.ai.models.catalog(),
-    fused.runPython("./chat.py", { action: "load" }, { key: "store" }),
-    fused.ai.models.list(),
-  ]);
-  const group = (catalog.capabilities || []).find((c) => c.capability === CAPABILITY) || {};
-  MODELS = group.models || [];
-  conversation = stored.messages || [];
-
-  // Anything already resident is offered too, even if it is not on the
-  // shortlist — a model loaded from the AI Models page is usable here.
-  const ids = new Set(MODELS.map((m) => m.id));
-  for (const m of runtime.loaded || []) {
-    if (m.capability === CAPABILITY && !ids.has(m.model)) {
-      MODELS.push({ id: m.model, label: m.model, size_gb: null, note: "Already loaded." });
-    }
-  }
-  $("model").innerHTML = MODELS
-    .map((m) => `<option value="${m.id}">${m.label}${m.size_gb ? " — " + m.size_gb + " GB" : ""}</option>`)
-    .join("");
-  if (!fused.params.get("model")) fused.params.set("model", group.default || (MODELS[0] && MODELS[0].id) || "");
-
-  renderControls();
-  renderTranscript();
-  renderRuntime(runtime);
-})();
+/* ---------- boot ---------- */
+if (!IS_LOCAL) {
+  notice("This is a hosted copy. Local text generation needs the fused-render app "
+    + "on a machine with a model runner.", "error", "env");
+}
+fused.params.onChange(draw);
+draw();
+restoreSession();
+refreshRuntime();
 </script>
 </body>
 </html>
