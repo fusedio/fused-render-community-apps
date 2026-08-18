@@ -1,9 +1,14 @@
 """Lightweight parquet-snapshot docdb ("duckLake").
 
-Each table is a folder under lake/ holding full-state parquet snapshots.
-Every write produces a new timestamp-named snapshot; nothing is mutated
-or deleted on disk. The current state is the lexicographically-largest
-filename.
+Each table is a folder under the lake dir holding full-state parquet
+snapshots. Every write produces a new timestamp-named snapshot; nothing
+is mutated or deleted on disk. The current state is the
+lexicographically-largest filename.
+
+Nothing is ever written inside the app folder. The lake lives under
+~/.fused-render/cache/open-notion/lake by default (override the parent
+with the OPEN_NOTION_CACHE_DIR env var), and the user can relocate it
+anywhere via set_lake_dir().
 
 Parquet I/O prefers pyarrow and falls back to duckdb: the FusedRender
 runtime that serves the UI bundles pyarrow but a broken duckdb (its
@@ -30,10 +35,23 @@ except ImportError:
     _BACKEND = "duckdb"
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-_DEFAULT_LAKE_DIR = os.path.join(_HERE, "lake")
-# Lives next to lake.py (not inside the lake dir itself, since that dir is
-# exactly what this config lets the user relocate).
-_LOCATION_FILE = os.path.join(_HERE, ".lake_location.json")
+_SEED_DIR = os.path.join(_HERE, "seed")
+
+
+def _cache_dir() -> str:
+    """Per-app global state dir. Never inside the app folder, so a checkout
+    (or a marketplace install) stays clean when the app runs."""
+    override = os.environ.get("OPEN_NOTION_CACHE_DIR")
+    if override:
+        return os.path.abspath(os.path.expanduser(override))
+    return os.path.join(os.path.expanduser("~"), ".fused-render", "cache", "open-notion")
+
+
+CACHE_DIR = _cache_dir()
+_DEFAULT_LAKE_DIR = os.path.join(CACHE_DIR, "lake")
+# Lives in the cache dir, not inside the lake dir itself, since that dir is
+# exactly what this config lets the user relocate.
+_LOCATION_FILE = os.path.join(CACHE_DIR, "lake_location.json")
 
 
 def _load_lake_dir() -> str:
@@ -59,9 +77,35 @@ def get_lake_dir() -> str:
     return LAKE_DIR
 
 
+def bootstrap() -> str:
+    """First run: create the lake dir and copy in the demo tables shipped in
+    seed/ (one <table>.json file per table, a JSON array of property maps).
+    A no-op once the lake dir exists, so deleting a seeded table is final."""
+    global LAKE_DIR
+    if os.path.isdir(LAKE_DIR):
+        return LAKE_DIR
+    os.makedirs(LAKE_DIR, exist_ok=True)
+    if os.path.isdir(_SEED_DIR):
+        for name in sorted(os.listdir(_SEED_DIR)):
+            if not name.endswith(".json"):
+                continue
+            table = name[: -len(".json")]
+            try:
+                with open(os.path.join(_SEED_DIR, name)) as fh:
+                    rows = json.load(fh)
+            except (OSError, ValueError):
+                continue
+            if not isinstance(rows, list):
+                continue
+            create_table(table)
+            bulk_create(table, [r for r in rows if isinstance(r, dict)])
+    return LAKE_DIR
+
+
 def set_lake_dir(new_dir: str) -> str:
     """Move the whole lake (every table, every snapshot) to `new_dir` and
     remember the new location for future calls."""
+    global LAKE_DIR
     new_dir = os.path.abspath(os.path.expanduser(new_dir))
     if new_dir == LAKE_DIR:
         return LAKE_DIR
@@ -78,8 +122,10 @@ def set_lake_dir(new_dir: str) -> str:
     stored = new_dir
     if stored == home or stored.startswith(home + os.sep):
         stored = "~" + stored[len(home):]
+    os.makedirs(os.path.dirname(_LOCATION_FILE), exist_ok=True)
     with open(_LOCATION_FILE, "w") as fh:
         json.dump({"path": stored}, fh)
+    LAKE_DIR = new_dir
     return new_dir
 
 

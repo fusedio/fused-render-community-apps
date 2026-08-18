@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """lakectl — drive the parquet docdb from the command line (or from Claude).
 
-The UI (tasks.html) and this CLI share the same lake/ directory and the same
+The UI (index.html) and this CLI share the same lake directory and the same
 lake.py engine, so anything done here shows up in the UI on reload — with
-full snapshot history, since every command is one new snapshot.
+full snapshot history, since every command is one new snapshot. The lake
+lives under ~/.fused-render/cache/open-notion/lake unless it has been moved
+(see lake.py / the UI's table menu).
 
 Examples:
   lakectl.py tables
@@ -24,7 +26,7 @@ Examples:
   lakectl.py export tasks > backup.json
   lakectl.py import brain backup.json             # bulk-add rows from an export
 
-Task-tracker row conventions (what tasks.html renders):
+Task-tracker row conventions (what index.html renders):
   title: str, status: none|prog|done, priority: ""|low|med|high,
   due: YYYY-MM-DD, body: markdown-ish plain text (#, ##, -, 1., [ ], >).
 Other tables are free-form: any properties become columns.
@@ -139,6 +141,7 @@ def main(argv=None):
     p.add_argument("file")
 
     args = ap.parse_args(argv)
+    lake.bootstrap()  # first run: create the global lake dir + seed demo rows
 
     if args.cmd == "tables":
         for t in lake.list_tables():

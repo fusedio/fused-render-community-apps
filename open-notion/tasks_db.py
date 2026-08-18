@@ -1,6 +1,7 @@
 """runPython target for the task tracker: dispatches actions to lake.py."""
 
-# lake.py (imported below) uses duckdb; it must be in this entry's venv.
+# lake.py (imported below) needs a parquet backend in this entry's venv:
+# pyarrow if available, otherwise duckdb.
 import json
 
 import lake
@@ -8,6 +9,7 @@ import lake
 
 def main(action: str, table: str = "", payload: str = "{}") -> dict:
     p = json.loads(payload) if payload else {}
+    lake.bootstrap()  # first run: create the global lake dir + seed demo rows
 
     if action == "list_tables":
         return {"tables": lake.list_tables()}
