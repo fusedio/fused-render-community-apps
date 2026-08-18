@@ -1250,79 +1250,70 @@ def _serve():
             sftp_of(c).mkdir(path)
         return {"ok": True}
 
-    def do_rename(mid, src, dst):
-        c = get_conn(mid)
-        # SFTP rename refuses an existing destination outright (no overwrite,
-        # no move-into-directory) — that's the contract this is supposed to
-        # honor. But every OSError it can raise looks the same from here, and
-        # "cross-device link" (the case the shell fallback exists for) is not
-        # distinguishable from "destination exists" by errno alone across SFTP
-        # server implementations. Falling back to `mv` unconditionally would
-        # silently overwrite a file the caller never agreed to overwrite, or
-        # move src INSIDE an existing directory instead of failing — so this
-        # checks for that case up front, before deciding a plain OSError means
-        # "try the shell instead."
+    def _reject_if_exists(c, dst):
+        # The no-overwrite / no-move-into-directory contract both rename and
+        # copy honor: refuse a destination that is already a name in use.
+        # lstat, not stat — a broken symlink is still a name in use, and stat
+        # would follow it to its missing target, raise, and wrongly report the
+        # name as free.
         with c["lock"]:
-            sftp = sftp_of(c)
             try:
-                sftp.stat(dst)
-                dst_exists = True
+                sftp_of(c).lstat(dst)
             except OSError:
-                dst_exists = False
-        if dst_exists:
-            raise Http(409, f"{posixpath.basename(dst)} already exists")
-        try:
-            with c["lock"]:
-                sftp.rename(src, dst)
-        except OSError:
-            # the SFTP rename failed for some other reason (typically a
-            # cross-filesystem move, which SFTP's rename can't do), so this
-            # falls back to a shell mv that can run long enough to hit the
-            # same idle window as rm -rf/cp -a below. -n keeps mv's own
-            # no-overwrite contract in case dst appeared in the gap between
-            # the check above and this running; the stat afterward is what
-            # catches that — mv -n exits 0 whether it moved anything or not.
-            with Busy():
-                sh(c, f"mv -n -- {shlex.quote(src)} {shlex.quote(dst)}", timeout=None)
+                return
+        raise Http(409, f"{posixpath.basename(dst)} already exists")
+
+    def _claim(c, src, dst, sftp_first):
+        # Move src onto dst without ever overwriting it. The caller has already
+        # rejected a dst that existed at check time; this closes the check→move
+        # race portably. `mv -n` never overwrites on any host, whereas SFTP
+        # rename's overwrite behavior is undefined by the protocol (OpenSSH
+        # refuses, but a POSIX-rename server would clobber) — so it is the claim
+        # to trust when correctness must not depend on the server. mv -n exits 0
+        # whether it moved anything or not, so the lstat afterward is what tells
+        # a real move from a skipped one: src gone means it landed.
+        #
+        # sftp_first is for rename, whose src and dst can straddle filesystems:
+        # SFTP's own rename is the atomic fast path and its lone OSError is the
+        # cross-device signal worth a shell fallback. A copy stages into a temp
+        # sibling of dst, so its move is always same-directory and skips it.
+        if sftp_first:
             with c["lock"]:
                 try:
-                    sftp_of(c).stat(src)
-                    still_there = True
+                    sftp_of(c).rename(src, dst)
+                    return
                 except OSError:
-                    still_there = False
-            if still_there:
-                raise Http(409, f"{posixpath.basename(dst)} already exists")
+                    pass
+        with Busy():
+            sh(c, f"mv -n -- {shlex.quote(src)} {shlex.quote(dst)}", timeout=None)
+        with c["lock"]:
+            try:
+                sftp_of(c).lstat(src)
+            except OSError:
+                return
+        raise Http(409, f"{posixpath.basename(dst)} already exists")
+
+    def do_rename(mid, src, dst):
+        c = get_conn(mid)
+        _reject_if_exists(c, dst)
+        _claim(c, src, dst, sftp_first=True)
         return {"ok": True}
 
     def do_copy(mid, src, dst):
         c = get_conn(mid)
-        # Same no-overwrite / no-copy-into-directory contract as do_rename, but
-        # cp has no atomic "fail if dst exists" — cp -n skips silently (exit 0),
-        # so it would report success while writing nothing, or nest src inside a
-        # dst directory. So copy to a temp sibling and rename it into place: the
-        # SFTP rename is the same no-clobber primitive do_rename trusts, so a dst
-        # that appears in the race window fails loudly instead.
-        with c["lock"]:
-            try:
-                sftp_of(c).stat(dst)
-                dst_exists = True
-            except OSError:
-                dst_exists = False
-        if dst_exists:
-            raise Http(409, f"{posixpath.basename(dst)} already exists")
+        # cp has no atomic "fail if dst exists" (cp -n skips silently, exit 0),
+        # so copy to a temp sibling and claim dst from there — _claim's mv -n
+        # gives copy the same portable no-overwrite guarantee as rename.
+        _reject_if_exists(c, dst)
         tmp = f"{dst}.fused-copy-{os.urandom(6).hex()}"
         try:
             with Busy():
                 sh(c, f"cp -a -- {shlex.quote(src)} {shlex.quote(tmp)}", timeout=None)
-            with c["lock"]:
-                try:
-                    sftp_of(c).rename(tmp, dst)
-                except OSError:
-                    raise Http(409, f"{posixpath.basename(dst)} already exists")
+            _claim(c, tmp, dst, sftp_first=False)
         except Exception:
-            # cp failed partway, the rename lost the race, or the channel
-            # dropped mid-op — never leave the staged temp behind. Best-effort
-            # (rm -rf since the temp may be a tree); the original error wins.
+            # cp failed partway, the claim lost the race, or the channel dropped
+            # mid-op — never leave the staged temp behind. Best-effort (rm -rf
+            # since the temp may be a tree); the original error wins.
             try:
                 with Busy():
                     sh(c, f"rm -rf -- {shlex.quote(tmp)}", timeout=None)
