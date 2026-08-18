@@ -659,7 +659,15 @@ function markSelectedFile(source){
 const FR_ORIGIN = (location.origin && location.origin.indexOf("http") === 0) ? location.origin : "http://127.0.0.1:1777";
 // The /embed/<path> route (path-style, like VPS Manager) actually boots fused-render's
 // viewers — JSON tree, CSV/parquet table, image, PDF, code. /render?path= just dumps raw.
-function embedUrl(p){ return FR_ORIGIN + "/embed/" + encodeURI(p).replace(/#/g, "%23").replace(/\?/g, "%3F"); }
+// It addresses a file by path SEGMENTS: the leading slash of a POSIX path is
+// dropped here and put back when the shell decodes it, so joining the path
+// whole (or a plain encodeURI) asks for "/embed//home/…" and leaves a Windows
+// drive letter's ":" unescaped. Encoding each segment on its own, like VPS
+// Manager's fsUrl, is what makes both of those addressable.
+function embedUrl(p){
+  return FR_ORIGIN + "/embed/" + p.replace(/^\/+/, "").split("/").filter(s => s)
+    .map(encodeURIComponent).join("/");
+}
 let previewMode = "rendered", previewRes = null, previewHighlight = null;
 function previewBodyHtml(text, hl){
   if(hl){ const i = text.indexOf(hl); if(i >= 0) return esc(text.slice(0,i))+'<mark class="hl">'+esc(text.slice(i, i+hl.length))+'</mark>'+esc(text.slice(i+hl.length)); }
