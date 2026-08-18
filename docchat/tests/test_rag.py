@@ -375,6 +375,17 @@ def test_move_cache_preserves_index(tmp_path):
     assert same["ok"] and same["same"] is True and same["moved"] == 0
 
 
+def test_parse_int_helper():
+    # Present-and-absent are the ONLY two cases callers should ever hit; a
+    # present-but-invalid value must yield None so the caller can send a clean
+    # error instead of letting int(...) raise mid-request.
+    assert ragserver._parse_int(5) == 5              # k omitted -> default of 5 passed straight through
+    assert ragserver._parse_int("5") == 5            # numeric string, still fine
+    assert ragserver._parse_int("all") is None       # malformed body -> caller sends 400
+    assert ragserver._parse_int([1, 2]) is None
+    assert ragserver._parse_int(None) is None
+
+
 def test_single_file_source(tmp_path):
     f = tmp_path / "solo.md"
     f.write_text("The closing checklist: wipe the group heads, empty the drip tray, lock the safe.",

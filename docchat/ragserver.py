@@ -375,6 +375,16 @@ def _fwd(p):
     return p.replace(os.sep, "/") if p else p
 
 
+def _parse_int(value):
+    """Parse a JSON-decoded request field as int, or None if it isn't one --
+    so a malformed request (e.g. k as a string or a list) gets a clean error
+    response instead of an unhandled exception in the request thread."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def browse(path):
     """Directory listing for the folder picker (filesystem only; served over
     fetch so the picker needs no per-navigation runPython subprocess)."""
@@ -634,7 +644,11 @@ def run_server():
             if u.path == "/index":
                 self._send(start_build(body.get("folder", ""), bool(body.get("rebuild")), body.get("cache_dir") or None))
             elif u.path == "/search":
-                self._send(search_index(body.get("folder", ""), body.get("q", ""), int(body.get("k", 5)), body.get("cache_dir") or None))
+                k = _parse_int(body.get("k", 5))
+                if k is None:
+                    self._send({"ok": False, "error": "k must be an integer"}, 400)
+                    return
+                self._send(search_index(body.get("folder", ""), body.get("q", ""), k, body.get("cache_dir") or None))
             else:
                 self._send({"ok": False, "error": "not found"}, 404)
 
