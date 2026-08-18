@@ -197,8 +197,15 @@ def build_index(folder, rebuild=False, progress=None, cache_dir=None):
     if fresh and meta.get("status") == "ready" and not rebuild:
         with _DB_LOCK:
             n = con.execute("SELECT count(*) FROM chunks").fetchone()[0]
-        return _summary(True, folder, is_file, meta.get("truncated") == "1",
-                        docs=int(meta.get("docs", len(docs))), chunks=n, dim=dim)
+            # Verify the HNSW index actually exists before trusting "ready": a kill
+            # mid-reconcile (e.g. serve.py's model switch) can land after DROP INDEX
+            # auto-commits but before meta is rewritten. Falling through reconciles
+            # (a no-op diff) and rebuilds the index at the end. Huge sets have no
+            # HNSW by design, so they still shortcut.
+            intact = n > 50000 or _has_hnsw(con)
+        if intact:
+            return _summary(True, folder, is_file, meta.get("truncated") == "1",
+                            docs=int(meta.get("docs", len(docs))), chunks=n, dim=dim)
 
     # Reconcile the index against the current files. A full (re)build wipes and
     # re-chunks everything; otherwise we diff on per-file mtime and touch only what

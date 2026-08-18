@@ -155,6 +155,23 @@ def test_list_dir_keeps_dirs_past_file_cap(tmp_path):
     assert [d["name"] for d in dirs] == ["zzz_subdir"]     # dirs past the cap still listed
 
 
+def test_hnsw_restored_when_meta_still_says_ready(tmp_path):
+    (tmp_path / "a.md").write_text("Alpha document about grinders and burrs.", encoding="utf-8")
+    ragserver.build_index(str(tmp_path))
+    con = ragserver._con(rc.db_path_for(str(tmp_path), ragserver.PROVIDER))
+    assert ragserver._has_hnsw(con)
+
+    # A kill (e.g. serve.py's model switch) can land between the reconcile's DROP
+    # INDEX auto-committing and the meta rewrite: the HNSW index is gone while
+    # docmeta still says status=ready with the old fingerprint.
+    con.execute("DROP INDEX chunks_hnsw;")
+    assert not ragserver._has_hnsw(con)
+
+    r = ragserver.build_index(str(tmp_path))               # unchanged folder, rebuild=False
+    assert r["ok"] is True
+    assert ragserver._has_hnsw(con)                        # fast path must not trust stale meta
+
+
 def test_index_files_and_preview(tmp_path):
     (tmp_path / "a.md").write_text("Alpha document about grinders and burrs.", encoding="utf-8")
     (tmp_path / "b.md").write_text("Beta document about milk steaming and microfoam.", encoding="utf-8")
