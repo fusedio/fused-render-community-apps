@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "name": "S3 Browser",
+  "description": "A full S3 client in a view: browse buckets, navigate folders, preview objects, upload/download/rename/delete, manage tags, versions, and bucket policy — public buckets or your own AWS account.",
+  "author": { "name": "Aman", "github": "amanbagrecha" },
+  "tags": ["s3", "aws", "storage", "files", "cloud"],
+  "category": "productivity",
+  "version": "1.0.0",
+  "requires_python": true
+}
