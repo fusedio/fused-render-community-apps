@@ -1,0 +1,1055 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="fused-app" />
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DocChat — local RAG over your docs</title>
+<style>
+  :root[data-theme="light"]{
+    color-scheme: light;
+    --bg0:#e7e2d6; --bg1:#f3f0e7; --bg2:#faf8f2;
+    --ink:#26221a; --ink-2:#6d6656; --ink-3:#9a9280;
+    --rule:#d9d2c2; --rule-hard:#bcb3a0;
+    --accent:#004a61; --accent-ink:#f2fafc;
+    --ok:#3f7d4e; --danger:#a13c22;
+    --hover:color-mix(in srgb, var(--ink) 5%, transparent);
+    --selected:color-mix(in srgb, var(--ink) 9%, transparent);
+  }
+  :root[data-theme="dark"]{
+    color-scheme: dark;
+    --bg0:#141210; --bg1:#1b1916; --bg2:#211e1a;
+    --ink:#e6e0d2; --ink-2:#a49b88; --ink-3:#78705f;
+    --rule:#2e2a23; --rule-hard:#453f33;
+    --accent:#3f9dbd; --accent-ink:#06222c;
+    --ok:#7dc98d; --danger:#e08b62;
+    --hover:color-mix(in srgb, var(--ink) 6%, transparent);
+    --selected:color-mix(in srgb, var(--ink) 11%, transparent);
+  }
+  :root{
+    --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,"Cascadia Mono",Consolas,"Segoe UI Mono",Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0;overflow:hidden}   /* page never scrolls — only inner panes do */
+  body{background:var(--bg1);color:var(--ink);font-family:var(--sans);font-size:13px;line-height:1.5;
+    display:flex;flex-direction:column;height:100vh}
+  button,input,textarea,select{font:inherit;color:inherit}
+  :focus-visible{outline:1px solid var(--accent);outline-offset:-1px}
+
+  /* ---- header ---- */
+  header{height:44px;flex:none;display:flex;align-items:center;gap:12px;padding:0 14px;
+    background:var(--bg0);border-bottom:1px solid var(--rule-hard)}
+  .brand{display:flex;align-items:center;gap:8px;font-family:var(--serif);font-size:16px;font-weight:600}
+  .mark{width:22px;height:22px;background:var(--accent);color:var(--accent-ink);display:grid;place-items:center;font-family:var(--serif);font-size:14px}
+  header .spacer{flex:1}
+  .msel{height:28px;border:1px solid var(--rule-hard);background:var(--bg1);color:var(--ink-2);font-size:12px;padding:0 8px;max-width:210px;cursor:pointer}
+  .msel:hover{border-color:var(--accent)}
+  .msel:disabled{opacity:.5;cursor:default}
+  .mstat{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border:1px solid var(--accent);
+    background:color-mix(in srgb, var(--accent) 12%, transparent);color:var(--ink);
+    font-family:var(--mono);font-size:11px;white-space:nowrap;max-width:260px;overflow:hidden}
+  .mstat[hidden]{display:none}
+  .mstat .mtxt{overflow:hidden;text-overflow:ellipsis}
+  .mstat .mspin{flex:none;width:9px;height:9px;border:1.5px solid color-mix(in srgb, var(--accent) 35%, transparent);
+    border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite}
+  .mstat.err{border-color:var(--danger);background:color-mix(in srgb, var(--danger) 12%, transparent);color:var(--danger)}
+  .mstat.err .mspin{display:none}
+  .mstat .mdl{flex:none;height:20px;padding:0 9px;border:0;background:var(--accent);color:var(--accent-ink);font-family:var(--mono);font-size:10.5px;font-weight:700;cursor:pointer}
+  .mstat .mdl:hover{filter:brightness(1.08)}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  @media (prefers-reduced-motion: reduce){ .mstat .mspin{animation:none} }
+  .seg{display:inline-flex;border:1px solid var(--rule-hard)}
+  .seg button{height:28px;padding:0 12px;font-size:12px;background:var(--bg1);color:var(--ink-2);border:0;border-left:1px solid var(--rule-hard);cursor:pointer}
+  .seg button:first-child{border-left:0}
+  .seg button.on{background:var(--accent);color:var(--accent-ink);font-weight:600}
+  .seg button:disabled{opacity:.4;cursor:not-allowed}
+  .icon{width:28px;height:28px;border:1px solid var(--rule-hard);background:var(--bg1);color:var(--ink-2);cursor:pointer;font-size:14px}
+  .icon:hover{color:var(--ink);border-color:var(--accent)}
+
+  /* ---- three-column shell ---- */
+  .app{flex:1;min-height:0;overflow:hidden;display:grid;grid-template-columns:280px minmax(0,1fr) 0px;
+    transition:grid-template-columns .18s ease-out}
+  .app.preview-open{grid-template-columns:280px minmax(0,1fr) clamp(360px,34vw,480px)}
+  @media (prefers-reduced-motion: reduce){ .app{transition:none} }
+
+  aside.rail{background:var(--bg0);border-right:1px solid var(--rule-hard);
+    display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden}
+  main.chat{background:var(--bg1);display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden}
+  aside.preview{background:var(--bg0);border-left:1px solid var(--rule-hard);overflow:hidden;min-width:0;min-height:0}
+
+  /* ---- rail sections ---- */
+  .rail-sec{padding:10px 12px;border-bottom:1px solid var(--rule);flex:none}
+  .eyebrow{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+  .eyebrow > span{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);font-weight:600}
+  .act{background:none;border:0;color:var(--ink-2);font-size:12px;cursor:pointer;padding:0;font-family:var(--sans)}
+  .act:hover{color:var(--ink);text-decoration:underline;text-underline-offset:2px}
+  .act:disabled{opacity:.4;cursor:default;text-decoration:none}
+  .act[hidden]{display:none}
+
+  .srcwrap{display:flex;align-items:center;gap:7px;min-width:0;cursor:pointer;margin-top:8px}
+  .srcico{flex:none;width:14px;height:14px;color:var(--accent);display:grid;place-items:center}
+  .srcico.warn{color:var(--danger)}
+  .srcico svg{width:14px;height:14px;display:block}
+  .srcline{flex:1;min-width:0;font-family:var(--mono);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .srcline .dim{color:var(--ink-2)}
+  .srcline .leaf{color:var(--ink);font-weight:600}
+  .srcwrap.empty .srcline{color:var(--ink-3);white-space:normal;font-family:var(--sans);font-size:12px}
+  .pathrow{display:flex;gap:6px;margin-top:8px}
+  .sideinput{flex:1;min-width:0;height:28px;background:var(--bg2);border:1px solid var(--rule);padding:0 8px;font-family:var(--mono);font-size:12px;color:var(--ink);outline:none}
+  .sideinput:focus{border-color:var(--accent)}
+  .sidego{flex:none;height:28px;padding:0 12px;background:var(--ink);color:var(--bg0);border:0;font-size:12px;font-weight:600;cursor:pointer}
+  .sidego:hover{filter:brightness(1.1)}
+
+  .idxline{display:flex;align-items:center;gap:8px;margin-top:8px;font-family:var(--mono);font-size:12px;color:var(--ink-2)}
+  .idxline .itxt{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .idxline.err .itxt{color:var(--danger)}
+  .idot{flex:none;width:7px;height:7px;background:var(--ink-3)}
+  .idot.ready{background:var(--ok)}
+  .idot.error{background:var(--danger)}
+  .idot.indexing{background:var(--accent);animation:pulse 1s ease-in-out infinite}
+  .rule{height:2px;margin:8px -12px -10px;background:var(--rule);overflow:hidden}
+  .rule > i{display:block;height:100%;background:var(--accent);width:0;transition:width .2s linear}
+  .ignored{margin-top:8px;font-family:var(--mono);font-size:11px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:default}
+  .ignored b{color:var(--ink-2);font-weight:600}
+  @keyframes pulse{0%,100%{opacity:.3}50%{opacity:1}}
+
+  /* ---- files list (fills remaining height) ---- */
+  .rail-files{flex:1;display:flex;flex-direction:column;min-height:0}
+  .files-h{padding:10px 12px 6px;flex:none}
+  .files-h > span{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);font-weight:600}
+  .filter{flex:none;margin:0 12px 6px;height:26px;background:var(--bg2);border:1px solid var(--rule);padding:0 8px;font-family:var(--mono);font-size:12px;color:var(--ink);outline:none}
+  .filter:focus{border-color:var(--accent)}
+  .flist{flex:1;overflow-y:auto;min-height:0;border-top:1px solid var(--rule)}
+  .frow{height:28px;display:grid;grid-template-columns:14px 1fr auto;align-items:center;gap:8px;
+    padding:0 10px 0 12px;cursor:pointer;box-shadow:inset 2px 0 0 transparent}
+  .frow:hover{background:var(--hover)}
+  .frow.sel{background:var(--selected);box-shadow:inset 2px 0 0 var(--accent)}
+  .frow .fico{color:var(--ink-3);display:grid;place-items:center}
+  .frow .fico svg{width:13px;height:13px;display:block}
+  .frow .fname{font-family:var(--mono);font-size:12px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .frow .fname .fdir{color:var(--ink-3)}
+  .frow .fcount{font-family:var(--mono);font-size:11px;color:var(--ink-3);font-variant-numeric:tabular-nums}
+  .fmore{height:28px;display:flex;align-items:center;padding:0 12px;font-family:var(--mono);font-size:11px;color:var(--ink-2)}
+  .fnote{padding:12px;font-family:var(--mono);font-size:11.5px;color:var(--ink-3)}
+
+  /* ---- rail footer ---- */
+  .rail-foot{flex:none;border-top:1px solid var(--rule-hard);padding:8px 12px;display:flex;flex-direction:column;gap:6px;min-width:0}
+  .cacherow{display:flex;align-items:baseline;gap:6px;font-family:var(--mono);font-size:11px;min-width:0}
+  .clbl{text-transform:uppercase;letter-spacing:.07em;color:var(--ink-3);flex:none}
+  .cpath{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink-2);cursor:pointer}
+  .cacheinput{flex:1;min-width:0;height:22px;background:var(--bg2);border:1px solid var(--rule);padding:0 6px;font-family:var(--mono);font-size:11px;color:var(--ink);outline:none}
+  .cacheinput:focus{border-color:var(--accent)}
+  .cnote{font-family:var(--mono);font-size:11px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .cnote.ok{color:var(--ok)}
+  .cnote.ok:before{content:"✓ "}
+  .cnote.err{color:var(--danger)}
+  .srv{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;color:var(--ink-3);white-space:nowrap;overflow:hidden}
+  .srv .dot2{flex:none;width:7px;height:7px;background:var(--ink-3)}
+  .srv .dot2.spin{animation:pulse 1s ease-in-out infinite}
+  .srv.ready .dot2{background:var(--ok)}
+  .srv.err .dot2{background:var(--danger)}
+  .srv .txt{overflow:hidden;text-overflow:ellipsis}
+
+  /* ---- chat: ledger transcript ---- */
+  .scroll{flex:1;overflow-y:auto;overflow-x:hidden}
+  .thread{max-width:768px;margin:0 auto;padding:6px 24px 48px}
+  .turn{border-top:1px solid var(--rule);padding:18px 0 22px}
+  .turn:first-child{border-top:0}
+  .uturn{display:grid;grid-template-columns:16px 1fr;align-items:start;margin-bottom:11px}
+  .uturn .ug{color:var(--accent);font-weight:700}
+  .uturn .ut{font-size:13.5px;font-weight:600;color:var(--ink)}
+  .aslot{padding-left:16px}
+  .answer{font-family:var(--serif);font-size:15.5px;line-height:1.62;color:var(--ink)}
+  .answer > :first-child{margin-top:0}
+  .answer p{margin:0 0 10px}
+  .answer p:last-child{margin-bottom:0}
+  .answer ul,.answer ol{margin:0 0 10px;padding-left:22px}
+  .answer li{margin:3px 0}
+  .answer strong{font-weight:700}
+  .answer em{font-style:italic}
+  .answer a{color:var(--accent)}
+  .answer code{font-family:var(--mono);font-size:.86em;background:var(--bg2);border:1px solid var(--rule);padding:0 4px}
+  .answer .md-h{font-weight:600;font-size:16.5px;line-height:1.3;margin:14px 0 6px}
+  .thinking{font-style:italic;color:var(--ink-3)}
+  .dot{display:inline-block;animation:blink 1.2s infinite}
+  .dot:nth-child(2){animation-delay:.2s}.dot:nth-child(3){animation-delay:.4s}
+  @keyframes blink{0%,80%,100%{opacity:.25}40%{opacity:1}}
+  .meta{font-family:var(--mono);font-size:11px;color:var(--ink-2);margin-top:11px}
+  .note{font-size:12px;color:var(--ink-2);margin:0 0 9px;border-left:2px solid var(--accent);padding-left:9px}
+  .setup{border:1px solid var(--accent);padding:12px 14px;background:var(--bg2)}
+  .setup h3{margin:0 0 6px;color:var(--accent);font-size:13px;font-family:var(--serif)}
+
+  details.sources{margin-top:14px}
+  details.sources > summary{cursor:pointer;font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);font-weight:600;list-style:none;margin-bottom:4px}
+  details.sources > summary::-webkit-details-marker{display:none}
+  details.sources > summary:before{content:"▸ "}
+  details.sources[open] > summary:before{content:"▾ "}
+  .srcrow{display:grid;grid-template-columns:1fr auto auto 48px;align-items:center;gap:10px;height:26px;font-family:var(--mono);border-top:1px solid var(--rule)}
+  .srcrow .sf{font-size:12px;color:var(--accent);cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .srcrow .sf:hover{text-decoration:underline;text-underline-offset:2px}
+  .srcrow .sc{font-size:11px;color:var(--ink-3)}
+  .srcrow .ss{font-size:11px;color:var(--ink-2);font-variant-numeric:tabular-nums}
+  .srcrow .sbar{height:4px;background:var(--rule);overflow:hidden}
+  .srcrow .sbar > i{display:block;height:100%;background:var(--accent)}
+
+  /* ---- welcome / ready state (left-aligned working block) ---- */
+  .welcome{max-width:768px;margin:0 auto;padding:26px 24px 0}
+  .welcome .eb{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin-bottom:10px}
+  .welcome h1{font-family:var(--serif);font-weight:600;font-size:22px;line-height:1.25;color:var(--ink);margin:0 0 8px}
+  .welcome .wstats{font-family:var(--mono);font-size:12px;color:var(--ink-2)}
+  .welcome .wdiv{height:1px;background:var(--rule);margin:20px 0}
+  .exrow{display:grid;grid-template-columns:16px 1fr;align-items:center;height:36px;font-size:13.5px;color:var(--ink);cursor:pointer}
+  .exrow .eg{color:var(--ink-3);font-weight:700}
+  .exrow:hover{background:var(--hover)}
+  .exrow:hover .eg{color:var(--accent)}
+  .wready{font-size:13px;color:var(--ink-2)}
+
+  /* ---- composer ---- */
+  .composer-wrap{flex:none;border-top:1px solid var(--rule-hard);background:var(--bg0)}
+  .composer{max-width:768px;margin:0 auto;padding:12px 24px 14px}
+  .crow{display:flex;gap:8px;align-items:flex-end}
+  textarea#q{flex:1;resize:none;background:var(--bg2);border:1px solid var(--rule);padding:9px 12px;
+    min-height:38px;max-height:140px;font-family:var(--sans);font-size:13.5px;color:var(--ink);outline:none}
+  textarea#q:focus{border-color:var(--accent)}
+  button#send{flex:none;height:38px;padding:0 16px;background:var(--accent);color:var(--accent-ink);border:0;font-size:13px;font-weight:600;cursor:pointer}
+  button#send:disabled{opacity:.5;cursor:default}
+  .chint{font-family:var(--mono);font-size:11px;color:var(--ink-3);margin-top:6px}
+
+  /* ---- file preview pane ---- */
+  .pv-inner{width:clamp(360px,34vw,480px);height:100%;display:flex;flex-direction:column;min-height:0}
+  .pv-h{flex:none;height:40px;display:flex;align-items:center;gap:8px;padding:0 8px 0 12px;border-bottom:1px solid var(--rule)}
+  .pv-name{flex:1;min-width:0;font-family:var(--mono);font-size:12.5px;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .pv-name .pdir{color:var(--ink-3);font-weight:400}
+  .pv-toggle{display:inline-flex;flex:none;border:1px solid var(--rule-hard)}
+  .pv-toggle button{height:22px;padding:0 8px;font-family:var(--mono);font-size:10.5px;background:var(--bg1);color:var(--ink-2);border:0;border-left:1px solid var(--rule-hard);cursor:pointer}
+  .pv-toggle button:first-child{border-left:0}
+  .pv-toggle button.on{background:var(--accent);color:var(--accent-ink)}
+  .pv-x{flex:none;width:28px;height:28px;border:0;background:none;color:var(--ink-2);cursor:pointer;font-size:14px}
+  .pv-x:hover{color:var(--ink)}
+  .pv-meta{flex:none;min-height:24px;display:flex;align-items:center;padding:4px 12px;font-family:var(--mono);font-size:11px;color:var(--ink-2);border-bottom:1px solid var(--rule)}
+  .pv-body{flex:1;min-height:0;display:flex;background:var(--bg2);overflow:hidden}
+  .pv-frame{flex:1;width:100%;height:100%;border:0;background:var(--bg2)}
+  .pv-text{flex:1;overflow:auto;min-height:0;padding:14px 16px;font-family:var(--mono);font-size:12px;line-height:1.6;color:var(--ink);white-space:pre-wrap;word-break:break-word}
+  .pv-text mark.hl{background:color-mix(in srgb, var(--accent) 22%, transparent);color:inherit}
+  .pv-empty{padding:16px;font-family:var(--mono);font-size:11.5px;color:var(--ink-3)}
+
+  /* ---- folder picker (the one allowed float) ---- */
+  .overlay{position:fixed;inset:0;background:color-mix(in srgb, var(--ink) 38%, transparent);
+    display:none;align-items:center;justify-content:center;z-index:100;padding:20px}
+  .overlay.on{display:flex}
+  .dlg{width:min(540px,94vw);max-height:74vh;display:flex;flex-direction:column;background:var(--bg0);
+    border:1px solid var(--rule-hard);box-shadow:0 8px 24px rgba(0,0,0,.25);overflow:hidden}
+  .dlg-h{display:flex;align-items:center;gap:8px;padding:14px 16px 8px}
+  .dlg-h h2{font-family:var(--serif);font-weight:600;font-size:17px;margin:0;flex:1}
+  .dlg-x{border:0;background:none;color:var(--ink-2);font-size:15px;cursor:pointer;line-height:1;padding:4px}
+  .dlg-x:hover{color:var(--ink)}
+  .pathbar{display:flex;align-items:center;gap:6px;margin:0 16px;padding:6px 8px;border:1px solid var(--rule);background:var(--bg2);font-family:var(--mono);font-size:12px;min-height:32px}
+  .pathbar .up,.pathbar .edit,.pathbar .go{cursor:pointer;color:var(--ink-2);border:0;background:none;font-size:14px;line-height:1;padding:0 3px;flex:none}
+  .pathbar .up:hover,.pathbar .edit:hover,.pathbar .go:hover{color:var(--ink)}
+  .crumbs{display:flex;flex-wrap:wrap;align-items:center;gap:1px;flex:1;min-width:0;overflow:hidden;cursor:text}
+  .crumbs .seg2{cursor:pointer;padding:1px 4px;white-space:nowrap;color:var(--ink-2);border:0;background:none}
+  .crumbs .seg2:hover{background:var(--hover);color:var(--ink)}
+  .crumbs .seg2.leaf{color:var(--ink);font-weight:600}
+  .crumbs .sepc{color:var(--ink-3)}
+  .pathedit{flex:1;border:0;background:none;font:inherit;color:var(--ink);outline:none;min-width:0}
+  .dlg-body{flex:1;overflow-y:auto;padding:8px 10px 4px}
+  .grp{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-3);margin:10px 8px 3px}
+  .row{display:flex;align-items:center;gap:9px;padding:8px 10px;cursor:pointer;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .row:hover{background:var(--hover)}
+  .row.sel{background:var(--selected)}
+  .row.file{color:var(--ink-2);font-family:var(--mono);font-size:12.5px}
+  .row.up,.row.recent{color:var(--ink-3)}
+  .row .caret{margin-left:auto;color:var(--ink-3);font-size:12px}
+  .pk-note{padding:14px 10px;color:var(--ink-3);font-size:12.5px}
+  .dlg-f{display:flex;align-items:center;gap:10px;padding:12px 16px;border-top:1px solid var(--rule)}
+  .dlg-f .info{flex:1;font-family:var(--mono);font-size:12px;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .btn-quiet{background:none;border:0;color:var(--ink-2);font-size:13px;cursor:pointer;padding:6px 8px}
+  .btn-quiet:hover{color:var(--ink)}
+  .btn-primary{background:var(--ink);color:var(--bg0);border:0;padding:8px 15px;font-size:13px;font-weight:600;cursor:pointer}
+  .btn-primary:hover{filter:brightness(1.1)}
+  .btn-primary:disabled{opacity:.4;cursor:default;filter:none}
+
+  @media (max-width:980px){
+    .app{grid-template-columns:240px minmax(0,1fr) 0px}
+    .app.preview-open{grid-template-columns:240px minmax(0,1fr) clamp(300px,40vw,380px)}
+    .pv-inner{width:clamp(300px,40vw,380px)}
+  }
+  @media (max-width:760px){
+    .app,.app.preview-open{display:flex;flex-direction:column;overflow-y:auto}
+    aside.rail{border-right:0;border-bottom:1px solid var(--rule-hard);max-height:46vh}
+    aside.preview{display:none;border-left:0;border-top:1px solid var(--rule-hard);max-height:60vh}
+    aside.preview.open{display:block}
+    .pv-inner{width:100%}
+  }
+</style>
+</head>
+<body>
+  <header>
+    <div class="brand"><span class="mark">¶</span> DocChat</div>
+    <div class="spacer"></div>
+    <select class="msel" id="modelSel" title="Local embedding model (served on this machine)">
+      <option value="Qwen/Qwen3-Embedding-0.6B">Qwen3-0.6B · best quality</option>
+      <option value="BAAI/bge-base-en-v1.5">bge-base · balanced</option>
+      <option value="BAAI/bge-small-en-v1.5">bge-small · fastest on CPU</option>
+      <option value="BAAI/bge-m3">bge-m3 · multilingual</option>
+    </select>
+    <span class="mstat" id="modelStatus" hidden></span>
+    <div class="seg" id="backendSeg">
+      <button data-backend="ai" id="segAi" title="Write the answer with Fused AI (local Claude CLI)">Fused AI</button>
+      <button data-backend="passages" id="segPassages" title="No LLM — just show the matching passages">Passages</button>
+    </div>
+    <button class="icon" id="themeBtn" title="Toggle light / dark">☾</button>
+  </header>
+
+  <div class="app" id="app">
+    <aside class="rail">
+      <div class="rail-sec">
+        <div class="eyebrow"><span>Source</span><button class="act" id="changeSrc">Browse…</button></div>
+        <div class="srcwrap" id="srcWrap"><span class="srcico" id="srcIco"></span><div class="srcline" id="srcLine" title="">…</div></div>
+        <div class="pathrow">
+          <input id="sidePath" class="sideinput" spellcheck="false" placeholder="Paste a path…">
+          <button class="sidego" id="sidePathGo" title="Open this path">Go</button>
+        </div>
+      </div>
+      <div class="rail-sec">
+        <div class="eyebrow"><span>Index</span><button class="act" id="idxAction" data-kind="build">Index now</button></div>
+        <div class="idxline" id="idxLine"><span class="idot" id="idxDot"></span><span class="itxt" id="idxText">Not indexed yet</span></div>
+        <div class="rule" id="idxRule" hidden><i></i></div>
+        <div class="ignored" id="ignoredLine" hidden></div>
+      </div>
+      <div class="rail-files">
+        <div class="files-h"><span id="filesEyebrow">Files</span></div>
+        <input class="filter" id="filesFilter" spellcheck="false" placeholder="Filter files…">
+        <div class="flist" id="filesList"></div>
+      </div>
+      <div class="rail-foot">
+        <div class="cacherow" id="cacheRow">
+          <span class="clbl">Saved to</span>
+          <span class="cpath" id="cachePath" title="">…</span>
+          <button class="act" id="cacheEdit">Change</button>
+        </div>
+        <div class="srv" id="srvLine" title=""><span class="dot2 spin"></span><span class="txt">starting server…</span></div>
+      </div>
+    </aside>
+
+    <main class="chat">
+      <div class="scroll" id="main"><div class="thread" id="transcript"></div></div>
+      <div class="composer-wrap">
+        <div class="composer">
+          <div class="crow">
+            <textarea id="q" rows="1" placeholder="Ask about the selected source…"></textarea>
+            <button id="send">Send</button>
+          </div>
+          <div class="chint" id="chint">grounded in docs/ · embeddings run locally</div>
+        </div>
+      </div>
+    </main>
+
+    <aside class="preview" id="preview">
+      <div class="pv-inner">
+        <div class="pv-h"><span class="pv-name" id="pvName"></span>
+          <div class="pv-toggle" id="pvToggle" title="Render with fused-render, or show the raw indexed text">
+            <button data-mode="rendered" class="on">Rendered</button><button data-mode="text">Text</button>
+          </div>
+          <button class="pv-x" id="pvClose" title="Close (Esc)">✕</button></div>
+        <div class="pv-meta" id="pvMeta"></div>
+        <div class="pv-body" id="pvBody"></div>
+      </div>
+    </aside>
+  </div>
+
+  <div class="overlay" id="overlay"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const transcript=$("transcript"), input=$("q"), sendBtn=$("send");
+const main=$("main"), themeBtn=$("themeBtn"), appEl=$("app");
+const segAi=$("segAi"), segPassages=$("segPassages"), modelSel=$("modelSel");
+const changeBtn=$("changeSrc"), srcLine=$("srcLine");
+const idxLine=$("idxLine"), idxAction=$("idxAction"), idxRule=$("idxRule");
+const srvLine=$("srvLine"), overlay=$("overlay"), modelStatus=$("modelStatus");
+
+const AI_AVAILABLE = (typeof fused.ai === "function");
+const DEFAULT_MODEL = "Qwen/Qwen3-Embedding-0.6B";
+const SRV_PORT = 8271;   // fixed singleton port (matches serve.py / ragserver RAG_PORT)
+const EXAMPLES = [
+  "How do I dial in an espresso shot — what dose, yield and grind?",
+  "How should I store coffee beans, and how long do they stay fresh?",
+  "What are the steps to close the café at night?",
+  "How often should I backflush the machine, and with what?",
+];
+
+let state = { backend:"ai", folder:"", theme:"light", model:DEFAULT_MODEL, cacheDir:"", processedQ:null, busy:false,
+              folderName:"docs", folderPath:"", home:"", isFile:false, idxState:"none", cachePathFull:"",
+              idxDocs:0, idxChunks:0 };
+let srv = { port:SRV_PORT, ready:false, model:"", device:"", dim:0, modelsDir:"", token:"" };
+let indexSeq = 0;
+let serveSeq = 0;   // bumps on every model pick / serveEnsure, so a superseded load stops touching the UI
+let filesAll = [], filesTotal = 0, filesCapped = false, previewSrc = null;
+
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+function esc(s){ return String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+function cssEsc(s){ return String(s).replace(/["\\]/g, "\\$&"); }
+function scrollDown(){ main.scrollTop = main.scrollHeight; }
+function baseName(p){ if(!p) return "docs"; return p.replace(/[\\/]+$/,"").split(/[\\/]/).pop() || p; }
+function shortModel(m){ return (m||"").split("/").pop(); }
+const ICO = {
+  folder: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M1.6 4c0-.6.4-1 1-1h3.2c.3 0 .6.1.8.4l.7.9h5.1c.6 0 1 .4 1 1v6c0 .6-.4 1-1 1H2.6c-.6 0-1-.4-1-1V4Z"/></svg>',
+  file:   '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M4 1.8h4.6L12 5.2v9c0 .3-.2.5-.5.5H4c-.3 0-.5-.2-.5-.5V2.3c0-.3.2-.5.5-.5Z"/><path d="M8.4 1.9v3.2h3.2"/></svg>',
+  warn:   '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M8 2.2 14.6 13.4H1.4L8 2.2Z"/><path d="M8 6.6v3.1"/><path d="M8 11.5h.01" stroke-width="1.6"/></svg>',
+};
+
+// ---- talk to the warm embedding server (direct fetch; it sets CORS) ----
+// Every data route requires the server's ?t=<token>; it comes from serve.py (which
+// reads it off the on-disk sidecar), so it never rides the open HTTP surface. Only
+// /health is unauthenticated, so appending the token there is harmless.
+async function sfetch(path, opts){
+  const url = "http://127.0.0.1:" + srv.port + path
+    + (srv.token ? (path.indexOf("?") >= 0 ? "&" : "?") + "t=" + encodeURIComponent(srv.token) : "");
+  const r = await fetch(url, opts);
+  return r.json();
+}
+async function sfetchSafe(path, opts){ try{ return await sfetch(path, opts); }catch(e){ return null; } }
+function spost(path, body){ return sfetchSafe(path, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body) }); }
+function cacheQ(){ return state.cacheDir ? "&cache_dir=" + encodeURIComponent(state.cacheDir) : ""; }
+function statusOf(folder){ return sfetchSafe("/status?folder=" + encodeURIComponent(folder || "") + cacheQ()); }
+
+function setSrv(kind, text){
+  srvLine.className = "srv" + (kind === "ready" ? " ready" : kind === "err" ? " err" : "");
+  srvLine.innerHTML = '<span class="dot2' + (kind === "wait" ? " spin" : "") + '"></span><span class="txt">' + esc(text) + '</span>';
+  srvLine.title = srv.port ? ("Embedding server on 127.0.0.1:" + srv.port + (srv.model ? " · " + srv.model : "")
+    + (srv.modelsDir ? " · weights in " + srv.modelsDir : "")) : "";
+}
+// Rough on-disk sizes, so the download prompt tells the user what they're in for.
+const MODEL_SIZES = { "Qwen/Qwen3-Embedding-0.6B":"~1.2 GB", "BAAI/bge-base-en-v1.5":"~0.4 GB",
+                      "BAAI/bge-small-en-v1.5":"~0.1 GB", "BAAI/bge-m3":"~2.3 GB" };
+// A prominent indicator next to the model picker. kind "download" shows a Download
+// button (permission gate); "wait" a spinner; "err" an error; "ready" hides it.
+function setModelStatus(kind, text, model){
+  if(kind === "ready" || !text){ modelStatus.hidden = true; modelStatus.title = ""; modelStatus.innerHTML = ""; return; }
+  modelStatus.hidden = false;
+  modelStatus.className = "mstat" + (kind === "err" ? " err" : "");
+  modelStatus.title = text;                 // full text on hover (the pill itself truncates)
+  if(kind === "download"){
+    modelStatus.innerHTML = '<span class="mtxt"></span><button class="mdl" id="mDownload" title="Download into ~/.fused-render/cache/models">Download</button>';
+    modelStatus.querySelector(".mtxt").textContent = text;
+    $("mDownload").onclick = () => { setModelStatus("ready"); fused.params.set("model", model); };
+  } else {
+    modelStatus.innerHTML = '<span class="mspin"></span><span class="mtxt"></span>';
+    modelStatus.querySelector(".mtxt").textContent = text;
+  }
+}
+function loadWord(stage){ return stage === "downloading" ? "Downloading" : "Loading"; }
+// Picking a model that isn't downloaded shouldn't silently pull gigabytes — ask first.
+async function onModelPick(){
+  const m = modelSel.value;
+  if(m === state.model){ setModelStatus("ready"); return; }
+  serveSeq++;                               // cancel any in-flight load so it can't overwrite this pick
+  const c = await sfetchSafe("/cached?model=" + encodeURIComponent(m));
+  if(c && c.ok && !c.cached){               // needs downloading — ask first; the prompt carries the choice
+    modelSel.value = state.model;           // don't leave the picker showing a model that isn't loaded
+    const size = MODEL_SIZES[m] ? " (" + MODEL_SIZES[m] + ")" : "";
+    setModelStatus("download", shortModel(m) + " isn't downloaded" + size, m);
+    return;
+  }
+  setModelStatus("ready");
+  fused.params.set("model", m);             // cached (or unknown) -> switch now (terminates the old load)
+}
+async function serveEnsure(){
+  const seq = ++serveSeq;                     // a newer pick/call supersedes this one
+  const stale = () => seq !== serveSeq;       // once superseded, stop touching the UI and bail
+  if(srv.ready && srv.model === state.model && srv.token) return true;
+  const short = shortModel(state.model);
+  const waiting = (st) => { setSrv("wait", (st === "downloading" ? "downloading " : "loading ") + short + "…");
+    setModelStatus("wait", (st === "downloading" ? "Downloading " : "Loading ") + short + (st === "downloading" ? " · first use" : "") + "…"); };
+  const ready = () => { srv.ready = true; setSrv("ready", short + " · " + srv.device); setModelStatus("ready"); return true; };
+  // Go through serve.py so we get the server's auth token (it reads it off the
+  // on-disk sidecar). serve.py is idempotent — it adopts a server already running
+  // for our model or switches to it — so this can't spawn a duplicate. The token
+  // never comes over HTTP, so /health-only adoption isn't an option any more.
+  srv.ready = false;
+  setSrv("wait", "starting server…"); setModelStatus("wait", "Starting model server…");
+  let res;
+  try{ res = await fused.runPython("./serve.py", { model: state.model || "" }, { key:null }); }
+  catch(e){ if(stale()) return false; setSrv("err", "server launch failed"); setModelStatus("err", "Server launch failed"); return false; }
+  if(stale()) return false;
+  if(!res || !res.ok){ setSrv("err", (res && res.error) || "server error"); setModelStatus("err", (res && res.error) || "Server error"); return false; }
+  srv.port = res.port; srv.token = res.token || ""; srv.model = res.model; srv.device = res.device; srv.dim = res.dim; srv.modelsDir = res.models_dir; srv.ready = !!res.ready;
+  if(!srv.ready){
+    waiting(res.stage);
+    for(let i=0; i<800; i++){                 // first run downloads the model into the fused-render cache; wait it out
+      await sleep(1500);
+      if(stale()) return false;
+      const h = await sfetchSafe("/health");
+      if(stale()) return false;
+      if(!h || h.model !== state.model) continue;
+      if(h.ready){ srv.model = h.model; srv.dim = h.dim; srv.device = h.device; srv.modelsDir = h.models_dir; srv.ready = true; break; }
+      waiting(h.stage);
+    }
+  }
+  if(stale()) return false;
+  if(srv.ready) return ready();
+  setSrv("err", "model still loading — retry"); setModelStatus("err", "Still loading — retry"); return false;
+}
+
+// ---- SOURCE + INDEX + FILES ----
+async function refreshSidebar(){
+  if(!srv.port) return;
+  const res = await statusOf(state.folder);
+  if(!res || !res.ok) return;
+  state.home = res.home; state.folderPath = res.folder; state.isFile = res.is_file; state.folderName = res.source_name;
+  state.idxState = res.state;
+  if(res.cache_dir) setCachePath(res.cache_dir);
+  renderSourceLine(res);
+  renderIgnored(res.ignored);
+  updateComposerContext();
+  if(res.state === "ready"){ renderIndex({ state:"ready", docs:res.docs, chunks:res.chunks, truncated:res.truncated }); await onIndexReady(); }
+  else if(res.state === "indexing"){ renderIndex({ state:"indexing", done:res.done, total:res.total }); clearFiles(); }
+  else if(res.state === "error"){ renderIndex({ state:"error", msg:res.error }); clearFiles(); }
+  else if(res.state === "building"){ renderIndex({ state:"none", partial:true }); clearFiles(); }   // interrupted build, no live thread — resumable
+  else { renderIndex({ state:"none" }); clearFiles(); }
+}
+function setCachePath(p){ state.cachePathFull = p; const el = $("cachePath"); if(el){ el.textContent = shortPath(p, state.home); el.title = p; } }
+let cacheTimer = 0, cachePendingNote = "";
+function cacheFlash(text, cls){
+  clearTimeout(cacheTimer);
+  $("cacheRow").innerHTML = '<span class="cnote'+(cls?(" "+cls):"")+'">'+esc(text)+'</span>';
+  if(cls !== "busy") cacheTimer = setTimeout(() => renderCacheRow(false), 2800);
+}
+// Change where indexes are saved AND carry the existing cache over, so a relocate
+// never forces a re-embed. The server moves the .duckdb files; we then flip the
+// param (-> refreshSidebar reads from the new dir) and confirm with a brief note.
+async function changeCache(raw){
+  const next = (raw || "").trim();
+  cacheFlash("Moving cache…", "busy");
+  const res = await spost("/movecache", { old: state.cachePathFull || "", new: next });
+  if(!res || !res.ok){ cacheFlash((res && res.error) || "Couldn't move cache", "err"); return; }
+  const n = res.moved || 0;
+  cachePendingNote = res.same ? "Already saving here"
+    : n ? ("Cache moved · "+n+" index"+(n===1?"":"es")+" kept")
+    : "Now saving here";
+  fused.params.set("cache", res.to || next);   // store the server's normalized path, not the raw input
+}
+function renderCacheRow(edit){
+  const row = $("cacheRow");
+  if(edit){
+    row.innerHTML = '<input class="cacheinput" id="cacheInput" spellcheck="false" placeholder="Folder to save indexes in…"><button class="act" id="cacheSave">Save</button>';
+    const inp = $("cacheInput"); inp.value = state.cachePathFull || ""; inp.focus(); inp.select();
+    const save = () => changeCache(inp.value);
+    $("cacheSave").onclick = save;
+    inp.onkeydown = (e) => { if(e.key === "Enter"){ e.preventDefault(); save(); } else if(e.key === "Escape"){ e.stopPropagation(); renderCacheRow(false); } };
+  } else {
+    row.innerHTML = '<span class="clbl">Saved to</span><span class="cpath" id="cachePath" title="">…</span><button class="act" id="cacheEdit">Change</button>';
+    $("cacheEdit").onclick = () => renderCacheRow(true);
+    $("cachePath").onclick = () => renderCacheRow(true);
+    if(state.cachePathFull) setCachePath(state.cachePathFull);
+  }
+}
+function tildify(path, home){
+  if(home){ const h = home.replace(/\/+$/,""); if(path === h) return "~"; if(path.startsWith(h+"/")) return "~"+path.slice(h.length); }
+  return path;
+}
+function splitSegs(path){
+  const win = /^[A-Za-z]:/.test(path); const sep = win ? "\\" : "/";
+  const rootless = !win && !path.startsWith("~") && path.startsWith("/");
+  let segs = path.split("/").filter(Boolean);
+  if(segs.length > 4) segs = [segs[0], "…", segs[segs.length-2], segs[segs.length-1]];
+  return { segs, sep, rootless };
+}
+function shortPath(path, home){ const { segs, sep, rootless } = splitSegs(tildify(path, home)); return (rootless ? "/" : "") + segs.join(sep); }
+function renderSourceLine(res){
+  const wrap = $("srcWrap"), ico = $("srcIco");
+  if(res.state === "missing"){
+    wrap.className = "srcwrap empty"; ico.className = "srcico warn"; ico.innerHTML = ICO.warn;
+    srcLine.innerHTML = "Path not found — click to choose another"; srcLine.title = res.folder || "";
+    changeBtn.textContent = "Choose…"; return;
+  }
+  changeBtn.textContent = "Change…";
+  wrap.className = "srcwrap"; ico.className = "srcico"; ico.innerHTML = res.is_file ? ICO.file : ICO.folder;
+  const { segs, sep, rootless } = splitSegs(tildify(res.folder, res.home));
+  let html = rootless ? '<span class="dim">/</span>' : "";
+  html += segs.map((s,i) => i < segs.length-1 ? '<span class="dim">'+esc(s)+esc(sep)+'</span>' : '<span class="leaf">'+esc(s)+'</span>').join("");
+  srcLine.innerHTML = html || esc(res.source_name);
+  srcLine.title = shortPath(res.folder, res.home);
+}
+function renderIgnored(list){
+  const el = $("ignoredLine");
+  if(!list || !list.length){ el.hidden = true; return; }
+  el.hidden = false;
+  el.innerHTML = "Skipped " + list.map(n => "<b>"+esc(n)+"</b>").join(" · ");
+  el.title = "Not indexed (version-control, build & hidden folders are skipped by default): " + list.join(", ");
+}
+function renderIndex(info){
+  let label = "", act = "Index now", kind = "build", cls = "", pct = null, showAct = true;
+  if(info.state === "none"){ label = info.partial ? "Indexing interrupted" : "Not indexed yet"; act = info.partial ? "Resume" : "Index now"; kind = "build"; }
+  else if(info.state === "indexing"){
+    const t = info.total||0, d = info.done||0;
+    label = t ? ("Embedding · "+d+" / "+t+" chunks") : "Preparing…"; showAct = false; pct = t ? Math.max(2, Math.round(100*d/t)) : 6;
+  }
+  else if(info.state === "ready"){
+    state.idxDocs = info.docs; state.idxChunks = info.chunks;
+    label = "Ready · "+info.docs+" file"+(info.docs===1?"":"s")+" · "+info.chunks+" chunk"+(info.chunks===1?"":"s")+(info.truncated?" · capped":"");
+    act = "Re-index"; kind = "rebuild";
+  }
+  else if(info.state === "error"){ label = String(info.msg||"Index failed").slice(0,80); act = "Retry"; kind = "rebuild"; cls = "err"; }
+  state.idxState = info.state;
+  const dotCls = info.state === "ready" ? "ready" : info.state === "indexing" ? "indexing" : info.state === "error" ? "error" : "";
+  idxLine.className = "idxline" + (cls ? " "+cls : "");
+  $("idxDot").className = "idot" + (dotCls ? " "+dotCls : "");
+  $("idxText").textContent = label;
+  idxAction.textContent = act; idxAction.dataset.kind = kind; idxAction.hidden = !showAct;
+  if(pct != null){ idxRule.hidden = false; idxRule.querySelector("i").style.width = pct+"%"; }
+  else { idxRule.hidden = true; }
+}
+idxAction.addEventListener("click", () => { if(state.busy) return; indexNow(idxAction.dataset.kind === "rebuild"); });
+
+// ---- files list (what actually got indexed) ----
+async function onIndexReady(){
+  await loadFiles();
+  if(transcript.querySelector(".welcome")) renderWelcome();
+}
+function clearFiles(){ filesAll = []; filesTotal = 0; filesCapped = false; renderFiles(); }
+async function loadFiles(){
+  const res = await sfetchSafe("/files?folder=" + encodeURIComponent(state.folder || "") + cacheQ());
+  if(res && res.ok){ filesAll = res.files; filesTotal = res.total; filesCapped = res.capped; }
+  else { filesAll = []; filesTotal = 0; filesCapped = false; }
+  renderFiles();
+}
+function splitSource(source){
+  const s = source.replace(/\\/g, "/"); const i = s.lastIndexOf("/");
+  return { dir: i >= 0 ? s.slice(0, i+1) : "", base: i >= 0 ? s.slice(i+1) : s };
+}
+function fileRowHtml(f){
+  const { dir, base } = splitSource(f.source);
+  return '<div class="frow" data-src="'+esc(f.source)+'" title="'+esc(f.source)+'">'
+    + '<span class="fico">'+ICO.file+'</span>'
+    + '<span class="fname">'+(dir?'<span class="fdir">'+esc(dir)+'</span>':"")+esc(base)+'</span>'
+    + '<span class="fcount">'+f.chunks+'</span></div>';
+}
+function renderFiles(){
+  const eb = $("filesEyebrow"), listEl = $("filesList");
+  if(state.idxState !== "ready" && !filesAll.length){
+    eb.textContent = "Files";
+    listEl.innerHTML = '<div class="fnote">'+(state.idxState==="indexing" ? "Indexing…" : "Not indexed yet")+'</div>';
+    return;
+  }
+  const q = ($("filesFilter").value || "").trim().toLowerCase();
+  const list = q ? filesAll.filter(f => f.source.toLowerCase().includes(q)) : filesAll;
+  eb.textContent = "Files · " + (q ? (list.length + " / " + filesTotal) : filesTotal.toLocaleString());
+  const cap = 400;
+  let html = list.slice(0, cap).map(fileRowHtml).join("");
+  if(list.length > cap) html += '<div class="fmore">Showing '+cap+' of '+list.length.toLocaleString()+' — filter to narrow</div>';
+  else if(filesCapped && !q) html += '<div class="fmore">First '+filesAll.length.toLocaleString()+' of '+filesTotal.toLocaleString()+' files</div>';
+  listEl.innerHTML = html || '<div class="fnote">No files match “'+esc(q)+'”.</div>';
+  listEl.querySelectorAll(".frow").forEach(el => el.onclick = () => openPreview(el.dataset.src));
+  if(previewSrc) markSelectedFile(previewSrc);
+}
+$("filesFilter").addEventListener("input", renderFiles);
+
+// ---- file preview pane (non-obstructing; pushes the chat, never covers it) ----
+function markSelectedFile(source){
+  $("filesList").querySelectorAll(".frow.sel").forEach(r => r.classList.remove("sel"));
+  if(source){ const r = $("filesList").querySelector('.frow[data-src="'+cssEsc(source)+'"]'); if(r) r.classList.add("sel"); }
+}
+// fused-render serves this page, so its own file renderer (JSON/CSV/image/PDF/
+// code viewers) is one same-origin iframe away — no need to reinvent it. We only
+// keep a lightweight "Text" view for the raw indexed text + cited-chunk highlight.
+const FR_ORIGIN = (location.origin && location.origin.indexOf("http") === 0) ? location.origin : "http://127.0.0.1:1777";
+// The /embed/<path> route (path-style, like VPS Manager) actually boots fused-render's
+// viewers — JSON tree, CSV/parquet table, image, PDF, code. /render?path= just dumps raw.
+function embedUrl(p){ return FR_ORIGIN + "/embed/" + encodeURI(p).replace(/#/g, "%23").replace(/\?/g, "%3F"); }
+let previewMode = "rendered", previewRes = null, previewHighlight = null;
+function previewBodyHtml(text, hl){
+  if(hl){ const i = text.indexOf(hl); if(i >= 0) return esc(text.slice(0,i))+'<mark class="hl">'+esc(text.slice(i, i+hl.length))+'</mark>'+esc(text.slice(i+hl.length)); }
+  return esc(text);
+}
+function setPreviewToggle(){ $("pvToggle").querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.mode === previewMode)); }
+function renderPreviewBody(){
+  const body = $("pvBody"); if(!previewRes){ return; }
+  if(previewMode === "rendered"){
+    body.innerHTML = '<iframe class="pv-frame" title="file preview" src="' + esc(embedUrl(previewRes.path)) + '"></iframe>';
+  } else {
+    body.innerHTML = '<div class="pv-text" id="pvText"></div>';
+    const el = $("pvText"); el.innerHTML = previewBodyHtml(previewRes.text, previewHighlight);
+    const mk = el.querySelector("mark.hl"); if(mk) mk.scrollIntoView({ block:"center" }); else el.scrollTop = 0;
+  }
+  setPreviewToggle();
+}
+async function openPreview(source, highlight){
+  previewSrc = source; previewHighlight = highlight || null;
+  previewMode = highlight ? "text" : "rendered";         // a citation -> raw text w/ highlight; a file click -> rendered
+  markSelectedFile(source); setPreviewToggle();
+  appEl.classList.add("preview-open"); $("preview").classList.add("open");
+  const { dir, base } = splitSource(source);
+  $("pvName").innerHTML = (dir?'<span class="pdir">'+esc(dir)+'</span>':"")+esc(base);
+  $("pvMeta").textContent = "loading…";
+  $("pvBody").innerHTML = '<div class="pv-empty">Loading…</div>';
+  const res = await sfetchSafe("/file?folder=" + encodeURIComponent(state.folder || "")
+    + "&source=" + encodeURIComponent(source) + cacheQ());
+  if(previewSrc !== source) return;                       // superseded by another click
+  if(!res || !res.ok){ previewRes = null; $("pvMeta").textContent = ""; $("pvBody").innerHTML = '<div class="pv-empty">'+esc((res&&res.error)||"Could not read this file")+'</div>'; return; }
+  previewRes = res;
+  const kb = res.bytes < 10240 ? (res.bytes/1024).toFixed(1) : Math.round(res.bytes/1024);
+  $("pvMeta").textContent = shortPath(res.path, state.home) + " · " + kb + " KB"
+    + (res.chunks != null ? (" · " + res.chunks + " chunk" + (res.chunks===1?"":"s")) : "")
+    + (res.truncated ? " · truncated" : "");
+  renderPreviewBody();
+}
+function closePreview(){ previewSrc = null; previewRes = null; appEl.classList.remove("preview-open"); $("preview").classList.remove("open"); markSelectedFile(null); }
+$("pvClose").addEventListener("click", closePreview);
+$("pvToggle").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-mode]"); if(!b || b.dataset.mode === previewMode) return;
+  previewMode = b.dataset.mode; renderPreviewBody();
+});
+document.addEventListener("keydown", (e) => {
+  if(e.key === "Escape" && !overlay.classList.contains("on") && appEl.classList.contains("preview-open")){ closePreview(); }
+});
+
+// ---- indexing (server-side build; page polls /status, no 60s cap) ----
+async function indexNow(force, onProg){
+  if(!await serveEnsure()) { renderIndex({ state:"error", msg:"server not ready" }); return false; }
+  const seq = ++indexSeq;
+  renderIndex({ state:"indexing", done:0, total:0 }); clearFiles();
+  const job = fused.trackJob({ title:"Indexing "+baseName(state.folder), kind:"task", unit:"", cancellable:false });
+  const started = await spost("/index", { folder:state.folder, rebuild:!!force, cache_dir:state.cacheDir || undefined });
+  if(!started || !started.ok){ renderIndex({ state:"error", msg:(started && started.error) || "index failed" }); job.fail("failed"); return false; }
+  for(let i=0; i<2000000; i++){
+    if(seq !== indexSeq){ job.finish("superseded"); return false; }
+    await sleep(700);
+    const st = await statusOf(state.folder);
+    if(!st) continue;
+    if(st.state === "indexing"){ renderIndex({ state:"indexing", done:st.done, total:st.total }); if(onProg) onProg(st.done, st.total); job.update({ done:st.done, total:st.total, detail:st.done+" / "+st.total+" chunks" }); continue; }
+    if(st.state === "ready"){ renderIndex({ state:"ready", docs:st.docs, chunks:st.chunks, truncated:st.truncated }); job.finish("Indexed "+st.chunks+" chunks"); await onIndexReady(); return true; }
+    if(st.state === "error"){ renderIndex({ state:"error", msg:st.error }); job.fail(st.error||"failed"); return false; }
+  }
+  return false;
+}
+async function ensureIndexReady(onProg){
+  const st = await statusOf(state.folder);
+  if(st && st.ok && st.state === "ready"){ renderIndex({ state:"ready", docs:st.docs, chunks:st.chunks, truncated:st.truncated }); await onIndexReady(); return true; }
+  return indexNow(false, onProg);
+}
+
+// ---- welcome / ready state ----
+function statsLine(){
+  const bits = [];
+  if(state.idxState === "ready"){ bits.push(state.idxDocs+" file"+(state.idxDocs===1?"":"s")); bits.push(state.idxChunks+" chunk"+(state.idxChunks===1?"":"s")); }
+  if(srv.model) bits.push(shortModel(srv.model));
+  if(srv.device) bits.push(srv.device);
+  return bits.join(" · ");
+}
+function renderWelcome(){
+  const isDefault = !state.folder;
+  const ready = state.idxState === "ready";
+  const name = isDefault ? "the Meridian&nbsp;Coffee handbook" : esc(state.folderName);
+  const headline = (!isDefault && ready) ? ("Index ready — ask about " + name) : ("Ask " + name);
+  const stats = statsLine();
+  let body = '<div class="welcome"><div class="eb">DocChat · local index</div>'
+    + '<h1>'+headline+'</h1>'
+    + (stats ? '<div class="wstats">'+esc(stats)+'</div>' : '')
+    + '<div class="wdiv"></div>';
+  if(isDefault){
+    body += EXAMPLES.map((q,i) => '<div class="exrow" data-i="'+i+'"><span class="eg">›</span><span>'+esc(q)+'</span></div>').join("");
+  } else {
+    body += '<div class="wready">Ask your first question below.</div>';
+  }
+  body += '</div>';
+  transcript.innerHTML = body;
+  transcript.querySelectorAll(".exrow").forEach(el => el.addEventListener("click", () => ask(EXAMPLES[+el.dataset.i])));
+}
+function beginTurn(text){
+  const w = transcript.querySelector(".welcome"); if(w) transcript.innerHTML = "";
+  const d = document.createElement("div"); d.className = "turn";
+  d.innerHTML = '<div class="uturn"><span class="ug">›</span><span class="ut"></span></div>'
+    + '<div class="aslot"><span class="thinking">Thinking<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span></span></div>';
+  d.querySelector(".ut").textContent = text;
+  transcript.appendChild(d); scrollDown();
+  return d.querySelector(".aslot");
+}
+function setThinking(slot, label){
+  slot.innerHTML = '<span class="thinking">'+esc(label)+'<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span></span>';
+  scrollDown();
+}
+function sourcesHtml(results){
+  if(!results || !results.length) return "";
+  const rows = results.map((r,i) =>
+    '<div class="srcrow" data-i="'+i+'"><span class="sf" title="'+esc(r.source)+'">'+esc(r.source)+'</span>'+
+    '<span class="sc">#'+r.chunk_index+'</span><span class="ss">'+r.score.toFixed(3)+'</span>'+
+    '<span class="sbar"><i style="width:'+Math.max(0,Math.min(100,Math.round(r.score*100)))+'%"></i></span></div>').join("");
+  return '<details class="sources"><summary>Sources · '+results.length+'</summary>'+rows+'</details>';
+}
+// Minimal, safe markdown for answers: escape first, then bold/italic/code/links,
+// paragraphs, and -/1. lists. Underscores are left alone so snake_case survives.
+function mdInline(s){
+  // Split on `code` spans (odd parts) so emphasis/links only ever touch prose (even parts).
+  return s.split(/(`[^`]+`)/).map((part, i) => {
+    if(i % 2 === 1) return '<code>' + part.slice(1, -1) + '</code>';
+    part = part.replace(/\*\*([^*]+?)\*\*/g, '<strong>$1</strong>');
+    part = part.replace(/(^|[^*\w])\*([^*\n]+?)\*(?![*\w])/g, '$1<em>$2</em>');
+    part = part.replace(/\[([^\]]+?)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+    return part;
+  }).join("");
+}
+function renderMarkdown(src){
+  const lines = esc(String(src == null ? "" : src)).replace(/\r\n?/g, "\n").split("\n");
+  const out = []; let list = null, para = [];
+  const flushPara = () => { if(para.length){ out.push('<p>'+mdInline(para.join(" "))+'</p>'); para = []; } };
+  const closeList = () => { if(list){ out.push("</"+list+">"); list = null; } };
+  for(const raw of lines){
+    const line = raw.replace(/\s+$/, "");
+    if(!line.trim()){ flushPara(); closeList(); continue; }
+    let m;
+    if(m = line.match(/^\s{0,3}#{1,6}\s+(.*)$/)){ flushPara(); closeList(); out.push('<div class="md-h">'+mdInline(m[1])+'</div>'); continue; }
+    if(m = line.match(/^\s{0,3}[-*+]\s+(.*)$/)){ flushPara(); if(list !== "ul"){ closeList(); out.push("<ul>"); list = "ul"; } out.push('<li>'+mdInline(m[1])+'</li>'); continue; }
+    if(m = line.match(/^\s{0,3}\d+[.)]\s+(.*)$/)){ flushPara(); if(list !== "ol"){ closeList(); out.push("<ol>"); list = "ol"; } out.push('<li>'+mdInline(m[1])+'</li>'); continue; }
+    if(list) closeList();
+    para.push(line.trim());
+  }
+  flushPara(); closeList();
+  return out.join("") || "<p></p>";
+}
+function renderAnswer(slot, answer, results, meta){
+  meta = meta || {};
+  let metaLine = "";
+  if(meta.passages) metaLine = '<div class="meta">Passages only — no LLM · embedded by '+esc(shortModel(srv.model))+' on '+esc(srv.device)+'</div>';
+  else if(meta.backend === "ai") metaLine = '<div class="meta">Fused AI · '+esc(meta.model||"")+(meta.usage?(' · '+meta.usage.input_tokens+'→'+meta.usage.output_tokens+' tok'):"")+' · retrieval by '+esc(shortModel(srv.model))+'</div>';
+  const note = meta.note ? '<div class="note">'+esc(meta.note)+'</div>' : "";
+  slot.innerHTML = note + '<div class="answer">'+renderMarkdown(answer)+'</div>' + metaLine + sourcesHtml(results);
+  slot.querySelectorAll(".srcrow .sf").forEach((el) => {
+    const r = results[+el.closest(".srcrow").dataset.i];
+    el.addEventListener("click", () => openPreview(r.source, r.chunk));
+  });
+  scrollDown();
+}
+function renderErr(slot, error){
+  slot.innerHTML = '<div class="setup"><h3>Something went wrong</h3><div>'+esc((error && error.message) || "Unknown error")+'</div></div>';
+  scrollDown();
+}
+function buildContext(results){
+  return results.slice(0, 3).map(r => "["+r.source+"]\n"+(r.chunk.length > 500 ? r.chunk.slice(0, 500)+"…" : r.chunk)).join("\n\n");
+}
+function extractiveAnswer(results){
+  if(!results.length) return "No relevant passages found in this source.";
+  return "Here are the most relevant passages:\n\n" + results.slice(0,3).map(r => "- **"+r.source+"** — "+r.chunk.replace(/\s+/g," ").trim().slice(0,220)+"…").join("\n");
+}
+async function answerWithAI(question, results){
+  return fused.ai(
+    "Context excerpts from the documents:\n---\n" + buildContext(results) + "\n---\n\nQuestion: " + question + "\n\nAnswer:",
+    { systemPrompt: "You are DocChat. Answer the question using ONLY the provided context excerpts. Cite the source filename in parentheses when you use a fact. If the answer is not in the context, say you don't know. Be concise.", effort: "low" });
+}
+
+async function runQuestion(text){
+  const slot = beginTurn(text);
+  if(!srv.ready){ setThinking(slot, "Starting "+shortModel(state.model)); if(!await serveEnsure()){ renderErr(slot, {message:"The embedding server isn't ready yet."}); return; } }
+  setThinking(slot, "Preparing index");
+  const onProg = (d, t) => setThinking(slot, t ? ("Indexing this source · "+d+" / "+t+" chunks (first time)") : "Preparing index");
+  if(!await ensureIndexReady(onProg)){ renderErr(slot, {message:"Could not build the index for this source."}); return; }
+
+  setThinking(slot, "Searching");
+  const sr = await spost("/search", { folder:state.folder, q:text, k:5, cache_dir:state.cacheDir || undefined });
+  if(!sr || !sr.ok){ renderErr(slot, {message:(sr && sr.error) || "Search failed."}); return; }
+  const results = sr.results;
+
+  if(state.backend === "passages" || !AI_AVAILABLE){
+    const note = (state.backend === "ai" && !AI_AVAILABLE) ? "Fused AI is unavailable here (no claude CLI) — showing passages." : "";
+    renderAnswer(slot, extractiveAnswer(results), results, { passages:true, note });
+    return;
+  }
+  setThinking(slot, "Generating answer (Fused AI)");
+  try{ const r = await answerWithAI(text, results); renderAnswer(slot, r.text, results, { backend:"ai", model:r.model, usage:r.usage }); }
+  catch(e){ if(e && e.type === "ai_unavailable") renderAnswer(slot, extractiveAnswer(results), results, { passages:true, note:"Fused AI unavailable — "+e.message }); else renderErr(slot, {message:(e&&e.message)||"AI error"}); }
+}
+
+function setBusy(b){ state.busy = b; sendBtn.disabled = b; sendBtn.textContent = b ? "…" : "Send"; }
+function updateBackendUI(){
+  segAi.classList.toggle("on", state.backend === "ai");
+  segPassages.classList.toggle("on", state.backend === "passages");
+  segAi.disabled = !AI_AVAILABLE;
+  if(!AI_AVAILABLE) segAi.title = "Fused AI needs the claude CLI (not found here)";
+}
+function updateComposerContext(){
+  const name = state.folder ? state.folderName : "the handbook";
+  input.placeholder = "Ask about " + name + "…";
+  $("chint").textContent = "grounded in " + (state.folder ? (baseName(state.folder) + (state.isFile ? "" : "/")) : "docs/") + " · embeddings run locally";
+}
+
+// ---- theme ----
+function applyTheme(t){
+  state.theme = (t === "dark") ? "dark" : "light";
+  document.documentElement.dataset.theme = state.theme;
+  themeBtn.textContent = (state.theme === "dark") ? "☀" : "☾";
+  themeBtn.title = (state.theme === "dark") ? "Switch to light" : "Switch to dark";
+}
+themeBtn.addEventListener("click", () => fused.params.set("theme", state.theme === "dark" ? "light" : "dark"));
+
+// ---- source picking ----
+function chooseSource(path, isFile){
+  if(!isFile) pushRecent(path);
+  if(fused.params.get("q")) fused.params.set("q", "");    // switching source must not replay the last question
+  fused.params.set("folder", path || "");
+}
+function getRecent(){ try{ return JSON.parse(localStorage.getItem("docchat.recent") || "[]"); }catch(e){ return []; } }
+function pushRecent(p){ if(!p) return; try{ let a = getRecent().filter(x => x !== p); a.unshift(p); localStorage.setItem("docchat.recent", JSON.stringify(a.slice(0,8))); }catch(e){} }
+
+// ---- Choose-a-folder modal (browse endpoint = filesystem only, no build needed) ----
+const pk = { dir:"", home:"", parent:null, selFile:null };
+function openPicker(startDir){
+  overlay.innerHTML =
+    '<div class="dlg" role="dialog" aria-modal="true">' +
+      '<div class="dlg-h"><h2>Choose a folder</h2><button class="dlg-x" id="pkX" title="Close">✕</button></div>' +
+      '<div class="pathbar" id="pkPath"></div>' +
+      '<div class="dlg-body" id="pkBody"></div>' +
+      '<div class="dlg-f"><span class="info" id="pkInfo"></span>' +
+        '<button class="btn-quiet" id="pkCancel">Cancel</button>' +
+        '<button class="btn-primary" id="pkUse" disabled>Use this folder</button></div>' +
+    '</div>';
+  overlay.classList.add("on");
+  $("pkX").onclick = closePicker;
+  $("pkCancel").onclick = closePicker;
+  $("pkUse").onclick = () => { if(pk.selFile) pkConfirm(pk.selFile, true); else pkConfirm(pk.dir, false); };
+  overlay.onclick = (e) => { if(e.target === overlay) closePicker(); };
+  document.addEventListener("keydown", pkKey);
+  pkRender(startDir || "");
+}
+function closePicker(){ overlay.classList.remove("on"); overlay.innerHTML = ""; overlay.onclick = null; document.removeEventListener("keydown", pkKey); }
+function pkKey(e){
+  if(e.key === "Escape"){ e.preventDefault(); e.stopPropagation(); closePicker(); }
+  else if(e.key === "Enter" && !e.target.closest(".pathedit")){ e.preventDefault(); const u = $("pkUse"); if(u && !u.disabled) u.click(); }
+}
+function pkConfirm(path, isFile){ closePicker(); chooseSource(path, isFile); }
+function renderPathbar(){
+  const path = pk.dir;
+  const segs = path.split("/").filter(Boolean);
+  const winRoot = /^[A-Za-z]:$/.test(segs[0] || "");
+  const dirAt = i => { const s = segs.slice(0, i+1).join("/"); return winRoot ? (i ? s : s+"/") : "/"+s; };
+  let crumbs = winRoot ? "" : '<span class="seg2" data-dir="/">/</span>';
+  crumbs += segs.map((s,i) => (i || !winRoot ? '<span class="sepc">›</span>' : "") +
+    '<span class="seg2'+(i===segs.length-1?" leaf":"")+'" data-dir="'+esc(dirAt(i))+'">'+esc(s)+'</span>').join("");
+  $("pkPath").innerHTML = '<button class="up" id="pkUp" title="Up one level">↑</button>'
+    + '<div class="crumbs" id="pkCrumbs">'+crumbs+'</div>'
+    + '<button class="edit" id="pkEditBtn" title="Type or paste a path">✎</button>';
+  $("pkUp").onclick = () => { if(pk.parent) pkRender(pk.parent); };
+  $("pkEditBtn").onclick = startPathEdit;
+  $("pkCrumbs").querySelectorAll(".seg2[data-dir]").forEach(el => el.onclick = (e) => { e.stopPropagation(); pkRender(el.dataset.dir); });
+  $("pkCrumbs").onclick = (e) => { if(!e.target.closest(".seg2")) startPathEdit(); };
+}
+function startPathEdit(){
+  $("pkPath").innerHTML = '<input class="pathedit" id="pkEdit" spellcheck="false" placeholder="Paste or type a folder / file path, then Enter">'
+    + '<button class="go" id="pkGo" title="Go to path">→</button>';
+  const inp = $("pkEdit"); inp.value = pk.dir; inp.focus(); inp.select();
+  const go = () => { const v = inp.value.trim(); if(v) pkRender(v); };
+  $("pkGo").onclick = go;
+  inp.onkeydown = (e) => {
+    if(e.key === "Enter"){ e.preventDefault(); go(); }
+    else if(e.key === "Escape"){ e.stopPropagation(); renderPathbar(); }
+  };
+}
+function pkSetInfo(n, capped){ $("pkInfo").textContent = n + (capped?"+":"") + " readable file" + (n===1?"":"s"); }
+async function pkRender(dir){
+  const body = $("pkBody"); body.innerHTML = '<div class="pk-note">Loading…</div>';
+  if(!srv.token) await serveEnsure();      // need the auth token before /browse will answer
+  const res = await sfetchSafe("/browse?path=" + encodeURIComponent(dir || ""));
+  if(!res){ body.innerHTML = '<div class="pk-note">Server not reachable yet — give it a moment.</div>'; return; }
+  if(!res.ok){ body.innerHTML = '<div class="pk-note">'+esc(res.error)+'</div>'; return; }
+  pk.dir = res.path; pk.home = res.home; pk.parent = res.parent; pk.selFile = null;
+  renderPathbar();
+  let h = "";
+  const rec = getRecent().filter(p => p !== res.path).slice(0, 4);
+  if(rec.length){
+    h += '<div class="grp">Recent</div>';
+    h += rec.map(p => '<div class="row recent" data-nav="'+esc(p)+'" title="'+esc(p)+'">'+esc(shortPath(p, res.home))+'</div>').join("");
+    h += '<div class="grp">Folders</div>';
+  }
+  if(res.parent) h += '<div class="row up" data-nav="'+esc(res.parent)+'">↑ ..</div>';
+  h += res.dirs.map(d => '<div class="row dir" data-nav="'+esc(d.path)+'">'+esc(d.name)+'<span class="caret">›</span></div>').join("");
+  if(res.files.length){
+    h += '<div class="grp">Files</div>';
+    h += res.files.map(f => '<div class="row file" data-file="'+esc(f.path)+'" data-name="'+esc(f.name)+'">'+esc(f.name)+'</div>').join("");
+  }
+  if(!res.dirs.length && !res.files.length) h += '<div class="pk-note">No subfolders here — use this folder if it holds your documents.</div>';
+  body.innerHTML = h;
+  body.querySelectorAll("[data-nav]").forEach(el => el.onclick = () => pkRender(el.dataset.nav));
+  body.querySelectorAll("[data-file]").forEach(el => { el.onclick = () => pkSelectFile(el); el.ondblclick = () => pkConfirm(el.dataset.file, true); });
+  pkSetInfo(res.indexable, res.indexable_capped);
+  $("pkUse").disabled = false; $("pkUse").textContent = "Use this folder";
+  if(res.selected){ const row = body.querySelector('[data-file="'+cssEsc(res.selected)+'"]'); if(row) pkSelectFile(row); }
+}
+function pkSelectFile(el){
+  $("pkBody").querySelectorAll(".row.sel").forEach(r => r.classList.remove("sel"));
+  el.classList.add("sel"); pk.selFile = el.dataset.file;
+  $("pkUse").textContent = "Use this file"; $("pkInfo").textContent = el.dataset.name;
+}
+changeBtn.addEventListener("click", () => openPicker(state.folderPath || state.folder || ""));
+$("srcWrap").addEventListener("click", () => openPicker(state.folderPath || state.folder || ""));
+function sideGo(){ const v = $("sidePath").value.trim(); if(v){ $("sidePath").value = ""; chooseSource(v); } }
+$("sidePathGo").addEventListener("click", sideGo);
+$("sidePath").addEventListener("keydown", e => { if(e.key === "Enter"){ e.preventDefault(); sideGo(); } });
+
+// ---- params are state ----
+async function onParams(){
+  const q = fused.params.get("q") || "";
+  const folder = fused.params.get("folder") || "";
+  const model = fused.params.get("model") || DEFAULT_MODEL;
+  const cache = fused.params.get("cache") || "";
+  const backend = (fused.params.get("backend") === "passages") ? "passages" : "ai";
+  const theme = (fused.params.get("theme") === "dark") ? "dark" : "light";
+
+  if(theme !== state.theme) applyTheme(theme);
+  let structural = false, folderChanged = false, modelChanged = false, cacheChanged = false;
+  if(folder !== state.folder){ state.folder = folder; state.folderName = baseName(folder); structural = true; folderChanged = true; }
+  if(model !== state.model){ state.model = model; if(modelSel) modelSel.value = model; modelChanged = true; }
+  if(cache !== state.cacheDir){ state.cacheDir = cache; cacheChanged = true; renderCacheRow(false); }
+  state.backend = backend; updateBackendUI();
+
+  if(structural){ state.processedQ = null; closePreview(); transcript.innerHTML = ""; if(!q) renderWelcome(); }
+  if(modelChanged) await serveEnsure();                    // switch the served model (own index per model)
+  if(folderChanged || modelChanged || cacheChanged) await refreshSidebar();
+  if(cacheChanged && cachePendingNote){ cacheFlash(cachePendingNote, "ok"); cachePendingNote = ""; }
+  if(folderChanged && !q && srv.ready && state.idxState !== "ready") indexNow(false);   // cached source is already shown; don't rebuild
+
+  if(q && q !== state.processedQ){
+    state.processedQ = q;
+    if(state.busy) return;
+    setBusy(true);
+    try{ await runQuestion(q); } finally{ setBusy(false); }
+  } else if(!q && !transcript.querySelector(".turn")){ renderWelcome(); }
+}
+function ask(text){ text = (text||"").trim(); if(!text) return; input.value = ""; autosize(); fused.params.set("q", text); }
+function autosize(){ input.style.height="auto"; input.style.height=Math.min(input.scrollHeight,140)+"px"; }
+
+sendBtn.addEventListener("click", () => ask(input.value));
+input.addEventListener("input", autosize);
+input.addEventListener("keydown", e => { if(e.key === "Enter" && !e.shiftKey){ e.preventDefault(); ask(input.value); } });
+segAi.addEventListener("click", () => { if(!segAi.disabled) fused.params.set("backend", "ai"); });
+segPassages.addEventListener("click", () => fused.params.set("backend", "passages"));
+modelSel.addEventListener("change", onModelPick);
+
+// initial paint
+(async function boot(){
+  if(fused.autoReload) fused.autoReload(false);   // this app owns a long-lived server; don't reload under the user
+  state.theme = (fused.params.get("theme") === "dark") ? "dark" : "light";
+  state.folder = fused.params.get("folder") || "";
+  state.folderName = baseName(state.folder);
+  const urlModel = fused.params.get("model");
+  state.model = urlModel || DEFAULT_MODEL;
+  state.cacheDir = fused.params.get("cache") || "";
+  state.backend = (fused.params.get("backend") === "passages") ? "passages" : "ai";
+  if(!AI_AVAILABLE) state.backend = "passages";
+  applyTheme(state.theme); updateBackendUI(); renderCacheRow(false); updateComposerContext(); renderWelcome();
+  // Adopt an already-running server's model on load — ALWAYS. The running server
+  // is authoritative; a navigation / live-preview must never restart it (which
+  // would pop a console and kill an in-progress index). Only an explicit dropdown
+  // change switches models. Persist to the URL so onParams agrees and doesn't switch back.
+  const running = await sfetchSafe("/health");
+  if(running && running.model){ state.model = running.model; fused.params.set("model", state.model); }  // adopt the running model even if it's still loading — never fight a starting server
+  modelSel.value = state.model;
+  await serveEnsure();
+  await refreshSidebar();
+  fused.params.onChange(onParams);
+  onParams();
+})();
+</script>
+</body>
+</html>
