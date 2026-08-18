@@ -1,0 +1,1198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VPS Manager</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css">
+<script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
+<style>
+  :root {
+    --blue: #166ee1; --blue-2: #2d7ff9; --blue-soft: #e8f0fe; --blue-ink: #0f5bc4;
+    --canvas: #f7f8fa; --chrome: #ffffff; --hair: #e0e3e8; --hair-2: #eceef1;
+    --ink: #1d2025; --ink-2: #4c5560; --ink-3: #8a929e;
+    --danger: #d64b4b; --danger-soft: #fdecec; --ok: #1a9c67; --amber: #d98218;
+    --radius: 6px; --radius-lg: 10px;
+    --shadow-1: 0 1px 2px rgba(15,23,42,.06), 0 1px 3px rgba(15,23,42,.08);
+    --shadow-2: 0 6px 24px rgba(15,23,42,.16);
+    --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body { font-family: var(--font); color: var(--ink); background: var(--canvas);
+    font-size: 13px; height: 100vh; display: flex; flex-direction: column; overflow: hidden;
+    -webkit-font-smoothing: antialiased; }
+  button, input, select { font: inherit; }
+  code { font-family: var(--mono); font-size: .93em; }
+  button { cursor: pointer; }
+  .hidden { display: none !important; }
+  .spacer { flex: 1 1 auto; }
+  svg { width: 15px; height: 15px; pointer-events: none; flex: 0 0 auto; }
+
+  #topbar { display: flex; align-items: center; gap: 10px; padding: 7px 12px; flex: 0 0 auto;
+    background: var(--chrome); border-bottom: 1px solid var(--hair); z-index: 30; }
+  .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; letter-spacing: .2px; }
+  .brand .mark { width: 22px; height: 22px; border-radius: 5px; background: var(--blue);
+    color: #fff; display: grid; place-items: center; font-size: 11px; font-weight: 800; font-family: var(--mono); }
+  .btn { display: inline-flex; align-items: center; gap: 6px; background: var(--chrome); color: var(--ink);
+    border: 1px solid var(--hair); border-radius: var(--radius); padding: 6px 11px; font-weight: 500; }
+  .btn:hover { background: var(--hair-2); }
+  .btn:disabled { opacity: .45; cursor: default; }
+  .btn.primary { background: var(--blue); color: #fff; border-color: var(--blue); font-weight: 600; }
+  .btn.primary:hover { background: var(--blue-ink); }
+  .btn.ghost { border-color: transparent; background: transparent; }
+  .btn.ghost:hover { background: var(--hair-2); }
+  .btn.sm { padding: 4px 8px; }
+  #status { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 600;
+    color: var(--ink-3); font-variant-numeric: tabular-nums; }
+  #status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ink-3); }
+  #status.ok .dot { background: var(--ok); } #status.ok { color: var(--ok); }
+  #status.err .dot { background: var(--danger); } #status.err { color: var(--danger); }
+  #status.busy .dot { background: var(--amber); animation: pulse 1s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+  #main { flex: 1 1 auto; min-height: 0; display: flex; }
+
+  /* ---- machines sidebar ---- */
+  #side { flex: 0 0 250px; overflow-y: auto; background: var(--chrome); border-right: 1px solid var(--hair);
+    padding: 12px 8px; display: flex; flex-direction: column; gap: 6px; }
+  #side h4 { margin: 2px 6px 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .7px;
+    color: var(--ink-3); display: flex; align-items: center; }
+  #side h4 .add { margin-left: auto; border: none; background: none; color: var(--ink-3); font-size: 17px;
+    line-height: 1; padding: 0 5px; border-radius: 4px; cursor: pointer; }
+  #side h4 .add:hover { background: var(--hair-2); color: var(--blue); }
+  #side h4 .check { margin-left: auto; border: none; background: none; color: var(--ink-3); padding: 2px 4px 0;
+    border-radius: 4px; cursor: pointer; display: inline-flex; }
+  #side h4 .check:hover { background: var(--hair-2); color: var(--blue); }
+  #side h4 .check svg { width: 13px; height: 13px; }
+  #side h4 .check.spin svg { animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .group { margin: 8px 6px 2px; font-size: 10.5px; letter-spacing: .6px; text-transform: uppercase;
+    color: var(--ink-3); display: flex; align-items: center; gap: 5px; }
+  .group:first-child { margin-top: 0; }
+  .group code { font-family: var(--mono); text-transform: none; letter-spacing: 0; font-size: 10.5px; }
+  .machine { display: flex; align-items: center; gap: 9px; width: 100%; border: 1px solid transparent;
+    background: none; color: var(--ink-2); padding: 8px 8px; border-radius: 7px; text-align: left; position: relative; }
+  .machine:hover { background: var(--hair-2); color: var(--ink); }
+  .machine.on { background: var(--blue-soft); border-color: #c9ddfb; color: var(--blue-ink); }
+  .machine .mdot { width: 9px; height: 9px; border-radius: 50%; background: var(--ink-3); flex: 0 0 auto;
+    box-shadow: 0 0 0 3px rgba(0,0,0,0); }
+  .machine.up .mdot { background: var(--ok); box-shadow: 0 0 0 3px rgba(26,156,103,.16); }
+  .machine.down .mdot { background: var(--danger); }
+  .machine.pending .mdot { background: var(--amber); animation: pulse 1s infinite; }
+  .machine.live .mdot { background: #fff; box-shadow: inset 0 0 0 2px var(--ok); }
+  .machine .info { flex: 1 1 auto; min-width: 0; }
+  .machine .nm { font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .machine .sub { font-size: 11px; color: var(--ink-3); font-family: var(--mono); overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+  .machine .why { font-size: 11px; color: var(--ink-3); overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; margin-top: 1px; }
+  .machine.down .why { color: var(--danger); }
+  .machine .tag { flex: 0 0 auto; align-self: flex-start; font-size: 9.5px; font-weight: 700;
+    letter-spacing: .4px; text-transform: uppercase; color: var(--ink-3); background: var(--hair-2);
+    border-radius: 4px; padding: 2px 4px; }
+  .machine .ops { display: none; position: absolute; right: 6px; top: 6px; background: #fff; border-radius: 6px;
+    box-shadow: var(--shadow-1); }
+  .machine:hover .ops { display: inline-flex; }
+  .machine .ops button { border: none; background: none; padding: 4px 5px; border-radius: 4px; color: var(--ink-2); display: inline-flex; }
+  .machine .ops button:hover { background: var(--hair-2); color: var(--ink); }
+  .machine .ops button.danger:hover { background: var(--danger-soft); color: var(--danger); }
+  .machine .ops svg { width: 13px; height: 13px; }
+  .side-empty { color: var(--ink-3); padding: 10px 8px; font-size: 12px; line-height: 1.5; }
+  .side-note { margin: 6px; padding: 7px 9px; border-radius: 6px; background: var(--danger-soft);
+    color: var(--danger); font-size: 11.5px; line-height: 1.45; }
+  .hidden-toggle { margin-top: 4px; border: none; background: none; color: var(--ink-3); font-size: 11px;
+    text-align: left; padding: 6px 8px; border-radius: 6px; width: 100%; }
+  .hidden-toggle:hover { background: var(--hair-2); color: var(--ink-2); }
+
+  /* ---- content ---- */
+  #content { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+  #contentbar { display: flex; align-items: center; gap: 8px; padding: 7px 12px; flex: 0 0 auto;
+    background: var(--chrome); border-bottom: 1px solid var(--hair); }
+  #contentbar .title { font-weight: 700; font-size: 13.5px; }
+  #contentbar .host { color: var(--ink-3); font-family: var(--mono); font-size: 12px; }
+  .conn-pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--ink-3); }
+  .conn-pill .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ink-3); }
+  .conn-pill.ok { color: var(--ok); } .conn-pill.ok .dot { background: var(--ok); }
+  .conn-pill.err { color: var(--danger); } .conn-pill.err .dot { background: var(--danger); }
+  .conn-pill.pending { color: var(--amber); } .conn-pill.pending .dot { background: var(--amber); animation: pulse 1s infinite; }
+  #searchWrap { display: inline-flex; align-items: center; gap: 6px; margin-left: 8px; padding: 5px 9px;
+    background: var(--canvas); border: 1px solid var(--hair); border-radius: 999px; width: 260px; max-width: 32vw; }
+  #searchWrap.hidden { display: none; }
+  #searchWrap:focus-within { border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-soft); background: #fff; }
+  #searchWrap svg { width: 14px; height: 14px; color: var(--ink-3); }
+  #searchInput { flex: 1 1 auto; min-width: 0; border: none; background: none; outline: none; font-size: 12.5px; color: var(--ink); }
+  #searchClear { border: none; background: none; padding: 2px; border-radius: 4px; color: var(--ink-3); display: none; }
+  #searchClear svg { width: 13px; height: 13px; }
+  #searchWrap.active #searchClear { display: inline-flex; }
+  #searchClear:hover { background: var(--hair-2); color: var(--ink); }
+  .seg { display: inline-flex; background: var(--hair-2); border-radius: var(--radius); padding: 2px; gap: 2px; }
+  .seg button { border: none; background: transparent; color: var(--ink-2); border-radius: 4px;
+    padding: 5px 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
+  .seg button.on { background: #fff; color: var(--blue); box-shadow: var(--shadow-1); }
+
+  #panes { flex: 1 1 auto; min-height: 0; position: relative; }
+  .pane { position: absolute; inset: 0; display: flex; flex-direction: column; }
+  .pane.hidden { display: none; }
+
+  /* placeholder / empty state */
+  #placeholder { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 10px; color: var(--ink-3); text-align: center; padding: 24px; }
+  #placeholder svg { width: 42px; height: 42px; opacity: .5; }
+  #placeholder .big { font-size: 15px; font-weight: 600; color: var(--ink-2); }
+
+  /* ---- files pane (list + preview split) ---- */
+  #filespane { flex-direction: row; }
+  .files-col { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+  #filespane.previewing .files-col { flex: 0 0 40%; max-width: 480px; border-right: 1px solid var(--hair); }
+  #crumbs { display: flex; align-items: center; gap: 4px; padding: 8px 12px; flex: 0 0 auto;
+    border-bottom: 1px solid var(--hair-2); overflow-x: auto; white-space: nowrap; }
+  #crumbs .seg-crumb { border: none; background: none; color: var(--blue); font-weight: 600; padding: 3px 6px;
+    border-radius: 5px; font-size: 12.5px; }
+  #crumbs .seg-crumb:hover { background: var(--blue-soft); }
+  #crumbs .sep { color: var(--ink-3); }
+  #fileActions { display: flex; align-items: center; gap: 6px; padding: 6px 12px; flex: 0 0 auto;
+    border-bottom: 1px solid var(--hair-2); }
+  #filelist { flex: 1 1 auto; overflow-y: auto; }
+  .frow { display: flex; align-items: center; gap: 10px; padding: 7px 14px; border-bottom: 1px solid var(--hair-2);
+    cursor: default; }
+  .frow:hover { background: var(--hair-2); }
+  .frow.sel { background: var(--blue-soft); }
+  .frow .fico { color: var(--ink-3); display: inline-flex; }
+  .frow.dir .fico { color: var(--blue); }
+  .frow .fname { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+  .frow.dir .fname { font-weight: 600; }
+  .frow .fpath { color: var(--ink-3); font-size: 11.5px; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; direction: rtl; text-align: left; max-width: 45%; }
+  .frow .fmeta { color: var(--ink-3); font-size: 11.5px; font-variant-numeric: tabular-nums; flex: 0 0 auto; }
+  .frow .frowops { display: none; gap: 2px; }
+  .frow:hover .frowops { display: inline-flex; }
+  .frowops button { border: none; background: none; padding: 4px 5px; border-radius: 4px; color: var(--ink-2); display: inline-flex; }
+  .frowops button:hover { background: #fff; color: var(--ink); box-shadow: var(--shadow-1); }
+  .frowops button.danger:hover { color: var(--danger); }
+  .files-empty { padding: 24px; text-align: center; color: var(--ink-3); }
+  .files-err { padding: 20px; margin: 16px; background: var(--danger-soft); color: var(--danger);
+    border-radius: var(--radius); font-family: var(--mono); font-size: 12px; white-space: pre-wrap; }
+
+  /* ---- preview pane ---- */
+  #previewpane { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; background: #fff; }
+  #previewpane.hidden { display: none; }
+  #previewbar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; flex: 0 0 auto;
+    background: var(--chrome); border-bottom: 1px solid var(--hair); }
+  #previewName { font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; }
+  #previewMeta { color: var(--ink-3); font-size: 11.5px; font-variant-numeric: tabular-nums; flex: 0 0 auto; }
+  #previewBody { flex: 1 1 auto; min-height: 0; position: relative; background: var(--canvas); }
+  #previewFrame { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: #fff; }
+  #previewOverlay { position: absolute; inset: 0; display: none; flex-direction: column; align-items: center;
+    justify-content: center; gap: 12px; text-align: center; padding: 24px; color: var(--ink-3); background: var(--canvas); }
+  #previewOverlay.on { display: flex; }
+  #previewOverlay .spin { width: 26px; height: 26px; border: 3px solid var(--hair); border-top-color: var(--blue);
+    border-radius: 50%; animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ---- terminal pane ---- */
+  #termpane { background: #1e1e2e; }
+  #term { flex: 1 1 auto; min-height: 0; padding: 6px 8px; }
+  #termbar { display: flex; align-items: center; gap: 8px; padding: 6px 12px; flex: 0 0 auto;
+    background: #181825; color: #cdd6f4; border-bottom: 1px solid #313244; font-size: 12px; }
+  #termbar .btn { background: #313244; border-color: #45475a; color: #cdd6f4; }
+  #termbar .btn:hover { background: #45475a; }
+
+  /* ---- modal ---- */
+  #overlay { position: fixed; inset: 0; background: rgba(15,23,42,.35); display: none; align-items: center;
+    justify-content: center; z-index: 100; }
+  #overlay.on { display: flex; }
+  .modal { background: #fff; border-radius: var(--radius-lg); box-shadow: var(--shadow-2); width: 440px;
+    max-width: 92vw; padding: 20px; }
+  .modal h3 { margin: 0 0 14px; font-size: 16px; }
+  .field { margin-bottom: 12px; }
+  .field label { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .5px;
+    color: var(--ink-3); margin-bottom: 4px; font-weight: 600; }
+  .field input { width: 100%; padding: 8px 10px; border: 1px solid var(--hair); border-radius: var(--radius);
+    font-family: var(--mono); font-size: 12.5px; }
+  .field input:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-soft); }
+  .field .hint { color: var(--ink-3); font-size: 11px; margin-top: 3px; }
+  .row2 { display: flex; gap: 12px; }
+  .row2 .field { flex: 1; }
+  .row2 .field.port { flex: 0 0 92px; }
+  .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+  .modal-err { color: var(--danger); font-size: 12px; margin-bottom: 10px; display: none; }
+  .modal-err.on { display: block; }
+
+  #toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--ink);
+    color: #fff; padding: 9px 16px; border-radius: 8px; font-size: 12.5px; box-shadow: var(--shadow-2);
+    opacity: 0; transition: opacity .18s, transform .18s; pointer-events: none; z-index: 200; }
+  #toast.on { opacity: 1; transform: translateX(-50%) translateY(-4px); }
+  #toast.err { background: var(--danger); }
+</style>
+</head>
+<body>
+<div id="topbar">
+  <div class="brand"><span class="mark">VM</span> VPS Manager</div>
+  <div class="spacer"></div>
+  <div id="status"><span class="dot"></span><span id="statusText">starting…</span></div>
+</div>
+
+<div id="main">
+  <aside id="side">
+    <h4>Machines
+      <button class="check" id="checkBtn" title="Log in to every machine and check it">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6"/></svg>
+      </button>
+      <button class="add" id="addBtn" title="Add machine by hand">+</button>
+    </h4>
+    <div id="machineList"></div>
+  </aside>
+
+  <section id="content">
+    <div id="contentbar" class="hidden">
+      <span class="title" id="mTitle"></span>
+      <span class="host" id="mHost"></span>
+      <div id="searchWrap" class="hidden">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+        <input id="searchInput" type="text" placeholder="Search this folder…" autocomplete="off" spellcheck="false">
+        <button id="searchClear" title="Clear search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      </div>
+      <div class="spacer"></div>
+      <span id="connState"></span>
+      <div class="seg" id="viewSeg">
+        <button data-view="files" class="on">Files</button>
+        <button data-view="terminal">Terminal</button>
+      </div>
+    </div>
+
+    <div id="panes">
+      <div id="placeholder">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+        <div class="big">No machine selected</div>
+        <div>Pick a machine on the left — they come from your <code>~/.ssh/config</code>.<br>
+          Use <b>+</b> for a host that isn't in there.</div>
+      </div>
+
+      <div class="pane hidden" id="filespane">
+        <div class="files-col">
+          <div id="crumbs"></div>
+          <div id="fileActions">
+            <button class="btn sm" id="upBtn" title="Up one level"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
+            <button class="btn sm" id="refreshBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6"/></svg> Refresh</button>
+            <button class="btn sm" id="mkdirBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M12 11v4M10 13h4"/></svg> New folder</button>
+            <button class="btn sm" id="uploadBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 15V3M7 8l5-5 5 5M5 21h14"/></svg> Upload</button>
+            <input type="file" id="fileInput" class="hidden">
+          </div>
+          <div id="filelist"></div>
+        </div>
+        <div id="previewpane" class="hidden">
+          <div id="previewbar">
+            <span id="previewName"></span>
+            <span id="previewMeta"></span>
+            <div class="spacer"></div>
+            <button class="btn sm" id="previewOpen" title="Open with full viewer in a new tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 3h7v7M21 3l-9 9M19 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h5"/></svg></button>
+            <button class="btn sm" id="previewDownload" title="Download"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg></button>
+            <button class="btn sm" id="previewClose" title="Close preview"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+          </div>
+          <div id="previewBody">
+            <iframe id="previewFrame" title="file preview"></iframe>
+            <div id="previewOverlay"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="pane hidden" id="termpane">
+        <div id="termbar">
+          <span id="termStatus">connecting…</span>
+          <div class="spacer"></div>
+          <button class="btn sm" id="termClear">Clear</button>
+          <button class="btn sm" id="termReconnect">Reconnect</button>
+        </div>
+        <div id="term"></div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- add / edit machine modal -->
+<div id="overlay">
+  <div class="modal">
+    <h3 id="modalTitle">Add machine</h3>
+    <div class="modal-err" id="modalErr"></div>
+    <div class="field">
+      <label>Name</label>
+      <input id="fName" placeholder="my-vps" autocomplete="off">
+    </div>
+    <div class="row2">
+      <div class="field">
+        <label>Host / IP</label>
+        <input id="fHost" placeholder="203.0.113.10" autocomplete="off">
+      </div>
+      <div class="field port">
+        <label>Port</label>
+        <input id="fPort" placeholder="22" value="22" autocomplete="off">
+      </div>
+    </div>
+    <div class="field">
+      <label>Username</label>
+      <input id="fUser" placeholder="root" autocomplete="off">
+    </div>
+    <div class="field">
+      <label>Private key file</label>
+      <input id="fKey" placeholder="~/.ssh/id_ed25519" autocomplete="off">
+      <div class="hint">Path to a private key on this machine. Leave blank to use a password or the SSH agent.</div>
+    </div>
+    <div class="field">
+      <label>Jump host <span style="text-transform:none;color:var(--ink-3)">(optional)</span></label>
+      <input id="fJump" placeholder="bastion.example.com" autocomplete="off">
+      <div class="hint">Dial through this host first, like ssh's <code>ProxyJump</code>. Copied
+        from the config host when you make an editable copy; clear it to connect directly.</div>
+    </div>
+    <div class="field">
+      <label>Password <span style="text-transform:none;color:var(--ink-3)">(optional)</span></label>
+      <input id="fPass" type="password" placeholder="leave blank if using a key" autocomplete="new-password">
+      <label id="fPassClearRow" style="display:none;text-transform:none;font-weight:normal;color:var(--ink-3);margin-top:6px">
+        <input type="checkbox" id="fPassClear"> Clear the saved password (switch to a key or the SSH agent)
+      </label>
+    </div>
+    <div class="modal-actions">
+      <button class="btn ghost" id="modalCancel">Cancel</button>
+      <button class="btn primary" id="modalSave">Save</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+const PY = "./vps.py";
+let BASE = null;           // daemon base url, e.g. http://127.0.0.1:PORT
+let TOK = "";              // per-daemon token; loopback + open CORS is not a boundary
+let machines = [];
+let hiddenMachines = [];   // ssh-config hosts the user hid
+let knownHosts = [];       // hosts only ~/.ssh/known_hosts remembers
+let knownInfo = { total: 0, hashed: 0, path: "" };
+let showHidden = false, showAllKnown = false;
+let sshConfig = { path: "", error: "" };
+const probes = new Map();  // machine id -> {state: up|down|pending, detail, error, ms}
+let current = null;        // selected machine id
+let view = "files";
+let cwd = null;
+let editingId = null;
+let term = null, fit = null, ws = null, termedId = null;
+let previewPath = null;        // remote path currently shown in the preview pane
+let searchTimer = null, searchSeq = 0;  // debounce + stale-response guard for search
+const PREVIEW_MAX = 50 * 1024 * 1024;   // ask before downloading files larger than this
+// the "no machine selected" markup, kept because a failed connect overwrites the
+// placeholder with an error and a Retry bound to that machine
+const EMPTY_STATE = document.getElementById("placeholder").innerHTML;
+
+// ---------- infra ----------
+function setStatus(kind, text) {
+  const el = document.getElementById("status");
+  el.className = kind;
+  document.getElementById("statusText").textContent = text;
+}
+let toastT = null;
+function toast(msg, isErr) {
+  const t = document.getElementById("toast");
+  t.textContent = msg; t.className = "on" + (isErr ? " err" : "");
+  clearTimeout(toastT);
+  toastT = setTimeout(() => t.className = "", 2600);
+}
+function url(path) {
+  return BASE + path + (path.includes("?") ? "&" : "?") + "t=" + encodeURIComponent(TOK);
+}
+// A machine id carries the ssh-config alias or the known_hosts host verbatim, so
+// it can hold anything those files allow. The daemon parses the query with
+// parse_qs, which reads a "+" as a space and an "&" as the next parameter, so ids
+// never go in raw.
+function idq(id) { return "id=" + encodeURIComponent(id); }
+async function api(path, opts) {
+  const res = await fetch(url(path), opts);
+  const text = await res.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : {}; } catch { data = { detail: text }; }
+  if (!res.ok) throw new Error((data && data.detail) || res.statusText);
+  return data;
+}
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+function fmtSize(n) {
+  if (!n) return "";
+  const u = ["B", "KB", "MB", "GB", "TB"]; let i = 0;
+  while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+  return (i ? n.toFixed(1) : n) + " " + u[i];
+}
+function fmtDate(t) {
+  if (!t) return "";
+  const d = new Date(t * 1000);
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" }) + " " +
+         d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+}
+
+// ---------- boot ----------
+async function boot() {
+  setStatus("busy", "starting daemon…");
+  try {
+    const r = await fused.runPython(PY, { action: "ensure" });
+    if (r.error) throw new Error(r.error);
+    BASE = "http://127.0.0.1:" + r.port;
+    TOK = r.token || "";
+    setStatus("ok", "ready");
+    await refreshMachines();
+    await loadKnown();
+    checkAll();
+  } catch (e) {
+    setStatus("err", "daemon failed");
+    document.getElementById("machineList").innerHTML =
+      '<div class="side-empty">Could not start the SSH daemon:<br><br>' + esc(e.message) + '</div>';
+  }
+}
+
+async function refreshMachines() {
+  const r = await api("/machines");
+  machines = r.machines;
+  hiddenMachines = r.hidden || [];
+  sshConfig = { path: r.config_path || "", error: r.config_error || "" };
+  for (const m of machines)
+    if (m.connected && !probes.has(m.id)) probes.set(m.id, { state: "up" });
+  renderMachines();
+  if (current && !machines.find(m => m.id === current)) selectMachine(null);
+}
+
+const isCfg = m => m.source === "ssh_config";
+const ICON = {
+  pencil: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>',
+  trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>',
+  eye: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>',
+  eyeOff: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3l18 18M10.6 5.2A9.6 9.6 0 0 1 12 5c6 0 10 7 10 7a17 17 0 0 1-2.6 3.4M6.5 7.6C3.9 9.3 2 12 2 12s4 7 10 7a9.7 9.7 0 0 0 4-.85"/></svg>',
+  plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>',
+};
+
+function renderMachines() {
+  const box = document.getElementById("machineList");
+  box.innerHTML = "";
+  if (sshConfig.error)
+    box.insertAdjacentHTML("beforeend", '<div class="side-note">Could not read ' +
+      esc(sshConfig.path || "~/.ssh/config") + ': ' + esc(sshConfig.error) + '</div>');
+  // known_hosts counts too: a machine list built only from hosts you logged into
+  // once is a normal state, and bailing here would hide every one of them
+  if (!machines.length && !hiddenMachines.length && !knownHosts.length) {
+    box.insertAdjacentHTML("beforeend", '<div class="side-empty">No hosts in your ' +
+      '<code>~/.ssh/config</code>. Add one there, or click <b>+</b> to add it here.</div>');
+    return;
+  }
+  const groups = [["ssh config", machines.filter(isCfg)],
+                  ["added here", machines.filter(m => !isCfg(m))]].filter(g => g[1].length);
+  for (const [label, list] of groups) {
+    if (groups.length > 1 || label === "ssh config") {
+      const h = document.createElement("div");
+      h.className = "group";
+      h.textContent = label;
+      if (label === "ssh config" && sshConfig.path) h.title = sshConfig.path;
+      box.appendChild(h);
+    }
+    for (const m of list) box.appendChild(machineRow(m, false));
+  }
+  if (hiddenMachines.length) {
+    const t = document.createElement("button");
+    t.className = "hidden-toggle";
+    t.textContent = (showHidden ? "▾ " : "▸ ") + hiddenMachines.length + " hidden from ssh config";
+    t.onclick = () => { showHidden = !showHidden; renderMachines(); };
+    box.appendChild(t);
+    if (showHidden) for (const m of hiddenMachines) box.appendChild(machineRow(m, true));
+  }
+  renderKnown(box);
+}
+
+// ---------- hosts we've only ever logged in to once ----------
+function renderKnown(box) {
+  if (!knownHosts.length) return;
+  const dead = m => (probes.get(m.id) || {}).state === "down";
+  const quiet = knownHosts.filter(dead);
+  const shown = showAllKnown ? knownHosts : knownHosts.filter(m => !dead(m));
+  const h = document.createElement("div");
+  h.className = "group";
+  h.textContent = "seen once";
+  h.title = knownInfo.path + "\n" + knownInfo.total + " keys remembered" +
+            (knownInfo.hashed ? ", " + knownInfo.hashed + " hashed and unreadable" : "");
+  box.appendChild(h);
+  for (const m of shown) box.appendChild(machineRow(m, false));
+  if (quiet.length && !showAllKnown) {
+    const t = document.createElement("button");
+    t.className = "hidden-toggle";
+    t.textContent = "▸ " + quiet.length + " not answering";
+    t.onclick = () => { showAllKnown = true; renderMachines(); };
+    box.appendChild(t);
+  }
+}
+
+function machineRow(m, isHiddenRow) {
+  const p = probes.get(m.id) || {};
+  const known = m.source === "known_hosts";
+  const why = p.state === "down" ? (p.error || "did not answer")
+            : p.state === "live" ? (p.banner || "answering") + (p.ms ? " · " + p.ms + " ms" : "")
+            : (p.detail || "");
+  const tip = [(known ? "guessing " : "") + m.username + "@" + m.host + ":" + m.port,
+               m.key_path ? "key " + m.key_path : known ? "will try your ~/.ssh keys"
+                 : "agent or password",
+               m.proxy_jump ? "via " + m.proxy_jump : "",
+               p.state === "down" ? "last check failed: " + (p.error || "no answer")
+                 : p.ms ? (p.state === "live" ? "answered in " : "signed in in ") + p.ms + " ms" : "",
+               known ? "click to try signing in and save it" : ""].filter(Boolean).join("\n");
+  const acts = isHiddenRow ? [["unhide", "Show this host again", ICON.eye, ""]]
+    : known ? [["save", "Add to the list so you can set the user and key", ICON.plus, ""]]
+    : isCfg(m) ? [["copy", "Make an editable copy (e.g. to add a password)", ICON.pencil, ""],
+                  ["hide", "Hide from this list", ICON.eyeOff, ""]]
+    : [["edit", "Edit", ICON.pencil, ""], ["del", "Remove", ICON.trash, " class=danger"]];
+  const el = document.createElement("button");
+  el.className = "machine" + (m.id === current ? " on" : "") + (p.state ? " " + p.state : "");
+  el.title = tip;
+  el.innerHTML =
+    '<span class="mdot"></span>' +
+    '<span class="info"><div class="nm">' + esc(m.name || m.host) + '</div>' +
+    '<div class="sub">' + esc(m.username) + '@' + esc(m.host) + (m.port != 22 ? ":" + m.port : "") + '</div>' +
+    (why ? '<div class="why">' + esc(why) + '</div>' : '') + '</span>' +
+    (m.from_config ? '<span class="tag" title="also in ssh config as ' + esc(m.from_config) + '">cfg</span>' : '') +
+    '<span class="ops">' + acts.map(([act, title, svg, cls]) =>
+      '<button data-act="' + act + '"' + cls + ' title="' + esc(title) + '">' + svg + '</button>').join("") +
+    '</span>';
+  for (const [act] of acts)
+    el.querySelector('[data-act="' + act + '"]').onclick = ev => { ev.stopPropagation(); rowAction(act, m); };
+  if (known) el.onclick = () => useKnown(m);
+  else if (!isHiddenRow) el.onclick = () => selectMachine(m.id);
+  return el;
+}
+
+async function rowAction(act, m) {
+  if (act === "edit") return openModal(m);
+  if (act === "copy" || act === "save") return openModal(m, true);
+  if (act === "del") return removeMachine(m);
+  try {
+    await api("/machines/" + encodeURIComponent(m.id) + "/" + act, { method: "POST" });
+  } catch (e) {
+    toast(e.message, true);
+    return;
+  }
+  if (act === "hide") {
+    probes.delete(m.id);
+    if (current === m.id) selectMachine(null);
+  }
+  await refreshMachines();
+}
+
+// ---------- login check ----------
+async function probeOne(id) {
+  try {
+    const r = await api("/probe?" + idq(id), { method: "POST" });
+    if (!r.ok) { markMachine(id, "down", { error: r.error }); return false; }
+    markMachine(id, "up", { ms: r.ms, sftp: r.sftp,
+      detail: r.detail || (r.shell ? "signed in" : "signed in · no shell") });
+    return true;
+  } catch (e) {
+    markMachine(id, "down", { error: e.message });
+    return false;
+  }
+}
+
+async function loadKnown() {
+  const r = await api("/known?limit=12");
+  knownHosts = r.hosts;
+  knownInfo = { total: r.total, hashed: r.hashed, path: r.path };
+  renderMachines();
+}
+
+// The banner only — known_hosts doesn't say who to log in as, so signing in to every
+// one of them would be guesswork, and the banner tells a live box from a dead one.
+// One behind a ProxyJump is read through its hop, since its address means nothing here.
+async function reachAll() {
+  const list = knownHosts.slice();
+  for (const m of list) probes.set(m.id, { state: "pending" });
+  renderMachines();
+  let next = 0;
+  const worker = async () => {
+    while (next < list.length) {
+      const m = list[next++];
+      try {
+        const r = await api("/reach?" + idq(m.id), { method: "POST" });
+        if (r.ok) markMachine(m.id, "live", { banner: r.banner, ms: r.ms });
+        else markMachine(m.id, "down", { error: r.error });
+      } catch (e) {
+        markMachine(m.id, "down", { error: e.message });
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(8, list.length) }, worker));
+}
+
+async function useKnown(m) {
+  markMachine(m.id, "pending");
+  setStatus("busy", "trying " + m.username + "@" + m.host + "…");
+  let r;
+  try {
+    r = await api("/probe?" + idq(m.id), { method: "POST" });
+  } catch (e) {
+    r = { ok: false, error: e.message };
+  }
+  if (!r.ok) {
+    markMachine(m.id, "down", { error: r.error });
+    setStatus("err", "could not sign in");
+    openModal(m, true);
+    const er = document.getElementById("modalErr");
+    er.textContent = "Could not sign in as " + m.username + " — " + r.error +
+      ". known_hosts doesn't record the user or key, so fill them in here.";
+    er.className = "modal-err on";
+    return;
+  }
+  const added = (await api("/machines/add", jsonBody({
+    name: m.host, host: m.host, port: m.port, username: r.username,
+    key_path: r.key_path, proxy_jump: m.proxy_jump || "" }))).machine;
+  // the probe signed in under the throwaway kh: id, and the machine we just
+  // saved has a new one — so close that session before opening the real one,
+  // or the box holds two until the daemon idles out half an hour later
+  try { await api("/disconnect?" + idq(m.id), { method: "POST" }); } catch {}
+  probes.delete(m.id);
+  probes.set(added.id, { state: "up", detail: r.detail, ms: r.ms, sftp: r.sftp });
+  setStatus("ok", "ready");
+  await refreshMachines();
+  await loadKnown();
+  selectMachine(added.id);
+  toast("Saved as " + r.username + "@" + m.host);
+}
+
+async function checkAll() {
+  const list = machines.slice();
+  const btn = document.getElementById("checkBtn");
+  btn.classList.add("spin");
+  setStatus("busy", "signing in to " + list.length + (list.length > 1 ? " machines…" : " machine…"));
+  for (const m of list) probes.set(m.id, Object.assign({}, probes.get(m.id), { state: "pending" }));
+  renderMachines();
+  let next = 0, up = 0;
+  const worker = async () => {
+    while (next < list.length) if (await probeOne(list[next++].id)) up++;
+  };
+  await Promise.all(Array.from({ length: Math.min(4, list.length) }, worker));
+  await reachAll();
+  btn.classList.remove("spin");
+  const live = knownHosts.filter(m => (probes.get(m.id) || {}).state === "live").length;
+  setStatus(up ? "ok" : "err", "signed in to " + up + " of " + list.length +
+    (live ? " · " + live + " more answering" : ""));
+}
+document.getElementById("checkBtn").onclick = () => checkAll();
+
+// ---------- machine selection & connect ----------
+async function selectMachine(id) {
+  current = id;
+  renderMachines();
+  const bar = document.getElementById("contentbar");
+  const ph = document.getElementById("placeholder");
+  ph.innerHTML = EMPTY_STATE;      // clear any previous failure's error + Retry
+  if (!id) {
+    bar.classList.add("hidden");
+    showPane(null);
+    ph.classList.remove("hidden");
+    return;
+  }
+  const m = machines.find(x => x.id === id);
+  if (!m) return selectMachine(null);   // hidden or removed since it was drawn
+  bar.classList.remove("hidden");
+  ph.classList.add("hidden");
+  document.getElementById("mTitle").textContent = m.name || m.host;
+  document.getElementById("mHost").textContent = m.username + "@" + m.host + (m.port != 22 ? ":" + m.port : "");
+  cwd = null;
+  teardownTerm();
+  closePreview();
+  showSearch(false);
+  const remembered = lastDir.get(id);
+  const warm = view === "files" && remembered && dirCache.get(id + ":" + remembered);
+  if (warm) { showPane("files"); renderDir(warm); }   // paint while we connect
+  setConnState("pending", "connecting…");
+  markMachine(id, "pending");
+  try {
+    const r = await api("/connect?" + idq(id), { method: "POST" });
+    if (current !== id) {
+      // switched away while connecting — the row for `id` was left showing
+      // "pending" when we set it above, and nothing else ever revisits it,
+      // so it has to be corrected here to what actually happened rather than
+      // sitting amber until some later full recheck
+      markMachine(id, "up", { sftp: r.sftp });
+      return;
+    }
+    cwd = warm ? remembered : r.home;
+    setConnState("ok", "connected");
+    markMachine(id, "up", { sftp: r.sftp });
+    if (!r.sftp) setView("terminal");
+    if (view === "terminal") openTerminal(); else loadDir(cwd);
+  } catch (e) {
+    if (current !== id) { markMachine(id, "down", { error: e.message }); return; }
+    setConnState("err", "not available");
+    markMachine(id, "down", { error: e.message });
+    showSearch(false);
+    showPane(null);
+    ph.classList.remove("hidden");
+    ph.innerHTML =
+      '<svg viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>' +
+      '<div class="big">' + esc(m.name || m.host) + ' is not available right now</div>' +
+      '<div style="max-width:420px">' + esc(e.message) + '</div>' +
+      '<button class="btn primary" data-retry>Retry</button>';
+    // a listener closing over the id, not an onclick built out of it: an alias is
+    // free to contain a quote, and this page holds the daemon token
+    ph.querySelector("[data-retry]").onclick = () => selectMachine(id);
+    refreshMachines();
+  }
+}
+function markMachine(id, state, extra) {
+  probes.set(id, Object.assign({}, probes.get(id), { state }, extra));
+  renderMachines();
+}
+function setConnState(kind, text) {
+  const el = document.getElementById("connState");
+  el.innerHTML = '<span class="conn-pill ' + kind + '"><span class="dot"></span>' + esc(text) + '</span>';
+}
+
+// ---------- view switching ----------
+function showPane(name) {
+  document.getElementById("placeholder").classList.toggle("hidden", !!name);
+  for (const p of ["filespane", "termpane"])
+    document.getElementById(p).classList.toggle("hidden", p !== name + "pane");
+}
+function setView(name) {
+  view = name;
+  for (const b of document.querySelectorAll("#viewSeg button"))
+    b.classList.toggle("on", b.dataset.view === name);
+}
+document.getElementById("viewSeg").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  setView(b.dataset.view);
+  if (!current) return;
+  if (view === "terminal") { showSearch(false); openTerminal(); }
+  else { teardownTerm(); if (cwd) loadDir(cwd); else selectMachine(current); }
+});
+
+// ---------- file browser ----------
+// Listings are cached per machine+path: a folder you've seen paints instantly
+// from cache while a fresh /ls revalidates it in the background.
+const dirCache = new Map();    // "<machine id>:<path>" -> /ls response
+const lastDir = new Map();     // machine id -> last path shown
+const prefetching = new Set();
+let dirSeq = 0;
+
+function cacheDir(id, key, r) {
+  dirCache.set(key, r);
+  if (r.path !== key.slice(id.length + 1)) dirCache.set(id + ":" + r.path, r);
+  while (dirCache.size > 80) dirCache.delete(dirCache.keys().next().value);
+}
+
+function renderDir(r) {
+  cwd = r.path;
+  lastDir.set(current, r.path);
+  showSearch(true);
+  renderCrumbs(r.path, r.home);
+  document.getElementById("upBtn").disabled = !r.parent;
+  const list = document.getElementById("filelist");
+  if (!r.entries.length) { list.innerHTML = '<div class="files-empty">Empty folder</div>'; return; }
+  list.innerHTML = "";
+  for (const e of r.entries) list.appendChild(fileRow(e));
+}
+
+async function loadDir(path, keepSearch, fresh) {
+  if (!current) return;
+  if (!keepSearch) clearSearch();
+  showPane("files");
+  const id = current, seq = ++dirSeq, key = id + ":" + (path || "");
+  if (fresh) dirCache.delete(key);
+  const cached = dirCache.get(key);
+  const list = document.getElementById("filelist");
+  if (cached) renderDir(cached);
+  else list.innerHTML = '<div class="files-empty">Loading…</div>';
+  try {
+    const r = await api("/ls?" + idq(id) + "&path=" + encodeURIComponent(path || ""));
+    if (seq !== dirSeq || id !== current) return;   // superseded by a later click
+    cacheDir(id, key, r);
+    if (!cached || JSON.stringify(cached) !== JSON.stringify(r)) renderDir(r);
+  } catch (e) {
+    if (seq !== dirSeq || id !== current) return;
+    if (cached) toast(e.message, true);
+    else list.innerHTML = '<div class="files-err">' + esc(e.message) + '</div>';
+  }
+}
+
+async function prefetchDir(path) {
+  const id = current, key = id + ":" + path;
+  if (!id || dirCache.has(key) || prefetching.has(key)) return;
+  prefetching.add(key);
+  try {
+    cacheDir(id, key, await api("/ls?" + idq(id) + "&path=" + encodeURIComponent(path)));
+  } catch {}
+  prefetching.delete(key);
+}
+function join(dir, name) { return dir.replace(/\/$/, "") + "/" + name; }
+// The folder an entry actually lives in. A search hit sits under a subdirectory,
+// so file operations anchor here and not on the folder being browsed — otherwise
+// renaming one would move it up into the search root.
+function dirOf(p) { return p.replace(/\/[^/]*$/, "") || "/"; }
+function relDir(p) {
+  const dir = dirOf(p);
+  const base = (cwd || "").replace(/\/$/, "");
+  if (dir === base) return "";
+  if (base && dir.startsWith(base + "/")) return dir.slice(base.length + 1) + "/";
+  return dir + "/";
+}
+
+// ---------- search (recursive, current folder) ----------
+function showSearch(on) {
+  const w = document.getElementById("searchWrap");
+  w.classList.toggle("hidden", !on);
+  if (!on) clearSearch();
+}
+function clearSearch() {
+  clearTimeout(searchTimer);
+  searchSeq++;
+  const input = document.getElementById("searchInput");
+  if (input.value) input.value = "";
+  document.getElementById("searchWrap").classList.remove("active");
+}
+function onSearchInput() {
+  const q = document.getElementById("searchInput").value.trim();
+  document.getElementById("searchWrap").classList.toggle("active", q.length > 0);
+  clearTimeout(searchTimer);
+  if (!q) { if (cwd) loadDir(cwd); return; }
+  searchTimer = setTimeout(() => runSearch(q), 300);
+}
+async function runSearch(q) {
+  if (!current || !cwd) return;
+  const seq = ++searchSeq;
+  const list = document.getElementById("filelist");
+  list.innerHTML = '<div class="files-empty">Searching…</div>';
+  try {
+    const r = await api("/search?" + idq(current) + "&path=" + encodeURIComponent(cwd) +
+                        "&q=" + encodeURIComponent(q));
+    if (seq !== searchSeq) return;   // a newer keystroke superseded this
+    renderCrumbs(cwd);
+    document.getElementById("upBtn").disabled = true;
+    if (!r.entries.length) {
+      list.innerHTML = '<div class="files-empty">No files matching “' + esc(q) + '” in this folder</div>';
+      return;
+    }
+    list.innerHTML = "";
+    for (const e of r.entries) list.appendChild(fileRow(e));
+    if (r.truncated) {
+      const more = document.createElement("div");
+      more.className = "files-empty"; more.textContent = "Showing the first " + r.entries.length + " matches — narrow your search to see more.";
+      list.appendChild(more);
+    }
+  } catch (e) {
+    if (seq !== searchSeq) return;
+    list.innerHTML = '<div class="files-err">' + esc(e.message) + '</div>';
+  }
+}
+document.getElementById("searchInput").addEventListener("input", onSearchInput);
+document.getElementById("searchInput").addEventListener("keydown", e => {
+  if (e.key === "Escape") { clearSearch(); if (cwd) loadDir(cwd); e.stopPropagation(); }
+  if (e.key === "Enter") { clearTimeout(searchTimer); const q = e.target.value.trim(); if (q) runSearch(q); }
+});
+document.getElementById("searchClear").onclick = () => { clearSearch(); if (cwd) loadDir(cwd); document.getElementById("searchInput").focus(); };
+function renderCrumbs(path, home) {
+  const c = document.getElementById("crumbs");
+  c.innerHTML = "";
+  const parts = path.split("/").filter(Boolean);
+  const mk = (label, full) => {
+    const b = document.createElement("button");
+    b.className = "seg-crumb"; b.textContent = label;
+    b.onclick = () => loadDir(full); return b;
+  };
+  c.appendChild(mk("/", "/"));
+  let acc = "";
+  parts.forEach((p, i) => {
+    acc += "/" + p;
+    if (i) { const s = document.createElement("span"); s.className = "sep"; s.textContent = "›"; c.appendChild(s); }
+    c.appendChild(mk(p, acc));
+  });
+}
+function fileRow(e) {
+  const row = document.createElement("div");
+  row.className = "frow" + (e.is_dir ? " dir" : "");
+  const full = e.path || join(cwd, e.name);
+  const rd = e.path ? relDir(e.path) : "";
+  const pathHint = rd ? '<span class="fpath" title="' + esc(rd) + '">' + esc(rd) + '</span>' : "";
+  const dirIco = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>';
+  const fileIco = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/></svg>';
+  row.innerHTML =
+    '<span class="fico">' + (e.is_dir ? dirIco : fileIco) + '</span>' +
+    '<span class="fname">' + esc(e.name) + (e.is_link ? ' <span style="color:var(--ink-3)">↪</span>' : '') + '</span>' +
+    pathHint +
+    '<span class="frowops">' +
+      (e.is_dir ? '' : '<button data-act="dl" title="Download"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg></button>') +
+      '<button data-act="rn" title="Rename"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></button>' +
+      '<button data-act="cp" title="Copy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button>' +
+      '<button data-act="mv" title="Move"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>' +
+      '<button data-act="del" class="danger" title="Delete"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg></button>' +
+    '</span>' +
+    '<span class="fmeta">' + (e.is_dir ? "" : fmtSize(e.size) + " · ") + fmtDate(e.mtime) + '</span>';
+  row.dataset.full = full;
+  if (e.is_dir) {
+    row.querySelector(".fname").onclick = () => loadDir(full);
+    let hoverT = null;   // hover a folder briefly and its listing is prefetched
+    row.onmouseenter = () => { hoverT = setTimeout(() => prefetchDir(full), 150); };
+    row.onmouseleave = () => clearTimeout(hoverT);
+  } else {
+    if (full === previewPath) row.classList.add("sel");
+    const open = () => previewFile(full, e.name, e.size);
+    row.querySelector(".fname").onclick = open;
+    row.querySelector(".fico").onclick = open;
+    row.querySelector(".fico").style.cursor = "pointer";
+  }
+  const op = (a, fn) => { const b = row.querySelector('[data-act="' + a + '"]'); if (b) b.onclick = ev => { ev.stopPropagation(); fn(); }; };
+  op("dl", () => downloadFile(full, e.name));
+  op("rn", () => renameEntry(full, e.name));
+  op("cp", () => copyEntry(full, e.name));
+  op("mv", () => moveEntry(full, e.name));
+  op("del", () => deleteEntry(full, e.name, e.is_dir));
+  return row;
+}
+async function renameEntry(full, name) {
+  const nn = prompt("Rename to:", name); if (!nn || nn === name) return;
+  await fileOp("/rename?" + idq(current) + "&src=" + encodeURIComponent(full) +
+               "&dst=" + encodeURIComponent(join(dirOf(full), nn)), "Renamed");
+}
+async function moveEntry(full, name) {
+  const dst = prompt("Move to (absolute path or new name):", full); if (!dst) return;
+  const target = dst.startsWith("/") ? dst : join(dirOf(full), dst);
+  await fileOp("/rename?" + idq(current) + "&src=" + encodeURIComponent(full) + "&dst=" + encodeURIComponent(target), "Moved");
+}
+async function copyEntry(full, name) {
+  const dst = prompt("Copy to (absolute path or new name):", join(dirOf(full), "copy-of-" + name)); if (!dst) return;
+  const target = dst.startsWith("/") ? dst : join(dirOf(full), dst);
+  await fileOp("/copy?" + idq(current) + "&src=" + encodeURIComponent(full) + "&dst=" + encodeURIComponent(target), "Copied");
+}
+async function deleteEntry(full, name, isDir) {
+  if (!confirm("Delete " + (isDir ? "folder" : "file") + " \"" + name + "\"?" + (isDir ? "\nThis removes everything inside it." : ""))) return;
+  await fileOp("/delete?" + idq(current) + "&path=" + encodeURIComponent(full), "Deleted");
+}
+async function fileOp(path, okMsg) {
+  try { await api(path, { method: "POST" }); toast(okMsg); loadDir(cwd, false, true); }
+  catch (e) { toast(e.message, true); }
+}
+async function downloadFile(full, name) {
+  try {
+    const res = await fetch(url("/download?" + idq(current) + "&path=" + encodeURIComponent(full)));
+    if (!res.ok) throw new Error(await res.text());
+    const blob = await res.blob();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = name; a.click();
+    URL.revokeObjectURL(a.href);
+  } catch (e) { toast("Download failed: " + e.message, true); }
+}
+document.getElementById("upBtn").onclick = () => { const p = cwd.replace(/\/[^/]*\/?$/, "") || "/"; loadDir(p); };
+document.getElementById("refreshBtn").onclick = () => loadDir(cwd, false, true);
+document.getElementById("mkdirBtn").onclick = async () => {
+  const nn = prompt("New folder name:"); if (!nn) return;
+  await fileOp("/mkdir?" + idq(current) + "&path=" + encodeURIComponent(join(cwd, nn)), "Folder created");
+};
+document.getElementById("uploadBtn").onclick = () => document.getElementById("fileInput").click();
+document.getElementById("fileInput").onchange = async ev => {
+  const f = ev.target.files[0]; ev.target.value = ""; if (!f) return;
+  setStatus("busy", "uploading…");
+  try {
+    // raw body rather than multipart — nothing here parses multipart, and the
+    // daemon streams the request straight into SFTP
+    await api("/upload?" + idq(current) + "&dir=" + encodeURIComponent(cwd) +
+              "&name=" + encodeURIComponent(f.name), { method: "POST", body: f });
+    toast("Uploaded " + f.name); loadDir(cwd, false, true);
+  } catch (e) { toast("Upload failed: " + e.message, true); }
+  setStatus("ok", "ready");
+};
+
+// ---------- preview pane ----------
+// A /view/ or /embed/ url addresses a file by its path SEGMENTS: the leading
+// slash of a POSIX path is dropped here and put back when the shell decodes it,
+// so joining the path on whole would ask for "/embed//home/…". Encoding each
+// segment on its own is also what stops a "#" or a "?" in a filename from
+// cutting the url short. Same codec as the shell's own urlForFsPath.
+function fsUrl(prefix, localPath) {
+  return window.location.origin + prefix +
+    localPath.replace(/^\/+/, "").split("/").filter(s => s)
+             .map(encodeURIComponent).join("/");
+}
+function embedUrl(localPath) {
+  return fsUrl("/embed/", localPath);
+}
+function overlay(html) {
+  const o = document.getElementById("previewOverlay");
+  if (html == null) { o.className = ""; o.innerHTML = ""; }
+  else { o.className = "on"; o.innerHTML = html; }
+}
+function selectRow(full) {
+  for (const r of document.querySelectorAll(".frow.sel")) r.classList.remove("sel");
+  const row = document.querySelector('.frow[data-full="' + (window.CSS && CSS.escape ? CSS.escape(full) : full) + '"]');
+  if (row) row.classList.add("sel");
+}
+let previewLocal = null;       // cached local path of the previewed file
+async function previewFile(full, name, size) {
+  if (full === previewPath && previewLocal) return;   // already showing
+  // A search hit on a host without GNU find carries no size at all (see
+  // do_search) — null, not 0, precisely so it isn't mistaken for "confirmed
+  // small enough." Unknown is treated the same as too big: ask first, rather
+  // than silently streaming whatever it turns out to be into the cache.
+  const known = size !== null && size !== undefined;
+  if ((!known || size > PREVIEW_MAX) &&
+      !confirm(name + (known ? " is " + fmtSize(size) : "'s size isn't known") +
+              ". Download it for preview?")) return;
+  previewPath = full;
+  previewLocal = null;
+  selectRow(full);
+  document.getElementById("filespane").classList.add("previewing");
+  document.getElementById("previewpane").classList.remove("hidden");
+  document.getElementById("previewName").textContent = name;
+  document.getElementById("previewMeta").textContent = fmtSize(size);
+  const frame = document.getElementById("previewFrame");
+  frame.src = "about:blank";
+  overlay('<div class="spin"></div><div>Loading ' + esc(name) + '…</div>');
+  try {
+    const r = await api("/localize?" + idq(current) + "&path=" + encodeURIComponent(full));
+    if (full !== previewPath) return;   // user clicked another file meanwhile
+    previewLocal = r.local_path;
+    frame.onload = () => { if (frame.src !== "about:blank") overlay(null); };
+    frame.src = embedUrl(r.local_path);
+  } catch (e) {
+    overlay('<div style="color:var(--danger)">Could not open ' + esc(name) + '</div><div style="font-family:var(--mono);font-size:12px">' + esc(e.message) + '</div>');
+  }
+}
+function closePreview() {
+  previewPath = null;
+  previewLocal = null;
+  document.getElementById("filespane").classList.remove("previewing");
+  document.getElementById("previewpane").classList.add("hidden");
+  document.getElementById("previewFrame").src = "about:blank";
+  overlay(null);
+  for (const r of document.querySelectorAll(".frow.sel")) r.classList.remove("sel");
+}
+document.getElementById("previewClose").onclick = closePreview;
+document.getElementById("previewOpen").onclick = () => {
+  if (previewLocal) window.open(fsUrl("/view/", previewLocal), "_blank");
+};
+document.getElementById("previewDownload").onclick = () => {
+  if (previewPath) downloadFile(previewPath, previewPath.split("/").pop());
+};
+
+// ---------- terminal ----------
+function openTerminal() {
+  showPane("term");
+  if (!term) {
+    term = new Terminal({ fontFamily: "var(--mono)", fontSize: 13, cursorBlink: true,
+      theme: { background: "#1e1e2e", foreground: "#cdd6f4", cursor: "#f5e0dc" } });
+    fit = new FitAddon.FitAddon();
+    term.loadAddon(fit);
+    term.open(document.getElementById("term"));
+    term.onData(d => { if (ws && ws.readyState === 1) ws.send(JSON.stringify({ data: d })); });
+    new ResizeObserver(() => fitTerm()).observe(document.getElementById("term"));
+  }
+  fitTerm();
+  if (termedId !== current || !ws || ws.readyState > 1) connectTerm();
+  setTimeout(() => term && term.focus(), 50);
+}
+function fitTerm() {
+  if (!fit || document.getElementById("termpane").classList.contains("hidden")) return;
+  try { fit.fit(); } catch {}
+  if (ws && ws.readyState === 1) ws.send(JSON.stringify({ resize: [term.cols, term.rows] }));
+}
+function connectTerm() {
+  teardownTerm();
+  term.reset();
+  termedId = current;
+  document.getElementById("termStatus").textContent = "connecting…";
+  ws = new WebSocket(url("/term?" + idq(current) + "&cols=" + term.cols +
+                         "&rows=" + term.rows).replace("http", "ws"));
+  // shell output arrives as binary — a multibyte character can straddle two
+  // frames, and xterm.js is the thing that decodes across that boundary
+  ws.binaryType = "arraybuffer";
+  ws.onopen = () => { document.getElementById("termStatus").textContent = "connected"; fitTerm(); };
+  ws.onmessage = e => term.write(new Uint8Array(e.data));
+  ws.onclose = () => { document.getElementById("termStatus").textContent = "disconnected"; };
+  ws.onerror = () => { document.getElementById("termStatus").textContent = "connection error"; };
+}
+function teardownTerm() {
+  if (ws) { try { ws.onclose = null; ws.close(); } catch {} ws = null; }
+  termedId = null;
+}
+document.getElementById("termClear").onclick = () => term && term.clear();
+document.getElementById("termReconnect").onclick = () => connectTerm();
+
+// ---------- add / edit modal ----------
+function openModal(m, asCopy) {
+  editingId = m && !asCopy ? m.id : null;
+  document.getElementById("modalTitle").textContent =
+    asCopy ? "Copy of " + m.name : m ? "Edit machine" : "Add machine";
+  document.getElementById("fName").value = m ? (m.name || "") : "";
+  document.getElementById("fHost").value = m ? m.host : "";
+  document.getElementById("fPort").value = m ? m.port : "22";
+  document.getElementById("fUser").value = m ? m.username : "";
+  document.getElementById("fKey").value = m ? (m.key_path || "") : "";
+  document.getElementById("fJump").value = m ? (m.proxy_jump || "") : "";
+  document.getElementById("fPass").value = "";
+  document.getElementById("fPass").disabled = false;
+  document.getElementById("fPass").placeholder = editingId ? "unchanged" : "leave blank if using a key";
+  // clearing only makes sense against a machine that might already have a
+  // saved password — a blank field on a brand-new one already means "none"
+  document.getElementById("fPassClearRow").style.display = editingId ? "" : "none";
+  document.getElementById("fPassClear").checked = false;
+  document.getElementById("modalErr").className = "modal-err";
+  document.getElementById("overlay").classList.add("on");
+  document.getElementById("fName").focus();
+}
+function closeModal() { document.getElementById("overlay").classList.remove("on"); }
+document.getElementById("fPassClear").onchange = e => {
+  const pass = document.getElementById("fPass");
+  pass.disabled = e.target.checked;
+  if (e.target.checked) pass.value = "";
+};
+document.getElementById("addBtn").onclick = () => openModal(null);
+document.getElementById("modalCancel").onclick = closeModal;
+document.getElementById("overlay").onclick = e => { if (e.target.id === "overlay") closeModal(); };
+document.getElementById("modalSave").onclick = async () => {
+  const body = {
+    name: document.getElementById("fName").value.trim(),
+    host: document.getElementById("fHost").value.trim(),
+    port: document.getElementById("fPort").value.trim() || "22",
+    username: document.getElementById("fUser").value.trim(),
+    key_path: document.getElementById("fKey").value.trim(),
+    proxy_jump: document.getElementById("fJump").value.trim(),
+    password: document.getElementById("fPass").value,
+    clear_password: document.getElementById("fPassClear").checked,
+  };
+  if (!body.host || !body.username) {
+    const er = document.getElementById("modalErr");
+    er.textContent = "Host and username are required."; er.className = "modal-err on";
+    return;
+  }
+  try {
+    if (editingId) await api("/machines/" + editingId + "/update", jsonBody(body));
+    else await api("/machines/add", jsonBody(body));
+    closeModal();
+    await refreshMachines();
+    toast(editingId ? "Machine updated" : "Machine added");
+  } catch (e) {
+    const er = document.getElementById("modalErr");
+    er.textContent = e.message; er.className = "modal-err on";
+  }
+};
+function jsonBody(obj) {
+  return { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(obj) };
+}
+async function removeMachine(m) {
+  if (!confirm('Remove "' + (m.name || m.host) + '" from the list?')) return;
+  await api("/machines/" + m.id + "/remove", { method: "POST" });
+  if (current === m.id) selectMachine(null);
+  await refreshMachines();
+  toast("Machine removed");
+}
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape") closeModal();
+  if (e.key === "Enter" && document.getElementById("overlay").classList.contains("on")) {
+    if (document.activeElement && document.activeElement.tagName === "INPUT") document.getElementById("modalSave").click();
+  }
+});
+
+boot();
+</script>
+</body>
+</html>

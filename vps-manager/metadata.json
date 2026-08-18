@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "name": "VPS Manager",
+  "description": "Manage every SSH host you can reach — auto-discovered from your ~/.ssh config — with a file browser, preview pane, and interactive terminal.",
+  "author": { "name": "Aman Bagrecha", "github": "amanbagrecha" },
+  "tags": ["ssh", "vps", "terminal", "files", "system"],
+  "category": "productivity",
+  "version": "1.0.0",
+  "requires_python": true
+}
