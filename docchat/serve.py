@@ -24,19 +24,53 @@ SIDECAR = os.path.join(rc.HERE, ".ragserver.json")
 SPAWN_LOCK = os.path.join(rc.HERE, ".ragserver.spawn")
 
 
+def _pid_alive(pid):
+    """Whether `pid` currently names a live process. A cold start on Windows
+    (AV scanning a freshly spawned python.exe, importing torch/sentence-
+    transformers) can legitimately take well over a minute while still alive,
+    so staleness must be judged by this, not by how long the lock has existed."""
+    if not pid:
+        return False
+    if os.name == "nt":
+        import ctypes
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        handle = ctypes.windll.kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, int(pid))
+        if not handle:
+            return False
+        ctypes.windll.kernel32.CloseHandle(handle)
+        return True
+    try:
+        os.kill(int(pid), 0)
+        return True
+    except OSError:
+        return False
+
+
+def _lock_pid():
+    try:
+        with open(SPAWN_LOCK, "r", encoding="utf-8") as f:
+            return int(f.read().strip())
+    except (OSError, ValueError):
+        return None
+
+
 def _acquire_spawn_lock():
     """Atomic single-spawner lock: two racing serve.py calls (page reloads) must
     not both launch a server. Only the winner spawns; the loser just waits for
-    health. Stale locks (crashed spawner) older than 60s are reclaimed."""
+    health. A lock is reclaimed only when its holder's PID is no longer alive —
+    not merely old — so a slow-but-live spawn is never mistaken for a crashed
+    one and yanked out from under it."""
     try:
-        if os.path.exists(SPAWN_LOCK) and time.time() - os.path.getmtime(SPAWN_LOCK) > 60:
+        if os.path.exists(SPAWN_LOCK) and not _pid_alive(_lock_pid()):
             os.remove(SPAWN_LOCK)
     except OSError:
         pass
     try:
-        return os.open(SPAWN_LOCK, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        fd = os.open(SPAWN_LOCK, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
     except OSError:
         return None
+    os.write(fd, str(os.getpid()).encode("ascii"))
+    return fd
 
 
 def _release_spawn_lock(fd):
@@ -46,6 +80,10 @@ def _release_spawn_lock(fd):
         os.close(fd)
     except OSError:
         pass
+    # Only remove it if it still names OUR pid — a lock some other process has
+    # since (re)acquired at this same path must not be deleted out from under it.
+    if _lock_pid() != os.getpid():
+        return
     try:
         os.remove(SPAWN_LOCK)
     except OSError:
