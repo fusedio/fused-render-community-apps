@@ -670,8 +670,16 @@ const FR_ORIGIN = (location.origin && location.origin.indexOf("http") === 0) ? l
 // drive letter's ":" unescaped. Encoding each segment on its own, like VPS
 // Manager's fsUrl, is what makes both of those addressable.
 function embedUrl(p){
-  return FR_ORIGIN + "/embed/" + p.replace(/^\/+/, "").split("/").filter(s => s)
+  // A UNC source (\\server\share\...) survives the server's forward-slash
+  // normalization as a DOUBLE leading slash. Stripping every leading slash
+  // (like an ordinary absolute path) would collapse that into a single
+  // ordinary segment set, indistinguishable from a top-level folder named
+  // "server" — so that distinguishing slash is preserved here instead of
+  // discarded, rather than silently reconstructing the wrong kind of path.
+  const unc = /^\/\//.test(p);
+  const body = p.replace(/^\/+/, "").split("/").filter(s => s)
     .map(encodeURIComponent).join("/");
+  return FR_ORIGIN + "/embed/" + (unc ? "/" : "") + body;
 }
 let previewMode = "rendered", previewRes = null, previewHighlight = null;
 function previewBodyHtml(text, hl){
