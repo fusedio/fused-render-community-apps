@@ -239,9 +239,20 @@ def count_indexable(folder, cap=2000):
     return n, False
 
 
+def content_hash(text):
+    """Short content signature, cheap to compute since callers already hold `text` in memory."""
+    return hashlib.sha1(text.encode("utf-8")).hexdigest()[:16]
+
+
 def docs_fingerprint(items):
-    """A signature that changes when any file is added, removed, or edited."""
-    parts = [name + ":" + repr(round(mtime, 3)) for name, mtime, _ in items]
+    """A signature that changes when any file is added, removed, or edited.
+
+    Keyed on mtime AND content hash (not mtime alone) so a tool that preserves
+    the original mtime across a content change (zip/tar -p, robocopy /COPY:DAT,
+    rsync -a, a cloud-sync client restoring the remote edit time) still trips
+    the fingerprint.
+    """
+    parts = [name + ":" + repr(round(mtime, 3)) + ":" + content_hash(text) for name, mtime, text in items]
     return "|".join(parts)
 
 

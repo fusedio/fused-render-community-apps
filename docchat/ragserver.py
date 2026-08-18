@@ -143,12 +143,13 @@ def _write_meta(con, meta):
 
 
 def _has_incremental_tables(con):
-    """Both the chunks table and the per-file docfiles table present (the latter
-    is what enables incremental reuse; an older index without it forces one full
+    """Both the chunks table and a docfiles table with a content_hash column
+    present (the latter is what enables incremental reuse; an older index
+    without it — or with the pre-content-hash schema — forces one full
     rebuild to add it)."""
     try:
         con.execute("SELECT 1 FROM chunks LIMIT 0")
-        con.execute("SELECT 1 FROM docfiles LIMIT 0")
+        con.execute("SELECT content_hash FROM docfiles LIMIT 0")
         return True
     except Exception:
         return False
@@ -208,9 +209,12 @@ def build_index(folder, rebuild=False, progress=None, cache_dir=None):
                             docs=int(meta.get("docs", len(docs))), chunks=n, dim=dim)
 
     # Reconcile the index against the current files. A full (re)build wipes and
-    # re-chunks everything; otherwise we diff on per-file mtime and touch only what
-    # changed. New rows go in with NULL embeddings; the fill loop below embeds them
-    # (and any left over from an interrupted run — so builds resume, not restart).
+    # re-chunks everything; otherwise we diff on per-file mtime AND content hash
+    # and touch only what changed — mtime alone would miss a file whose content
+    # changed but whose mtime a copy tool (zip -p, robocopy /COPY:DAT, rsync -a)
+    # preserved. New rows go in with NULL embeddings; the fill loop below embeds
+    # them (and any left over from an interrupted run — so builds resume, not
+    # restart).
     with _DB_LOCK:
         full = rebuild or not dim_ok or not _has_incremental_tables(con)
         if full:
@@ -219,13 +223,16 @@ def build_index(folder, rebuild=False, progress=None, cache_dir=None):
             con.execute("DROP TABLE IF EXISTS docfiles;")
             con.execute("CREATE TABLE chunks (id INTEGER, source VARCHAR, chunk_index INTEGER, "
                         "content VARCHAR, embedding FLOAT[" + str(dim) + "]);")
-            con.execute("CREATE TABLE docfiles (source VARCHAR, mtime DOUBLE);")
+            con.execute("CREATE TABLE docfiles (source VARCHAR, mtime DOUBLE, content_hash VARCHAR);")
             changed = list(docs)
             structural = True
         else:
-            stored = {s: m for s, m in con.execute("SELECT source, mtime FROM docfiles").fetchall()}
+            stored = {s: (m, h) for s, m, h in
+                      con.execute("SELECT source, mtime, content_hash FROM docfiles").fetchall()}
             current = {name: mtime for name, mtime, _ in docs}
-            changed = [d for d in docs if d[0] not in stored or round(stored[d[0]], 3) != round(d[1], 3)]
+            changed = [d for d in docs if d[0] not in stored
+                       or round(stored[d[0]][0], 3) != round(d[1], 3)
+                       or stored[d[0]][1] != rc.content_hash(d[2])]
             gone = [s for s in stored if s not in current]
             stale = [d[0] for d in changed] + gone
             structural = bool(stale)
@@ -240,10 +247,10 @@ def build_index(folder, rebuild=False, progress=None, cache_dir=None):
             for name, mtime, text in changed:
                 for i, chunk in enumerate(rc.chunk_text(text)):
                     records.append((next_id, name, i, chunk)); next_id += 1
-                dfrows.append((name, mtime))
+                dfrows.append((name, mtime, rc.content_hash(text)))
             con.executemany("INSERT INTO chunks (id, source, chunk_index, content, embedding) "
                             "VALUES (?, ?, ?, ?, NULL);", records)
-            con.executemany("INSERT INTO docfiles (source, mtime) VALUES (?, ?);", dfrows)
+            con.executemany("INSERT INTO docfiles (source, mtime, content_hash) VALUES (?, ?, ?);", dfrows)
         total_rows = con.execute("SELECT count(*) FROM chunks").fetchone()[0]
         if total_rows == 0:
             return {"ok": False, "error": "Files produced no text chunks."}

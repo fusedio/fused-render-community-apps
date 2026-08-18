@@ -11,14 +11,19 @@ pure search — no re-chunk.
 """
 
 import os
+import shutil
 import sys
+import threading
 import time
+
+import pytest
 
 os.environ.setdefault("RAG_MODEL", "sentence-transformers/all-MiniLM-L6-v2")  # small + no license gate
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))   # app root (parent of tests/)
 
 import rag_common as rc
 import ragserver
+import serve
 
 
 def test_chunk_text_boundaries():
@@ -38,6 +43,44 @@ def test_fingerprint_reacts_to_edits(tmp_path):
     os.utime(f, (f.stat().st_atime, f.stat().st_mtime + 5))
     fp2 = rc.docs_fingerprint(rc.collect_docs(str(tmp_path))[0])
     assert fp1 != fp2
+
+
+def test_fingerprint_reacts_to_content_change_with_preserved_mtime(tmp_path):
+    # A tool that restores the original mtime after editing (zip/tar with -p,
+    # robocopy /COPY:DAT, rsync -a, a cloud-sync client) must not fool the
+    # fingerprint into thinking nothing changed.
+    f = tmp_path / "a.md"
+    f.write_text("hello", encoding="utf-8")
+    original_mtime = f.stat().st_mtime
+    fp1 = rc.docs_fingerprint(rc.collect_docs(str(tmp_path))[0])
+
+    f.write_text("goodbye", encoding="utf-8")
+    os.utime(f, (f.stat().st_atime, original_mtime))
+    fp2 = rc.docs_fingerprint(rc.collect_docs(str(tmp_path))[0])
+
+    assert fp1 != fp2
+
+
+def test_incremental_reembeds_content_change_with_preserved_mtime(tmp_path, monkeypatch):
+    f = tmp_path / "a.md"
+    f.write_text("Alpha document about grinders and burrs.", encoding="utf-8")
+    ragserver.build_index(str(tmp_path))
+    original_mtime = f.stat().st_mtime
+
+    calls = []
+    real = ragserver.embed_docs
+    monkeypatch.setattr(ragserver, "embed_docs",
+                        lambda texts, batch_size=64: (calls.extend(list(texts)), real(texts, batch_size=batch_size))[1])
+
+    f.write_text("Alpha document now about milk steaming and microfoam.", encoding="utf-8")
+    os.utime(f, (f.stat().st_atime, original_mtime))   # a tool that restores the original mtime
+
+    r = ragserver.build_index(str(tmp_path))
+    assert r["ok"] and r["cached"] is False
+    assert any("microfoam" in c for c in calls)          # re-embedded despite the unchanged mtime
+
+    s = ragserver.search_index(str(tmp_path), "microfoam steaming", k=1)
+    assert s["ok"] and "microfoam" in s["results"][0]["chunk"]
 
 
 def test_skips_hidden_files(tmp_path):
