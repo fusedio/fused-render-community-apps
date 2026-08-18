@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="fused-app">
+<meta charset="utf-8" />
+<title>OpenTV</title>
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1.6.7/dist/hls.min.js"></script>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: #e8eaed;
+    background: #131417;
+    display: flex;
+    height: 100vh;
+    overflow: hidden;
+  }
+  #sidebar {
+    width: 340px;
+    min-width: 340px;
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid #2a2d33;
+  }
+  #search-wrap { padding: 12px; border-bottom: 1px solid #2a2d33; }
+  #search {
+    width: 100%;
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid #2a2d33;
+    background: #1b1d21;
+    color: #e8eaed;
+    font-size: 14px;
+    outline: none;
+  }
+  #search:focus { border-color: #5b9dff; }
+  #category {
+    width: 100%;
+    margin-bottom: 8px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid #2a2d33;
+    background: #1b1d21;
+    color: #e8eaed;
+    font-size: 14px;
+    outline: none;
+  }
+  #count { font-size: 12px; color: #9aa0a6; margin-top: 6px; }
+  #list { flex: 1; overflow-y: auto; }
+  .channel {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    cursor: pointer;
+    border-bottom: 1px solid #1e2025;
+  }
+  .channel:hover { background: #1b1d21; }
+  .channel.active { background: #22304a; }
+  .channel img {
+    width: 40px;
+    height: 28px;
+    object-fit: contain;
+    background: #0d0e10;
+    border-radius: 4px;
+    flex-shrink: 0;
+  }
+  .channel .meta { min-width: 0; }
+  .channel .name {
+    font-size: 13px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .channel .group { font-size: 11px; color: #9aa0a6; }
+  #player-pane {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 16px;
+    min-width: 0;
+  }
+  #now-playing { font-size: 16px; margin: 0 0 10px; color: #e8eaed; }
+  #now-playing span { color: #9aa0a6; font-size: 13px; }
+  video {
+    width: 100%;
+    flex: 1;
+    min-height: 0;
+    background: #000;
+    border: 1px solid #2a2d33;
+    border-radius: 8px;
+  }
+  #status { font-size: 12px; color: #9aa0a6; margin-top: 8px; min-height: 1.2em; }
+  #status.error { color: #ff7b72; }
+  #health-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  #health-btn {
+    padding: 6px 12px;
+    border-radius: 8px;
+    border: 1px solid #2a2d33;
+    background: #1b1d21;
+    color: #e8eaed;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  #health-btn:hover, #thumbs-btn:hover { border-color: #5b9dff; }
+  #cancel-btn:hover { border-color: #ff7b72; }
+  #health-btn:disabled, #thumbs-btn:disabled { opacity: 0.5; cursor: wait; }
+  #thumbs-btn, #cancel-btn {
+    padding: 6px 12px;
+    border-radius: 8px;
+    border: 1px solid #2a2d33;
+    background: #1b1d21;
+    color: #e8eaed;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  #health-summary { font-size: 13px; color: #9aa0a6; }
+  #health-progress {
+    display: none;
+    flex: 1;
+    max-width: 320px;
+    height: 8px;
+    border-radius: 4px;
+    background: #1b1d21;
+    border: 1px solid #2a2d33;
+    overflow: hidden;
+  }
+  #health-progress .fill {
+    height: 100%;
+    width: 0%;
+    background: #5b9dff;
+    transition: width 0.4s;
+  }
+  #health-summary .pct { color: #7ee787; font-weight: 600; }
+  #health-summary .pct.bad { color: #ffa657; }
+  .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    margin-left: auto;
+  }
+  .dot.down { background: #ff7b72; }
+  .dot.orange { background: #ffa657; }
+  .dot.yellow { background: #e3c341; }
+  .dot.wasabi { background: #aebe5e; }
+  .dot.up { background: #7ee787; }
+  .dot-wrap { position: relative; display: flex; align-items: center; }
+  .dot-wrap .dot { margin-left: 0; }
+  .dot-wrap .tip {
+    display: none;
+    position: absolute;
+    right: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: #26282e;
+    border: 1px solid #3a3d44;
+    border-radius: 6px;
+    padding: 5px 8px;
+    font-size: 11px;
+    color: #e8eaed;
+    white-space: nowrap;
+    z-index: 10;
+    pointer-events: none;
+  }
+  .dot-wrap:hover .tip { display: block; }
+  .star {
+    flex-shrink: 0;
+    margin-left: auto;
+    cursor: pointer;
+    color: #5a5f68;
+    font-size: 15px;
+    padding: 0 2px;
+    user-select: none;
+  }
+  .star:hover { color: #e3c341; }
+  .star.faved { color: #e3c341; }
+</style>
+</head>
+<body>
+  <div id="sidebar">
+    <div id="search-wrap">
+      <select id="category"></select>
+      <input id="search" type="search" placeholder="Search channels…" />
+      <div id="count"></div>
+    </div>
+    <div id="list"></div>
+  </div>
+  <div id="player-pane">
+    <h2 id="now-playing">Pick a channel <span></span></h2>
+    <video id="video" controls autoplay playsinline></video>
+    <div id="status"></div>
+    <div id="health-bar">
+      <button id="health-btn">Run health check</button>
+      <button id="thumbs-btn">Get thumbnails</button>
+      <button id="cancel-btn" style="display:none">Cancel</button>
+      <div id="health-progress"><div class="fill"></div></div>
+      <div id="health-summary">Health: <span class="pct">100%</span></div>
+    </div>
+  </div>
+
+  <script>
+    const listEl = document.getElementById("list");
+    const searchEl = document.getElementById("search");
+    const countEl = document.getElementById("count");
+    const video = document.getElementById("video");
+    const nowPlaying = document.getElementById("now-playing");
+    const statusEl = document.getElementById("status");
+
+    let channels = [];
+    let hls = null;
+
+    const PROXY_BASE = "http://127.0.0.1:8787/proxy?url=";
+
+    function setStatus(msg, isError = false) {
+      statusEl.textContent = msg;
+      statusEl.className = isError ? "error" : "";
+    }
+
+    function loadHls(url, ch, viaProxy) {
+      if (hls) { hls.destroy(); hls = null; }
+      hls = new Hls({
+        enableWebVTT: false,
+        enableIMSC1: false,
+        enableCEA708Captions: false,
+      });
+      hls.loadSource(url);
+      hls.attachMedia(video);
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        setStatus(viaProxy ? "Playing via local proxy." : "");
+        video.play().catch(() => {});
+      });
+      hls.on(Hls.Events.ERROR, (_, data) => {
+        if (!data.fatal) return;
+        if (!viaProxy && data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+          setStatus("Direct load failed — retrying through local proxy…");
+          loadHls(PROXY_BASE + encodeURIComponent(ch.url), ch, true);
+          return;
+        }
+        let msg = `Stream error: ${data.details}`;
+        if (data.details === "manifestLoadError") {
+          if (viaProxy) {
+            // Distinguish "proxy not running" from a genuinely dead stream.
+            fetch(PROXY_BASE.replace("/proxy?url=", "/proxy"), { method: "OPTIONS" })
+              .then(() => setStatus("Stream failed via proxy too — it's likely dead or geo-blocked.", true))
+              .catch(() => setStatus("Local proxy isn't running — start it with: python3 proxy.py", true));
+            return;
+          }
+          msg = "Couldn't load stream. Start the proxy for another attempt: python3 proxy.py";
+        }
+        setStatus(msg, true);
+      });
+    }
+
+    function play(ch, el) {
+      document.querySelectorAll(".channel.active").forEach(e => e.classList.remove("active"));
+      if (el) el.classList.add("active");
+      nowPlaying.innerHTML = "";
+      nowPlaying.append(ch.name, " ");
+      const span = document.createElement("span");
+      span.textContent = ch.group + " · ";
+      const link = document.createElement("a");
+      link.href = ch.url;
+      link.target = "_blank";
+      link.textContent = ch.url;
+      link.style.cssText = "color:#8a919c;font-size:13px;font-weight:300;word-break:break-all;text-decoration:none;";
+      span.appendChild(link);
+      nowPlaying.appendChild(span);
+      setStatus("Loading stream…");
+
+      if (window.Hls && Hls.isSupported()) {
+        loadHls(ch.url, ch, false);
+      } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
+        video.src = ch.url;
+        video.play().catch(() => {});
+        setStatus("");
+      } else {
+        setStatus("HLS not supported in this browser.", true);
+      }
+    }
+
+    function render(filter = "") {
+      const q = filter.trim().toLowerCase();
+      const shown = (q
+        ? channels.filter(c =>
+            c.name.toLowerCase().includes(q) || c.group.toLowerCase().includes(q))
+        : channels.slice())
+        .sort((a, b) => {
+          const fa = favSet.has(a.url), fb = favSet.has(b.url);
+          if (fa !== fb) return fa ? -1 : 1; // favorites first
+          const ra = healthMap.get(a.url), rb = healthMap.get(b.url);
+          const ka = ra ? ra.fail_pct : -1, kb = rb ? rb.fail_pct : -1;
+          if (ka !== kb) return ka - kb; // healthy first, worst failures last
+          if (ra && rb && ra.fails !== rb.fails) return ra.fails - rb.fails;
+          return a.name.localeCompare(b.name);
+        });
+      countEl.textContent = q
+        ? `${shown.length} / ${channels.length} channels`
+        : "";
+      listEl.innerHTML = "";
+      const frag = document.createDocumentFragment();
+      for (const ch of shown) {
+        const row = document.createElement("div");
+        row.className = "channel";
+        const img = document.createElement("img");
+        img.loading = "lazy";
+        img.dataset.url = ch.url;
+        const thumb = thumbMap.get(ch.url) || ch.thumb;
+        if (thumb) img.src = thumb;
+        else img.style.visibility = "hidden";
+        img.onerror = () => { img.style.visibility = "hidden"; };
+        const meta = document.createElement("div");
+        meta.className = "meta";
+        const name = document.createElement("div");
+        name.className = "name";
+        name.textContent = ch.name;
+        const group = document.createElement("div");
+        group.className = "group";
+        group.textContent =
+          location.protocol === "https:" && ch.url.startsWith("http://")
+            ? ch.group + " · http (may be blocked)"
+            : ch.group;
+        meta.append(name, group);
+        row.append(img, meta);
+        const star = document.createElement("div");
+        star.className = "star" + (favSet.has(ch.url) ? " faved" : "");
+        star.textContent = favSet.has(ch.url) ? "★" : "☆";
+        star.addEventListener("click", async (ev) => {
+          ev.stopPropagation();
+          if (favSet.has(ch.url)) favSet.delete(ch.url);
+          else favSet.add(ch.url);
+          star.classList.toggle("faved");
+          star.textContent = favSet.has(ch.url) ? "★" : "☆";
+          try {
+            await fused.runPython("./favorites.py",
+              { action: "toggle", channel: JSON.stringify(ch) });
+          } catch (e) { setStatus("Failed to save favorite", true); }
+          catCache.delete("favorites");
+          if (currentCategory === "favorites") showCategory("favorites");
+          else render(searchEl.value);
+        });
+        row.appendChild(star);
+        const rec = healthMap.get(ch.url);
+        if (rec) {
+          const wrap = document.createElement("div");
+          wrap.className = "dot-wrap";
+          const dot = document.createElement("div");
+          const okRate = 100 * (rec.tries - rec.fails) / rec.tries;
+          const cls = okRate >= 100 ? "up"
+            : okRate >= 75 ? "wasabi"
+            : okRate >= 50 ? "yellow"
+            : okRate >= 25 ? "orange"
+            : "down";
+          dot.className = "dot " + cls;
+          const tip = document.createElement("div");
+          tip.className = "tip";
+          tip.textContent = `${rec.tries - rec.fails}/${rec.tries}`;
+          wrap.append(dot, tip);
+          row.appendChild(wrap);
+        }
+        row.addEventListener("click", () => play(ch, row));
+        frag.appendChild(row);
+      }
+      listEl.appendChild(frag);
+    }
+
+    searchEl.addEventListener("input", () => render(searchEl.value));
+
+    const healthBtn = document.getElementById("health-btn");
+    const thumbsBtn = document.getElementById("thumbs-btn");
+    const healthSummary = document.getElementById("health-summary");
+    const healthMap = new Map(); // url -> record from health.parquet
+    const thumbMap = new Map();  // url -> thumbs/<hash>.jpg (from live run)
+
+    // Health % over the channels currently shown (selected category).
+    function updateHealthSummary() {
+      let checked = 0, ok = 0;
+      for (const ch of channels) {
+        const rec = healthMap.get(ch.url);
+        if (rec) { checked++; if (rec.responsive_now) ok++; }
+      }
+      const pct = checked ? Math.round(1000 * ok / checked) / 10 : 100;
+      healthSummary.innerHTML = "";
+      healthSummary.append("Health: ");
+      const pctEl = document.createElement("span");
+      pctEl.className = "pct" + (pct < 90 ? " bad" : "");
+      pctEl.textContent = `${pct}%`;
+      healthSummary.append(pctEl,
+        checked ? ` — ${ok}/${checked} responsive` : " — not checked yet");
+    }
+
+    function renderHealth(result) {
+      healthMap.clear();
+      for (const r of (result.records || result.unresponsive)) healthMap.set(r.url, r);
+      updateHealthSummary();
+      render(searchEl.value);
+    }
+
+    const healthProgress = document.getElementById("health-progress");
+    const healthFill = healthProgress.querySelector(".fill");
+    let pollTimer = null;
+    let polling = false;
+    let cursor = 0;
+
+    function showProgress(state, jobType) {
+      healthProgress.style.display = "block";
+      const pct = state.total ? (100 * state.finished / state.total) : 0;
+      healthFill.style.width = `${pct.toFixed(1)}%`;
+      if (jobType === "thumbs" && state.retry_total) {
+        healthFill.style.width =
+          `${(100 * state.retry_done / state.retry_total).toFixed(1)}%`;
+        healthSummary.textContent =
+          `Retrying failed… ${state.retry_done}/${state.retry_total} (${state.ok} grabbed)`;
+      } else {
+        healthSummary.textContent = jobType === "thumbs"
+          ? `Thumbnails… ${state.finished}/${state.total} (${state.ok} grabbed)`
+          : `Checking… ${state.finished}/${state.total} (${state.failed} failing)`;
+      }
+    }
+
+    const cancelBtn = document.getElementById("cancel-btn");
+    let currentRunId = null;
+
+    function stopPolling() {
+      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+      healthBtn.disabled = false;
+      healthBtn.textContent = "Run health check";
+      thumbsBtn.disabled = false;
+      thumbsBtn.textContent = "Get thumbnails";
+      cancelBtn.style.display = "none";
+      currentRunId = null;
+      healthProgress.style.display = "none";
+      fused.params.set("bg_run", "");
+    }
+
+    cancelBtn.addEventListener("click", () => {
+      if (!currentRunId) return;
+      const runId = currentRunId;
+      stopPolling(); // reset UI right away; worker winds down on its own
+      healthSummary.textContent =
+        "Cancelled (in-flight jobs may keep running briefly in the background).";
+      fused.runPython("./runner.py", { action: "cancel", run_id: runId })
+        .catch(() => {});
+    });
+
+    function applyThumbEvents(events) {
+      let changed = false;
+      for (const e of events) {
+        if ((e.type === "job_end" || e.type === "job_retry") && e.msg && e.msg.thumb) {
+          thumbMap.set(e.msg.url, e.msg.thumb);
+          const img = listEl.querySelector(`img[data-url="${CSS.escape(e.msg.url)}"]`);
+          if (img) {
+            img.src = thumbMap.get(e.msg.url);
+            img.style.visibility = "visible";
+          }
+          changed = true;
+        }
+      }
+      return changed;
+    }
+
+    async function poll(runId, jobType) {
+      if (polling) return;
+      polling = true;
+      try {
+        const s = await fused.runPython("./runner.py",
+          { action: "status", run_id: runId, since: String(cursor) });
+        if (s.error) {
+          setStatus(`Run: ${s.error}`, true);
+          stopPolling();
+          return;
+        }
+        cursor = s.cursor;
+        showProgress(s.state, jobType);
+        if (jobType === "thumbs") applyThumbEvents(s.events);
+        if (!s.state.running) {
+          stopPolling();
+          const sum = s.state.summary;
+          if (sum && !sum.error) {
+            if (jobType === "thumbs") {
+              if (sum.health) renderHealth(sum.health);
+              setStatus(`Thumbnails: ${sum.grabbed}/${sum.checked} grabbed`);
+            } else {
+              renderHealth(sum);
+            }
+          } else {
+            setStatus(`Run failed: ${sum?.error || "unknown"}`, true);
+          }
+        }
+      } catch (e) {
+        setStatus(`Poll failed: ${e.message || e}`, true);
+        stopPolling();
+      } finally {
+        polling = false;
+      }
+    }
+
+    function watchRun(runId, jobType) {
+      const btn = jobType === "thumbs" ? thumbsBtn : healthBtn;
+      healthBtn.disabled = true;
+      thumbsBtn.disabled = true;
+      btn.textContent = "Running…";
+      currentRunId = runId;
+      cancelBtn.style.display = "";
+      cursor = 0;
+      pollTimer = setInterval(() => poll(runId, jobType), 700);
+      poll(runId, jobType);
+    }
+
+    async function startRun(jobType) {
+      healthBtn.disabled = true;
+      thumbsBtn.disabled = true;
+      try {
+        const { run_id } = await fused.runPython("./runner.py",
+          { action: "start", job: jobType, category: currentCategory });
+        fused.params.set("bg_run", `${jobType}:${run_id}`);
+        watchRun(run_id, jobType);
+      } catch (e) {
+        setStatus(`Failed to start: ${e.message || e}`, true);
+        stopPolling();
+      }
+    }
+
+    healthBtn.addEventListener("click", () => startRun("health"));
+    thumbsBtn.addEventListener("click", () => startRun("thumbs"));
+
+    // Resume watching an in-flight run after a page refresh.
+    const existingRun = fused.params.get("bg_run");
+    if (existingRun && existingRun.includes(":")) {
+      const [jobType, runId] = existingRun.split(":");
+      watchRun(runId, jobType);
+    }
+
+    const categoryEl = document.getElementById("category");
+    const favSet = new Set();
+    let currentCategory = fused.params.get("cat") || "sports";
+
+    let catsHaveCounts = false;
+    function fillCategories(cats, counts) {
+      if (catsHaveCounts || (categoryEl.options.length && !counts)) return;
+      catsHaveCounts = !!counts;
+      const ordered = counts
+        ? cats.filter(c => (counts[c] || 0) > 0)
+              .sort((a, b) => (counts[b] || 0) - (counts[a] || 0))
+        : cats;
+      categoryEl.innerHTML = "";
+      for (const c of ["favorites", ...ordered]) {
+        const opt = document.createElement("option");
+        opt.value = c;
+        opt.textContent =
+          c === "favorites" ? "★ favorites"
+          : c === "all" ? `all categories (${counts ? counts.all : ""})`
+          : counts ? `${c} (${counts[c]})` : c;
+        categoryEl.appendChild(opt);
+      }
+      categoryEl.value = currentCategory;
+    }
+
+    const catCache = new Map(); // category -> channels[]
+
+    async function loadCategory(cat) {
+      if (cat === "favorites") {
+        const favs = await fused.runPython("./favorites.py", { action: "list" });
+        favSet.clear();
+        for (const u of favs.urls) favSet.add(u);
+        return favs.channels;
+      }
+      const result = await fused.runPython("./channels.py", { category: cat });
+      fillCategories(result.categories, result.counts);
+      return result.channels;
+    }
+
+    async function showCategory(cat) {
+      if (catCache.has(cat)) { // instant from page cache
+        channels = catCache.get(cat);
+        categoryEl.value = cat;
+        updateHealthSummary();
+        render(searchEl.value);
+        return;
+      }
+      setStatus("Loading channel list…");
+      channels = await loadCategory(cat);
+      catCache.set(cat, channels);
+      if (cat !== currentCategory) return; // user switched again meanwhile
+      categoryEl.value = cat;
+      updateHealthSummary();
+      render(searchEl.value);
+      setStatus("");
+    }
+
+    async function init() {
+      const favs = await fused.runPython("./favorites.py", { action: "list" });
+      favSet.clear();
+      for (const u of favs.urls) favSet.add(u);
+      fillCategories(favs.categories);
+      catCache.set("favorites", favs.channels);
+      await showCategory(currentCategory);
+      try {
+        const saved = await fused.runPython("./stats.py", {});
+        if (saved.checked) renderHealth(saved);
+      } catch (e) { /* no saved stats yet */ }
+      refreshInBackground();
+    }
+
+    // Serve the cached list instantly, refetch stale playlists (>24h) quietly.
+    async function refreshInBackground() {
+      if (currentCategory === "favorites") return;
+      const cat = currentCategory;
+      try {
+        const fresh = await fused.runPython("./channels.py",
+          { category: cat, refresh: "1" });
+        if (fresh.channels) {
+          catCache.set(cat, fresh.channels);
+          if (cat === currentCategory) {
+            channels = fresh.channels;
+            render(searchEl.value);
+          }
+        }
+      } catch (e) { /* keep cached list */ }
+    }
+
+    categoryEl.addEventListener("change", () => {
+      currentCategory = categoryEl.value;
+      fused.params.set("cat", currentCategory);
+      showCategory(currentCategory);
+    });
+
+    init();
+  </script>
+</body>
+</html>

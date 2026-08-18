@@ -1,0 +1,883 @@
+<!DOCTYPE html>
+<html data-fused-theme="shell">
+<head>
+  <meta name="fused-app">
+<meta charset="utf-8" />
+<title>OpenMic — meeting notes</title>
+<style>
+  :root       { color-scheme: dark;  --bg: #101318; --panel: #171b22; --text: #dce2ea; --muted: #9aa0a6; --line: #2a303a; --accent: #e5484d; --accent2: #4d8de5; --ok: #3fb26f; --fused-yellow: #ffd702; --accent3: #b174e0; }
+  :root[data-theme="light"]
+              { color-scheme: light; --bg: #f7f8fa; --panel: #ffffff; --text: #1a1f27; --muted: #5f6672; --line: #d8dce3; --accent: #d43a3f; --accent2: #2f6fd4; --ok: #21935a; --fused-yellow: #9c7d00; --accent3: #8b3fc9; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+         font-size: 14px; color: var(--text); background: var(--bg); }
+  .layout { display: grid; grid-template-columns: 30% 1fr; height: 100vh; }
+  aside { border-right: 1px solid var(--line); overflow-y: auto; padding: 12px; }
+  aside h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 8px 4px; }
+  .section-head { display: flex; align-items: center; gap: 0; }
+  .icon-btn { padding: 4px 8px; font-size: 14px; line-height: 1; margin: 4px; border-color: transparent;
+              background: none; color: var(--muted); }
+  .icon-btn:hover { color: var(--text); border-color: var(--line); background: var(--panel); }
+  .path-input-wrap { position: relative; margin-bottom: 10px; }
+  #newRootInput { width: 100%; padding: 9px 40px 9px 12px; border: 1px solid var(--line); border-radius: 8px;
+                  background: var(--bg); color: var(--text); font-size: 13px; font-family: ui-monospace, Menlo, monospace; }
+  .path-input-wrap .open-in-path { position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+                                    padding: 4px 7px; margin: 0; }
+  .mtg { padding: 16px 10px; border-radius: 8px; cursor: pointer; margin-bottom: 4px; border: 1px solid transparent;
+         display: flex; align-items: center; gap: 8px; position: relative; }
+  .mtg:hover { background: var(--panel); }
+  .mtg.active { border-color: var(--line); background: var(--panel); }
+  .mtg:focus { outline: none; border-color: var(--accent2); }
+  .mtg .info { flex: 1; min-width: 0; }
+  .mtg .t { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mtg .d { color: var(--muted); font-size: 12px; margin-top: 14px;
+            display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .mtg .ago { flex: none; margin-right: 8px; }
+  .mtg .proc { font-size: 12px; margin-top: 4px; font-weight: 600; }
+  .mtg .proc.recording { color: var(--accent); }
+  .mtg .proc.finishing { color: var(--fused-yellow); }
+  .mtg .proc.title { color: var(--accent2); }
+  .mtg .proc.summarizing { color: var(--accent3); }
+  .mtg .proc.saved { color: var(--ok); }
+  .mtg .del { padding: 6px 9px; font-weight: 400; border-radius: 6px;
+              background: var(--panel); border-color: transparent; color: var(--muted);
+              visibility: hidden; position: absolute; right: 12px; top: 50%;
+              transform: translateY(-50%); }
+  .mtg:hover .del { visibility: visible; }
+  .mtg .del:hover { color: var(--accent); border-color: var(--line); background: var(--bg); }
+  .mtg .del svg { display: block; }
+  main { overflow-y: auto; padding: 24px 32px; }
+  h1 { font-size: 18px; margin: 4px 4px 16px; }
+  .rec-bar { display: flex; gap: 8px; align-items: stretch; flex-direction: column; margin: 4px 4px 16px;
+             padding-top: 8px; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+  .rec-bar .btns { display: flex; gap: 8px; flex-wrap: wrap; }
+  .rec-bar .btns button { flex: 1; white-space: nowrap; }
+  .rec-bar .btns button svg { vertical-align: -2px; margin-right: 2px; }
+  button { padding: 9px 16px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel);
+           color: var(--text); font-size: 14px; cursor: pointer; font-weight: 600; }
+  button:disabled { opacity: .5; cursor: default; }
+  #startBtn { background: var(--accent); border-color: var(--accent); color: #fff; }
+  #startBrowserBtn { background: var(--accent2); border-color: var(--accent2); color: #fff; }
+  #stopBtn  { background: var(--panel); }
+  #stopBtn:hover:not(:disabled) { background: var(--accent); border-color: var(--accent); color: #fff; }
+  #bigTimer { font-size: 56px; font-weight: 700; font-variant-numeric: tabular-nums;
+              text-align: center; letter-spacing: .02em; margin: 4px 0; line-height: 1.1; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); display: inline-block;
+         animation: pulse 1.2s infinite; vertical-align: -1px; margin-right: 6px; }
+  @keyframes pulse { 50% { opacity: .3; } }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+  .panel h3 { margin: 0 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+  .panel h3.settings-title { text-transform: none; font-size: 14px; letter-spacing: 0; font-weight: 400; }
+  .mtg-title { margin: 0; font-size: 18px; font-weight: 700; line-height: 1.3; color: var(--text);
+               letter-spacing: -0.01em; }
+  .title-row { position: relative; }
+  .title-row .edit-title { position: absolute; right: 0; top: 50%; transform: translateY(-50%);
+                           padding: 4px 8px; font-size: 13px; color: var(--muted);
+                           background: var(--panel); border-color: transparent; visibility: hidden; }
+  .title-row:hover .edit-title { visibility: visible; }
+  .edit-title:hover { color: var(--text); border-color: var(--line); }
+  .title-input { width: 100%; padding: 9px 12px; border: 1px solid var(--line); border-radius: 8px;
+                 background: var(--bg); color: var(--text); font-size: 16px; font-weight: 600; }
+  #liveTranscript { white-space: pre-wrap; line-height: 1.6; }
+  #interim { color: var(--muted); font-style: italic; }
+  .md { line-height: 1.6; }
+  .md h1, .md h2, .md h3 { margin: 14px 0 6px; }
+  .md h1:first-child, .md h2:first-child, .md h3:first-child { margin-top: 0; }
+  .md h2 { font-size: 15px; }
+  .md h3 { font-size: 14px; color: var(--muted); }
+  .md p { margin: 0 0 10px; }
+  .md ul, .md ol { margin: 0 0 10px; padding-left: 22px; }
+  .md li { margin: 2px 0; }
+  .md code { font-family: ui-monospace, Menlo, monospace; font-size: 12px; border: 1px solid var(--line);
+             border-radius: 4px; padding: 1px 5px; }
+  .md strong { font-weight: 700; }
+  .readme h1 { font-size: 26px; display: flex; align-items: center; gap: 10px;
+               padding-bottom: 12px; margin-bottom: 4px; border-bottom: 1px solid var(--line); }
+  .readme .tagline { color: var(--muted); font-size: 15px; margin-top: 2px; margin-bottom: 18px; }
+  .readme h2 { font-size: 17px; padding-bottom: 8px; margin-top: 32px;
+               border-bottom: 1px solid var(--line); }
+  .readme .feature-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+                           gap: 12px; margin: 14px 0 8px; }
+  .readme .feature { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+  .readme .feature .fi { font-size: 20px; margin-bottom: 6px; }
+  .readme .feature h4 { margin: 0 0 4px; font-size: 13px; }
+  .readme .feature p { margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+  .readme ol { counter-reset: step; }
+  .readme ol > li { list-style: none; position: relative; padding-left: 4px; margin-bottom: 10px; }
+  .readme ol > li::before { counter-increment: step; content: counter(step);
+    display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px;
+    background: var(--accent2); color: #fff; border-radius: 50%; font-size: 11px; font-weight: 700;
+    margin-right: 8px; }
+  .status { color: var(--muted); font-size: 13px; }
+  .tabs { display: flex; gap: 4px; margin-bottom: -1px; padding: 0 8px; position: relative; }
+  .tab { padding: 8px 16px; border: 1px solid transparent; border-bottom: none; background: none;
+         border-radius: 8px 8px 0 0; color: var(--muted); font-weight: 600; }
+  .tab:hover { color: var(--text); }
+  .tab.active { background: var(--panel); border-color: var(--line); color: var(--text); }
+  .tab-panel { border-top-left-radius: 0; }
+  .notes-editor { width: 100%; min-height: 260px; resize: vertical; padding: 10px 12px;
+                  border: 1px solid var(--line); border-radius: 8px; background: var(--bg);
+                  color: var(--text); font-family: ui-monospace, Menlo, monospace; font-size: 13px;
+                  line-height: 1.5; }
+  .edit-row { display: flex; gap: 8px; align-items: center; margin-top: 10px; }
+  .settings-actions { justify-content: flex-end; }
+  .settings-actions .status { margin-right: auto; }
+  .edit-row .save { background: var(--ok); border-color: var(--ok); color: #fff; }
+  .edit-notes { margin-top: 12px; padding: 6px 12px; font-size: 13px; color: var(--muted); }
+  .edit-notes:hover { color: var(--text); border-color: var(--text); }
+  audio { width: 100%; margin-top: 8px; background: transparent; }
+  audio::-webkit-media-controls-panel { background-color: transparent; }
+  .empty { color: var(--muted); padding: 24px 4px; }
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside>
+    <div class="rec-bar">
+      <div id="bigTimer" style="display:none">00:00</div>
+      <div class="btns">
+        <button id="startBtn" title="Record your microphone only — no screen-share prompt"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg> Record Mic</button>
+        <button id="startBrowserBtn" title="Record mic plus audio from a shared tab/window (you'll pick one and check 'share audio')">▣ Record Tab</button>
+        <button id="stopBtn" style="display:none">■ Stop</button>
+      </div>
+    </div>
+    <div class="section-head">
+      <h2 style="margin:8px 0 8px 4px">Past Meetings</h2>
+      <button id="settingsBtn" class="icon-btn" style="margin:0; display:flex; align-items:center" title="Change where meeting data is saved"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg></button>
+    </div>
+    <div id="settingsPanel" class="panel" style="display:none">
+      <h3 class="settings-title">Storage folder</h3>
+      <div class="path-input-wrap">
+        <input id="newRootInput" type="text" placeholder="/path/to/new/folder" />
+        <button id="openRootBtn" class="icon-btn open-in-path" title="Open this folder in the explorer">↗</button>
+      </div>
+      <div class="edit-row settings-actions">
+        <span id="moveStatus" class="status"></span>
+        <button id="cancelMoveBtn">Cancel</button>
+        <button id="moveRootBtn" class="save" disabled>Move here</button>
+      </div>
+    </div>
+    <div id="list"><div class="empty">No meetings yet — click Record above to start.</div></div>
+  </aside>
+  <main>
+    <div id="livePanel" class="panel" style="display:none">
+      <h3><span class="dot"></span>Live transcript</h3>
+      <div id="liveTranscript"></div><div id="interim"></div>
+    </div>
+    <div id="detail"></div>
+  </main>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+function explorerUrl(absPath) {
+  const encoded = absPath.replace(/^\/+/, "").split("/").map(encodeURIComponent).join("/");
+  return "/explorer/view/" + encoded;
+}
+
+// Minimal markdown -> HTML (headings, bold/italic, code, lists, paragraphs).
+function renderMarkdown(src) {
+  const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const inline = s => esc(s)
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*([^*]+)\*/g, "<em>$1</em>");
+  const lines = src.replace(/\r\n/g, "\n").split("\n");
+  let html = "", list = null; // list: "ul" | "ol" | null
+  const closeList = () => { if (list) { html += `</${list}>`; list = null; } };
+  for (const raw of lines) {
+    const line = raw.trim();
+    const h = line.match(/^(#{1,3})\s+(.*)$/);
+    const ol = line.match(/^\d+[.)]\s+(.*)$/);
+    const ul = line.match(/^[-*]\s+(.*)$/);
+    if (h) { closeList(); html += `<h${h[1].length}>${inline(h[2])}</h${h[1].length}>`; }
+    else if (ul) { if (list !== "ul") { closeList(); html += "<ul>"; list = "ul"; } html += `<li>${inline(ul[1])}</li>`; }
+    else if (ol) { if (list !== "ol") { closeList(); html += "<ol>"; list = "ol"; } html += `<li>${inline(ol[1])}</li>`; }
+    else if (!line) { closeList(); }
+    else { closeList(); html += `<p>${inline(line)}</p>`; }
+  }
+  closeList();
+  return html;
+}
+let rec = null, speech = null, finalText = "", timerIv = null, t0 = 0;
+let curId = null, curTitle = "", stopping = false;
+let pendingAudio = Promise.resolve();
+let meetingsRoot = null; // absolute path, filled in from meetings.py's return value
+// Keyed by meeting id — separate slot per recording so two recordings
+// processing at once don't stomp on each other's status text.
+let cardStatus = {};
+
+function setCardStatus(id, text, stage = "") {
+  if (text) cardStatus[id] = { text, stage };
+  else delete cardStatus[id];
+  const div = document.querySelector(`.mtg[data-id="${id}"] .proc`);
+  if (div) { div.textContent = text; div.className = "proc" + (stage ? " " + stage : ""); }
+}
+let micStream = null, displayStream = null, mixCtx = null;
+
+// ---------- speaker-change detection (pitch heuristic, no identification) ----------
+// Tracks pitch/energy over time and clusters finalized speech chunks by pitch
+// similarity, so consecutive turns from a different-sounding voice get a new
+// "Speaker N" tag. This is NOT diarization or identification — just a guess
+// at when the talker changed, based on fundamental frequency.
+let audioCtx = null, analyser = null, pitchIv = null, pitchSamples = [];
+let segStart = 0, speakerClusters = [], lastSpeakerId = 1;
+
+function autoCorrelate(buf, sampleRate) {
+  let SIZE = buf.length, rms = 0;
+  for (let i = 0; i < SIZE; i++) rms += buf[i] * buf[i];
+  rms = Math.sqrt(rms / SIZE);
+  if (rms < 0.01) return { pitch: -1, rms };
+  let r1 = 0, r2 = SIZE - 1;
+  const thres = 0.2;
+  for (let i = 0; i < SIZE / 2; i++) if (Math.abs(buf[i]) < thres) { r1 = i; break; }
+  for (let i = 1; i < SIZE / 2; i++) if (Math.abs(buf[SIZE - i]) < thres) { r2 = SIZE - i; break; }
+  const trimmed = buf.slice(r1, r2);
+  const n = trimmed.length;
+  const c = new Array(n).fill(0);
+  for (let i = 0; i < n; i++)
+    for (let j = 0; j < n - i; j++) c[i] += trimmed[j] * trimmed[j + i];
+  let d = 0;
+  while (d + 1 < n && c[d] > c[d + 1]) d++;
+  let maxval = -1, maxpos = -1;
+  for (let i = d; i < n; i++) if (c[i] > maxval) { maxval = c[i]; maxpos = i; }
+  let T0 = maxpos;
+  if (T0 > 0 && T0 < n - 1) {
+    const x1 = c[T0 - 1], x2 = c[T0], x3 = c[T0 + 1];
+    const a = (x1 + x3 - 2 * x2) / 2, b = (x3 - x1) / 2;
+    if (a) T0 = T0 - b / (2 * a);
+  }
+  return { pitch: T0 > 0 ? sampleRate / T0 : -1, rms };
+}
+
+function setupPitchTracking(stream) {
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  const src = audioCtx.createMediaStreamSource(stream);
+  analyser = audioCtx.createAnalyser();
+  analyser.fftSize = 2048;
+  src.connect(analyser);
+  pitchSamples = []; segStart = Date.now();
+  speakerClusters = []; lastSpeakerId = 1;
+  const buf = new Float32Array(analyser.fftSize);
+  pitchIv = setInterval(() => {
+    analyser.getFloatTimeDomainData(buf);
+    pitchSamples.push({ t: Date.now(), ...autoCorrelate(buf, audioCtx.sampleRate) });
+    const cutoff = Date.now() - 120000;
+    while (pitchSamples.length && pitchSamples[0].t < cutoff) pitchSamples.shift();
+  }, 150);
+}
+
+function teardownPitchTracking() {
+  if (pitchIv) clearInterval(pitchIv);
+  if (audioCtx) audioCtx.close().catch(() => {});
+  audioCtx = null; analyser = null; pitchIv = null; pitchSamples = [];
+}
+
+// Matches a segment's median pitch to the nearest known "speaker" cluster
+// (within 12%), or starts a new cluster. Silent/unvoiced segments fall back
+// to whoever was last talking.
+function detectSpeaker(from, to) {
+  const samples = pitchSamples.filter(s =>
+    s.t >= from && s.t <= to && s.pitch > 70 && s.pitch < 400 && s.rms > 0.01);
+  if (!samples.length) return lastSpeakerId;
+  const pitches = samples.map(s => s.pitch).sort((a, b) => a - b);
+  const median = pitches[Math.floor(pitches.length / 2)];
+  let best = null, bestDiff = Infinity;
+  for (const c of speakerClusters) {
+    const diff = Math.abs(median - c.avg) / c.avg;
+    if (diff < bestDiff) { bestDiff = diff; best = c; }
+  }
+  if (best && bestDiff < 0.12) {
+    best.avg = (best.avg * best.n + median) / (best.n + 1);
+    best.n++;
+    lastSpeakerId = best.id;
+  } else {
+    lastSpeakerId = speakerClusters.length + 1;
+    speakerClusters.push({ id: lastSpeakerId, avg: median, n: 1 });
+  }
+  return lastSpeakerId;
+}
+
+// ---------- sidebar ----------
+function timeAgo(iso) {
+  const t = new Date(iso).getTime();
+  if (!iso || isNaN(t)) return "";
+  const s = Math.max(0, (Date.now() - t) / 1000);
+  if (s < 60) return "just now";
+  if (s < 3600) return Math.floor(s / 60) + " min ago";
+  if (s < 86400) return Math.floor(s / 3600) + " hr ago";
+  const d = Math.floor(s / 86400);
+  return d + (d === 1 ? " day ago" : " days ago");
+}
+
+async function loadList() {
+  // key: null — a background recording's finish-up may call this concurrently
+  // with a newer recording's own list refresh; stale-cancel would hang one of them.
+  const data = await fused.runPython("./meetings.py", { action: "list" }, { key: null });
+  meetingsRoot = data.root;
+  const sel = fused.params.get("meeting");
+  const el = $("list");
+  // Re-rendering replaces every card, which would otherwise drop keyboard
+  // focus mid arrow-key navigation — remember it and restore after.
+  const hadFocus = el.contains(document.activeElement);
+  if (!data.meetings.length) { el.innerHTML = '<div class="empty">No meetings yet — click Record above to start.</div>'; return data; }
+  el.innerHTML = "";
+  for (const m of data.meetings) {
+    const div = document.createElement("div");
+    div.className = "mtg" + (m.id === sel ? " active" : "");
+    div.tabIndex = 0;
+    div.dataset.id = m.id;
+    div.innerHTML = `<div class="info"><div class="t"></div><div class="d"><span class="dt"></span><span class="ago"></span></div><div class="proc"></div></div>
+                     <button class="del" title="Delete this meeting"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg></button>`;
+    div.querySelector(".t").textContent = m.title;
+    div.querySelector(".dt").textContent = (m.started_at || "").replace("T", " ").slice(0, 16)
+      + (m.duration ? " · " + m.duration : "");
+    div.querySelector(".ago").textContent = timeAgo(m.started_at);
+    if (cardStatus[m.id]) {
+      const proc = div.querySelector(".proc");
+      proc.textContent = cardStatus[m.id].text;
+      proc.className = "proc" + (cardStatus[m.id].stage ? " " + cardStatus[m.id].stage : "");
+    }
+    div.onclick = () => fused.params.set("meeting", m.id);
+    div.querySelector(".del").onclick = ev => { ev.stopPropagation(); deleteMeeting(m); };
+    el.appendChild(div);
+  }
+  if (hadFocus) el.querySelector(".mtg.active")?.focus();
+  return data;
+}
+
+// Arrow keys move the selection up/down the meeting list while it has focus.
+$("list").addEventListener("keydown", e => {
+  if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+  const cards = Array.from($("list").querySelectorAll(".mtg"));
+  if (!cards.length) return;
+  e.preventDefault();
+  const curIdx = cards.findIndex(c => c.classList.contains("active"));
+  let idx = curIdx === -1 ? 0 : curIdx + (e.key === "ArrowDown" ? 1 : -1);
+  idx = Math.max(0, Math.min(cards.length - 1, idx));
+  fused.params.set("meeting", cards[idx].dataset.id);
+});
+
+async function deleteMeeting(m) {
+  if (!confirm(`Delete "${m.title}" and all its files? This cannot be undone.`)) return;
+  await fused.runPython("./meetings.py", { action: "delete", meeting_id: m.id }, { key: null });
+  if (fused.params.get("meeting") === m.id) fused.params.set("meeting", ""); // triggers redraw
+  else draw();
+}
+
+// ---------- detail view ----------
+// Shown in the main pane when there are no recordings yet: a short guide to
+// the two record buttons instead of an empty "select a meeting" hint.
+const GETTING_STARTED = `
+  <div class="panel readme">
+    <div class="md">
+      <h1>🎙️ Open Mic</h1>
+      <p class="tagline">Record any conversation, get a live transcript and an AI summary with action items — everything stays on this machine.</p>
+
+      <div class="feature-grid">
+        <div class="feature"><div class="fi">🎙️</div><h4>Mic or tab audio</h4>
+          <p>Record just your mic, or add a shared tab/window's audio for video calls.</p></div>
+        <div class="feature"><div class="fi">✨</div><h4>AI summary</h4>
+          <p>Stopping generates a title, key points, decisions, and action items.</p></div>
+        <div class="feature"><div class="fi">📝</div><h4>Editable notes</h4>
+          <p>Add your own notes alongside the transcript for any meeting.</p></div>
+        <div class="feature"><div class="fi">📁</div><h4>Your files, your folder</h4>
+          <p>Plain files on disk — pick and move the storage folder anytime.</p></div>
+      </div>
+
+      <h2>Getting started</h2>
+      <ol>
+        <li>Pick <strong>🎙 Record Mic</strong> or <strong>▣ Record Tab</strong> (tick <em>"share audio"</em> when prompted, or it falls back to mic only).</li>
+        <li>Talk — a live transcript appears here as you go.</li>
+        <li>Press <strong>■ Stop</strong>. The audio, transcript, and an AI summary are saved and titled automatically.</li>
+      </ol>
+    </div>
+  </div>`;
+
+let renderedMeeting = null; // meeting id whose tabs are already in the DOM
+
+function applyTab(el, key) {
+  el.querySelectorAll(".tab").forEach(b =>
+    b.classList.toggle("active", b.dataset.tab === key));
+  el.querySelectorAll(".tab-panel").forEach(p =>
+    p.style.display = p.dataset.tab === key ? "" : "none");
+}
+
+async function showDetail(hasMeetings) {
+  const mid = fused.params.get("meeting");
+  const el = $("detail");
+  if (!mid) { renderedMeeting = null; el.innerHTML = hasMeetings ? "" : GETTING_STARTED; return; }
+  let active = fused.params.get("tab") || "summary";
+  if (!["summary", "notes", "transcript"].includes(active)) active = "summary";
+  // Same meeting already rendered: just switch the visible tab, no reload.
+  if (mid === renderedMeeting && el.querySelector(".tabs")) { applyTab(el, active); return; }
+  renderedMeeting = null;
+  if (!meetingsRoot) await loadList();
+  const dir = meetingsRoot + "/" + mid + "/";
+  let meta = {};
+  try { meta = JSON.parse(await fused.readFile(dir + "meta.json")); } catch (e) {}
+  const read = async f => { try { return await fused.readFile(dir + f); } catch (e) { return null; } };
+  let [transcript, summary, notes] = await Promise.all(
+    ["transcript.md", "summary.md", "notes.md"].map(read));
+  // Older summaries start with a "# <title>" line and a "## Summary" heading —
+  // both redundant under the Summary tab, so drop them when displaying.
+  if (summary != null) summary = summary
+    .replace(/^#\s[^\n]*\n+/, "")
+    .replace(/^##\s*(Meeting\s+)?Summary\s*\n+/i, "");
+  const tabs = [
+    { key: "summary",    label: "Summary",    body: summary },
+    { key: "notes",      label: "Notes",      body: notes },
+    { key: "transcript", label: "Transcript", body: transcript },
+  ];
+  el.innerHTML =
+    `<div class="panel">
+       <div class="title-row"><h2 class="mtg-title"></h2>
+         <button class="edit-title" title="Edit title">✎ Edit</button></div>
+       <div id="titleEditor" style="display:none"></div>
+       <div id="audioSlot"></div></div>
+     <div class="tabs">${tabs.map(t =>
+       `<button class="tab" data-tab="${t.key}">${t.label}</button>`).join("")}</div>
+     ${tabs.map(t =>
+       `<div class="panel tab-panel" data-tab="${t.key}" style="display:none"></div>`).join("")}`;
+  setupTitleEditor(el, mid, meta.title || mid, transcript);
+  for (const t of tabs) {
+    const panel = el.querySelector(`.tab-panel[data-tab="${t.key}"]`);
+    if (t.key === "notes") renderNotes(panel, dir + "notes.md", t.body);
+    else panel.innerHTML = t.body != null
+      ? `<div class="md">${renderMarkdown(t.body)}</div>`
+      : `<div class="status">No ${t.label.toLowerCase()} yet.</div>`;
+  }
+  el.querySelectorAll(".tab").forEach(b => b.onclick = () => {
+    applyTab(el, b.dataset.tab);                // instant switch
+    fused.params.set("tab", b.dataset.tab);     // keep the URL in sync
+  });
+  applyTab(el, active);
+  renderedMeeting = mid;
+  // audio player
+  try {
+    const st = await fused.stat(dir + "audio.webm");
+    if (st) $("audioSlot").innerHTML =
+      `<audio controls src="${fused.rawUrl(dir + "audio.webm")}"></audio>`;
+  } catch (e) {}
+}
+
+// Meeting title: hover shows an Edit button; editing offers AI-suggested
+// titles generated from the transcript to pick from.
+function setupTitleEditor(el, mid, title, transcript) {
+  const row = el.querySelector(".title-row");
+  const h2 = row.querySelector(".mtg-title");
+  const box = el.querySelector("#titleEditor");
+  h2.textContent = title;
+  row.querySelector(".edit-title").onclick = () => {
+    row.style.display = "none";
+    box.style.display = "";
+    box.innerHTML = "";
+    const input = document.createElement("input");
+    input.className = "title-input";
+    input.value = h2.textContent;
+    const save = document.createElement("button");
+    save.className = "save"; save.textContent = "Save";
+    const cancel = document.createElement("button");
+    cancel.textContent = "Cancel";
+    const ai = document.createElement("button");
+    ai.textContent = "✨ AI rename";
+    const status = document.createElement("span");
+    status.className = "status";
+    const btns = document.createElement("div");
+    btns.className = "edit-row";
+    btns.append(save, cancel, ai, status);
+    box.append(input, btns);
+    input.focus(); input.select();
+    const close = () => { box.style.display = "none"; row.style.display = ""; };
+    cancel.onclick = close;
+    input.onkeydown = e => {
+      if (e.key === "Enter") save.click();
+      if (e.key === "Escape") close();
+    };
+    const saveTitle = async t => {
+      status.textContent = "Saving…";
+      await fused.runPython("./meetings.py",
+        { action: "set_title", meeting_id: mid, title: t }, { key: null });
+      h2.textContent = t;
+      close();
+      loadList(); // refresh the sidebar entry
+    };
+    save.onclick = async () => {
+      const t = input.value.trim();
+      if (!t) { status.textContent = "Title can't be empty."; return; }
+      save.disabled = true;
+      try { await saveTitle(t); }
+      catch (err) {
+        save.disabled = false;
+        status.textContent = "Save failed: " + err.message;
+      }
+    };
+    ai.onclick = async () => {
+      if (!transcript || !transcript.trim()) {
+        status.textContent = "No transcript to generate a title from."; return;
+      }
+      // fused.ai has no stale-cancel — guard double-clicks
+      ai.disabled = true; save.disabled = true;
+      status.textContent = "Asking AI…";
+      try {
+        const res = await fused.ai(
+          "Below is a meeting transcript. Your ONLY task is to produce a title for it.\n" +
+          "Respond with EXACTLY ONE LINE: a descriptive title of 4 to 10 words.\n" +
+          "No quotes, no numbering, no commentary.\n\n" + transcript.slice(0, 12000),
+          { effort: "low", maxTokens: 64 });
+        const t = res.text.trim().split("\n")[0]
+          .replace(/^[\d.)\-*\s]+/, "").replace(/^["'“”]+|["'“”]+$/g, "").replace(/\.$/, "");
+        const n = t.split(/\s+/).length;
+        if (!t || n < 3 || n > 14) {
+          status.textContent = "AI gave no usable title — try again.";
+        } else {
+          await saveTitle(t); // rename directly, no confirmation step
+        }
+      } catch (err) {
+        status.textContent = err.type === "ai_unavailable"
+          ? "AI unavailable — " + err.message
+          : "AI failed: " + err.message;
+      } finally {
+        ai.disabled = false; save.disabled = false;
+      }
+    };
+  };
+}
+
+// Notes tab: rendered markdown with an Edit toggle. Saving uses an
+// optimistic mtime lock so an outside edit isn't silently clobbered.
+function renderNotes(panel, path, body) {
+  const showView = text => {
+    panel.innerHTML = "";
+    const md = document.createElement("div");
+    md.className = "md";
+    md.innerHTML = text && text.trim()
+      ? renderMarkdown(text) : '<p class="status">No notes yet.</p>';
+    const btn = document.createElement("button");
+    btn.className = "edit-notes";
+    btn.textContent = "✎ Edit notes";
+    btn.onclick = () => showEdit(text || "");
+    panel.append(md, btn);
+  };
+  const showEdit = async text => {
+    let mtime = null;
+    try { mtime = (await fused.stat(path)).mtime; } catch (e) {}
+    panel.innerHTML = "";
+    const ta = document.createElement("textarea");
+    ta.className = "notes-editor";
+    ta.value = text;
+    const save = document.createElement("button");
+    save.className = "save"; save.textContent = "Save";
+    const cancel = document.createElement("button");
+    cancel.textContent = "Cancel";
+    const status = document.createElement("span");
+    status.className = "status";
+    const row = document.createElement("div");
+    row.className = "edit-row";
+    row.append(save, cancel, status);
+    panel.append(ta, row);
+    ta.focus();
+    cancel.onclick = () => showView(text);
+    save.onclick = async () => {
+      save.disabled = true;
+      status.textContent = "Saving…";
+      try {
+        await fused.writeFile(path, ta.value,
+          mtime != null ? { expectedMtime: mtime } : {});
+        showView(ta.value);
+      } catch (err) {
+        if (err.type === "conflict" &&
+            confirm("Notes changed on disk while you were editing. Overwrite?")) {
+          await fused.writeFile(path, ta.value);
+          showView(ta.value);
+          return;
+        }
+        save.disabled = false;
+        status.textContent = err.type === "conflict"
+          ? "Not saved." : "Save failed: " + err.message;
+      }
+    };
+  };
+  showView(body);
+}
+
+// ---------- recording ----------
+function fmtClock(ms) {
+  const s = Math.floor(ms / 1000);
+  return String(Math.floor(s/60)).padStart(2,"0") + ":" + String(s%60).padStart(2,"0");
+}
+
+async function start(withBrowserAudio) {
+  try { micStream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+  catch (e) { alert("Microphone access denied: " + e.message); return; }
+
+  // Browser/desktop audio (browser-recording mode only): ask the user to
+  // share a screen/tab/window with "share audio" checked. If denied or
+  // unsupported, we fall back to mic-only recording. Video track is
+  // requested because most browsers require it for getDisplayMedia, but it
+  // is never recorded.
+  displayStream = null;
+  if (withBrowserAudio) {
+    try {
+      displayStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+    } catch (e) { displayStream = null; }
+  }
+
+  // Live transcription and pitch tracking stay on the raw mic stream
+  // (SpeechRecognition always listens to the mic, not a custom stream).
+  // The recorded file, though, mixes mic + desktop audio when available.
+  let stream = micStream;
+  const desktopAudioTracks = displayStream ? displayStream.getAudioTracks() : [];
+  if (desktopAudioTracks.length) {
+    mixCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const dest = mixCtx.createMediaStreamDestination();
+    mixCtx.createMediaStreamSource(micStream).connect(dest);
+    mixCtx.createMediaStreamSource(new MediaStream(desktopAudioTracks)).connect(dest);
+    stream = dest.stream; // used for the MediaRecorder below
+  }
+
+  curTitle = "Meeting";
+  const now = new Date();
+  const pad = n => String(n).padStart(2, "0");
+  const stamp = now.getFullYear() + "-" + pad(now.getMonth()+1) + "-" + pad(now.getDate())
+              + "-" + pad(now.getHours()) + pad(now.getMinutes()) + pad(now.getSeconds());
+  curId = stamp + "-" + curTitle.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
+  await fused.runPython("./meetings.py",
+    { action: "create", meeting_id: curId, title: curTitle, started_at: now.toISOString() },
+    { key: null });
+  fused.params.set("meeting", curId); // select the new card, clears any previous summary shown
+
+  finalText = ""; stopping = false;
+  $("liveTranscript").textContent = ""; $("interim").textContent = "";
+  $("livePanel").style.display = "";
+  $("startBtn").style.display = "none"; $("startBrowserBtn").style.display = "none";
+  $("stopBtn").style.display = ""; $("stopBtn").disabled = false;
+  $("bigTimer").style.display = ""; $("bigTimer").textContent = "00:00";
+  t0 = Date.now();
+  const audioNote = desktopAudioTracks.length ? " (mic + browser audio)"
+    : withBrowserAudio ? " (mic only — no browser audio shared)" : " (mic only)";
+  setCardStatus(curId, "Recording" + audioNote, "recording");
+  timerIv = setInterval(() => { $("bigTimer").textContent = fmtClock(Date.now() - t0); }, 500);
+
+  // Audio: MediaRecorder → base64 chunks appended to audio.webm every 10 s.
+  rec = new MediaRecorder(stream, { mimeType: "audio/webm" });
+  rec.ondataavailable = ev => {
+    if (!ev.data.size) return;
+    pendingAudio = pendingAudio.then(async () => {
+      const buf = new Uint8Array(await ev.data.arrayBuffer());
+      let bin = ""; const CH = 0x8000;
+      for (let i = 0; i < buf.length; i += CH)
+        bin += String.fromCharCode.apply(null, buf.subarray(i, i + CH));
+      await fused.runPython("./meetings.py",
+        { action: "append_audio", meeting_id: curId, audio_b64: btoa(bin) }, { key: null });
+    }).catch(e => console.error("audio save failed", e));
+  };
+  rec.onstop = () => {
+    stream.getTracks().forEach(t => t.stop());
+    micStream.getTracks().forEach(t => t.stop());
+    if (displayStream) displayStream.getTracks().forEach(t => t.stop());
+    if (mixCtx) { mixCtx.close().catch(() => {}); mixCtx = null; }
+  };
+  rec.start(10000);
+
+  // Live transcription: browser-native speech recognition.
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) {
+    $("liveTranscript").textContent = "(Live transcription is not supported in this browser — audio is still being recorded.)";
+  } else {
+    speech = new SR();
+    speech.continuous = true; speech.interimResults = true; speech.lang = "en-US";
+    setupPitchTracking(micStream);
+    speech.onresult = ev => {
+      let interim = "";
+      for (let i = ev.resultIndex; i < ev.results.length; i++) {
+        const r = ev.results[i];
+        if (r.isFinal) {
+          const text = r[0].transcript.trim();
+          if (text) {
+            const speaker = detectSpeaker(segStart, Date.now());
+            segStart = Date.now();
+            finalText += `Speaker ${speaker}: ${text}\n`;
+          }
+        }
+        else interim += r[0].transcript;
+      }
+      $("liveTranscript").textContent = finalText;
+      $("interim").textContent = interim;
+    };
+    speech.onerror = ev => { if (ev.error !== "no-speech" && ev.error !== "aborted")
+      console.error("speech error:", ev.error); };
+    speech.onend = () => { if (!stopping) { try { speech.start(); } catch (e) {} } }; // auto-restart
+    try { speech.start(); } catch (e) {}
+  }
+}
+
+async function stop() {
+  stopping = true;
+  $("stopBtn").disabled = true;
+  clearInterval(timerIv);
+  const savedId = curId;
+  setCardStatus(savedId, "Finishing…", "finishing");
+  if (speech) {
+    // speech.stop() finalizes any in-progress result asynchronously (onresult
+    // fires after stop, before onend) — a very short recording can still be
+    // mid-utterance, so wait for that to land instead of reading finalText
+    // immediately, or a one-word clip ends up with an empty transcript.
+    await new Promise(resolve => {
+      let done = false;
+      const finish = () => { if (!done) { done = true; resolve(); } };
+      speech.onend = finish;
+      speech.onerror = ev => {
+        if (ev.error !== "no-speech" && ev.error !== "aborted") console.error("speech error:", ev.error);
+        finish();
+      };
+      setTimeout(finish, 1500); // safety net if the engine never fires onend
+      try { speech.stop(); } catch (e) { finish(); }
+    });
+  }
+  teardownPitchTracking();
+  if (rec && rec.state !== "inactive") {
+    await new Promise(res => { rec.addEventListener("stop", res, { once: true }); rec.stop(); });
+  }
+  micStream = null; displayStream = null;
+  await pendingAudio; // last audio chunk written
+
+  if (!meetingsRoot) await loadList();
+  const dir = meetingsRoot + "/" + savedId + "/";
+  const dur = fmtClock(Date.now() - t0);
+  const transcript = finalText.trim();
+  let title = curTitle;
+
+  // Recording itself is fully wrapped up (mic released, audio flushed) —
+  // hand the UI back so a new recording can start while title/summary
+  // generation for this one finishes in the background below.
+  $("livePanel").style.display = "none";
+  $("stopBtn").style.display = "none";
+  $("bigTimer").style.display = "none";
+  $("startBtn").style.display = ""; $("startBrowserBtn").style.display = "";
+  rec = null; speech = null; stopping = false;
+
+  // Descriptive 7-10 word title, generated from the transcript. The model
+  // sometimes answers conversationally instead of titling, so validate the
+  // reply (one line, sane word count) and retry once before giving up.
+  if (transcript) {
+    setCardStatus(savedId, "Generating title…", "title");
+    const validTitle = raw => {
+      const t = raw.trim().replace(/^["'“”]+|["'“”]+$/g, "").replace(/\.$/, "");
+      const n = t.split(/\s+/).length;
+      if (t.includes("\n") || n < 4 || n > 12) return null;
+      if (/[:?!]/.test(t) || /^(i |i'|how |sure)/i.test(t)) return null;
+      return t;
+    };
+    const prompt =
+      "Below is a raw meeting transcript. Your ONLY task is to produce a title for it.\n" +
+      "Respond with EXACTLY ONE LINE: a descriptive title of 7 to 10 words.\n" +
+      "No quotes, no punctuation at the end, no commentary, no questions.\n\n" +
+      (title !== "Meeting" ? "Working title: " + title + "\n" : "") +
+      "--- transcript start ---\n" + transcript.slice(0, 8000) +
+      "\n--- transcript end ---\n\nTitle (one line, 7-10 words):";
+    let t = null;
+    for (let i = 0; i < 2 && !t; i++) {
+      try { t = validTitle((await fused.ai(prompt, { effort: "low", maxTokens: 64 })).text); }
+      catch (err) { console.error("title generation failed", err); break; }
+    }
+    if (t) title = t;
+  }
+  await fused.runPython("./meetings.py",
+    { action: "set_title", meeting_id: savedId, title, duration: dur }, { key: null });
+
+  const header = `# Transcript — ${title}\n\nDuration: ${dur}\n\n`;
+  await fused.writeFile(dir + "transcript.md",
+    header + (transcript || "_No speech was transcribed._") + "\n");
+
+  // Summary via the local AI.
+  if (transcript) {
+    setCardStatus(savedId, "Summarizing with AI…", "summarizing");
+    try {
+      const res = await fused.ai(
+        "Meeting title: " + title + "\nDuration: " + dur +
+        "\n\nTranscript:\n" + transcript.slice(0, 24000),
+        { systemPrompt:
+            "You summarize meeting transcripts. Output markdown that starts DIRECTLY " +
+            "with a 3-6 sentence summary paragraph — no title, no heading above it. " +
+            "Then these sections: '## Key points' (bullets), " +
+            "'## Decisions' (bullets, or 'None recorded'), '## Action items' " +
+            "(bullets with owner if mentioned, or 'None recorded'). " +
+            "Only use what is in the transcript.",
+          effort: "medium" });
+      await fused.writeFile(dir + "summary.md", res.text + "\n");
+    } catch (err) {
+      await fused.writeFile(dir + "summary.md",
+        "_AI summary failed (" + (err.type || "error") + "): " + err.message + "_\n");
+    }
+  } else {
+    await fused.writeFile(dir + "summary.md",
+      "_No transcript captured, so no summary was generated._\n");
+  }
+
+  // The live-recording placeholder for this meeting is already rendered, so
+  // force a reload of its tabs now that transcript/summary are actually on disk.
+  if (renderedMeeting === savedId) renderedMeeting = null;
+  await loadList();
+  await showDetail(true);
+  setCardStatus(savedId, "Saved ✓", "saved");
+  setTimeout(() => {
+    if (cardStatus[savedId]?.stage === "saved") setCardStatus(savedId, "");
+    loadList();
+  }, 2000);
+}
+
+$("startBtn").onclick = () => start(false);
+$("startBrowserBtn").onclick = () => start(true);
+$("stopBtn").onclick = stop;
+
+function refreshMoveBtn() {
+  const newRoot = $("newRootInput").value.trim();
+  $("moveRootBtn").disabled = !newRoot || newRoot === meetingsRoot;
+}
+$("newRootInput").addEventListener("input", refreshMoveBtn);
+$("settingsBtn").onclick = () => {
+  const panel = $("settingsPanel");
+  const opening = panel.style.display === "none";
+  panel.style.display = opening ? "" : "none";
+  if (opening) { $("newRootInput").value = meetingsRoot || ""; $("moveStatus").textContent = ""; refreshMoveBtn(); }
+};
+$("cancelMoveBtn").onclick = () => { $("settingsPanel").style.display = "none"; };
+$("openRootBtn").onclick = () => {
+  const path = $("newRootInput").value.trim();
+  if (path) window.open(explorerUrl(path), "_blank");
+};
+$("moveRootBtn").onclick = async () => {
+  const newRoot = $("newRootInput").value.trim();
+  if (!newRoot || newRoot === meetingsRoot) return;
+  if (!confirm(`Move all meeting data from:\n${meetingsRoot}\n\nto:\n${newRoot}\n\nThis moves the entire folder. Continue?`)) return;
+  $("moveRootBtn").disabled = true;
+  $("moveStatus").textContent = "Moving…";
+  try {
+    const res = await fused.runPython("./meetings.py", { action: "move_root", new_root: newRoot }, { key: null });
+    meetingsRoot = res.root;
+    $("moveStatus").textContent = "Moved ✓";
+    setTimeout(() => { $("settingsPanel").style.display = "none"; $("moveStatus").textContent = ""; }, 1200);
+    await loadList();
+  } catch (err) {
+    $("moveStatus").textContent = "Failed: " + err.message;
+  } finally {
+    refreshMoveBtn();
+  }
+};
+
+async function draw() {
+  const data = await loadList();
+  // Auto-select the newest meeting when none is chosen (params.set re-triggers draw).
+  if (!fused.params.get("meeting") && data.meetings.length) {
+    fused.params.set("meeting", data.meetings[0].id);
+    return;
+  }
+  showDetail(data.meetings.length > 0);
+}
+fused.params.onChange(draw);
+draw();
+</script>
+</body>
+</html>
