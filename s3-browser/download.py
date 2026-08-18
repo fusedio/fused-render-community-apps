@@ -97,6 +97,25 @@ def main(action: str = "plan", account_id: str = "", profile: str = "", region: 
             return {"job": job, "total_files": len(items),
                     "total_bytes": sum(i["size"] or 0 for i in items), "dest": dest_dir}
 
+        if action == "retry":
+            # Re-queue the files that failed plus any never attempted, keeping the
+            # ones already saved. Without this, retry would resume past done_files
+            # and never re-attempt the failures.
+            path = _job_path(job)
+            if not os.path.exists(path):
+                return {"error": {"code": "NoJob", "message": "download job not found"}}
+            st = _read(path)
+            size_by_key = {it["key"]: it["size"] for it in st["items"]}
+            failed = [{"key": e["key"], "size": size_by_key.get(e["key"])} for e in st.get("errors", [])]
+            remaining = st["items"][st["done_files"]:]
+            st["items"] = failed + remaining
+            st.update(done_files=0, done_bytes=0, errors=[], status="ready",
+                      total_files=len(st["items"]),
+                      total_bytes=sum(i["size"] or 0 for i in st["items"]))
+            _write(path, st)
+            return {"job": job, "total_files": st["total_files"],
+                    "total_bytes": st["total_bytes"], "dest": st["dest"]}
+
         if action == "step":
             path = _job_path(job)
             if not os.path.exists(path):

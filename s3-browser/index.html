@@ -923,10 +923,16 @@ async function startDownload() {
   runDownload(plan.job, dest);
 }
 async function runDownload(job, dest, tid) {
-  if (tid) restartTransfer(tid, 0); else tid = addTransfer({ name: dest.split(/[\\/]/).filter(Boolean).pop() || dest, kind: "download", total: 0 });
+  const isRetry = !!tid;
+  if (isRetry) restartTransfer(tid, 0); else tid = addTransfer({ name: dest.split(/[\\/]/).filter(Boolean).pop() || dest, kind: "download", total: 0 });
   setRetry(tid, () => runDownload(job, dest, tid));
   const handle = fused.trackJob({ id: "s3dl:" + job, title: "Download to " + dest.split(/[\\/]/).pop(), kind: "download", unit: "bytes", cancellable: true });
   try {
+    // On retry, re-queue the failed/unattempted files rather than resuming past them.
+    if (isRetry) {
+      const r = await callDl("retry", { job });
+      if (r.error) { handle.fail(r.error.message); finishTransfer(tid, "error", r.error.message); return; }
+    }
     while (true) {
       const s = await callDl("step", { job });
       if (s.error) { handle.fail(s.error.message); finishTransfer(tid, "error", s.error.message); return; }
@@ -976,6 +982,14 @@ const MULTIPART_THRESHOLD = 8 * 1024 * 1024;   // files larger than this upload 
 const PART_SIZE = 8 * 1024 * 1024;
 async function callUp(action, extra = {}, conn = connParams()) { return fused.runPython("./upload.py", { action, ...conn, ...extra }); }
 function blobToB64(blob) { return new Promise((ok, fail) => { const r = new FileReader(); r.onload = () => ok(r.result.split(",")[1]); r.onerror = () => fail(r.error || new Error("Could not read file")); r.readAsDataURL(blob); }); }
+// A runPython call that never resolves would strand a transfer at 0 B with no way
+// to recover; bound it so a lost response becomes a retryable error instead.
+const UPLOAD_CALL_TIMEOUT = 180000;
+function withTimeout(promise, ms, label) {
+  let t;
+  const timer = new Promise((_, fail) => { t = setTimeout(() => fail(new Error(label + " timed out — no response")), ms); });
+  return Promise.race([promise, timer]).finally(() => clearTimeout(t));
+}
 
 // Uploads run in the background (a few at a time) and never trigger a full
 // refetch: each finished file is inserted straight into the cached listing.
@@ -1006,7 +1020,7 @@ async function uploadOne(file, bkt, pfx, conn, tid) {
   setRetry(tid, () => uploadOne(file, bkt, pfx, conn, tid));
   try {
     if (file.size <= MULTIPART_THRESHOLD) {
-      const res = await call("upload", { bucket: bkt, key, content_b64: await blobToB64(file), content_type: file.type || "" }, conn);
+      const res = await withTimeout(call("upload", { bucket: bkt, key, content_b64: await blobToB64(file), content_type: file.type || "" }, conn), UPLOAD_CALL_TIMEOUT, "Upload");
       if (res.error) { finishTransfer(tid, "error", res.error.message); return; }
       finishTransfer(tid, "done");
       noteUploaded(bkt, key, file.size, conn.account_id);
@@ -1022,7 +1036,7 @@ async function uploadOne(file, bkt, pfx, conn, tid) {
     try {
       for (let p = 1; p <= totalParts; p++) {
         const b64 = await blobToB64(file.slice((p - 1) * partSize, p * partSize));
-        const res = await callUp("part", { job, part_number: String(p), content_b64: b64 }, conn);
+        const res = await withTimeout(callUp("part", { job, part_number: String(p), content_b64: b64 }, conn), UPLOAD_CALL_TIMEOUT, "Upload part");
         if (res.error) throw new Error(res.error.message);
         const doneBytes = Math.min(p * partSize, file.size);
         updateTransfer(tid, { done: doneBytes, detail: `${p}/${totalParts} parts` });
