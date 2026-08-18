@@ -1,0 +1,909 @@
+/* ---------- theme ----------
+     Light is the default; dark is an attribute override. Every small-text
+     pairing below was computed against WCAG AA (4.5:1), not eyeballed:
+       light  fg #1f1f1f on #fff 16.5 · muted #444746 on #fff 9.4 ·
+              faint #5e6368 on #fff 6.1 / on hover #f2f6fc 5.6 ·
+              accent #0b57d0 on #fff 6.4 / on selected #d3e3fd 4.9 ·
+              pill #001d35 on #c2e7ff 13.2 · danger #b3261e on #fff 6.5
+       dark   fg #e3e3e3 on #1e1f20 12.9 · muted #c4c7c5 9.7 ·
+              faint #9aa0a6 6.3 / on hover #28292a 5.5 ·
+              accent #a8c7fa 9.6 / on selected #3c4658 5.5
+     The star glyph is decorative (state is also carried by aria-pressed), so it
+     only needs 3:1. */
+  :root {
+    --bg: #f6f8fc; --surface: #ffffff; --hover: #f2f6fc; --sel: #d3e3fd;
+    --border: #e0e3e9; --divider: #e8eaed;
+    --fg: #1f1f1f; --fg-muted: #444746; --fg-faint: #5e6368;
+    --accent: #0b57d0; --accent-soft: #e8f0fe;
+    --pill-bg: #c2e7ff; --pill-fg: #001d35;
+    --star: #f0a800; --danger: #b3261e;
+    --searchbg: #eaf1fb; --chip: #eaeef6; --chip-fg: #444746;
+    --shadow-1: 0 1px 2px rgba(60,64,67,.25), 0 1px 3px 1px rgba(60,64,67,.10);
+    --shadow-2: 0 4px 8px 3px rgba(60,64,67,.12), 0 1px 3px rgba(60,64,67,.28);
+    --ring: #0b57d0;
+  }
+  html[data-theme="dark"] {
+    --bg: #131314; --surface: #1e1f20; --hover: #28292a; --sel: #3c4658;
+    --border: #333438; --divider: #2b2c2e;
+    --fg: #e3e3e3; --fg-muted: #c4c7c5; --fg-faint: #9aa0a6;
+    --accent: #a8c7fa; --accent-soft: #1f2b3d;
+    --pill-bg: #c2e7ff; --pill-fg: #001d35;
+    --star: #fdd663; --danger: #f2b8b5;
+    --searchbg: #282a2c; --chip: #2c2d2f; --chip-fg: #c4c7c5;
+    --shadow-1: 0 1px 2px rgba(0,0,0,.5), 0 1px 3px 1px rgba(0,0,0,.35);
+    --shadow-2: 0 4px 10px 3px rgba(0,0,0,.45), 0 1px 3px rgba(0,0,0,.6);
+    --ring: #a8c7fa;
+  }
+
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg); color: var(--fg);
+    font: 13px/1.45 -apple-system, "Segoe UI", Roboto, sans-serif;
+    /* minmax(0,1fr) on the reading pane — with a bare 1fr its min-content
+       (toolbar + reply card) pushes the grid past the viewport below ~1200px
+       and overflow:hidden clips Send away. */
+    display: grid;
+    grid-template-columns: 240px var(--listw, 420px) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+    overflow: hidden;
+  }
+  #sidebar, #listpane, #threadpane, #onboard { min-width: 0; min-height: 0; }
+  /* The width breakpoints live at the BOTTOM of this stylesheet, after every
+     base rule they override — a media query carries no extra specificity, so
+     any component rule declared later silently wins (which is exactly why the
+     old #appbar breakpoint never took effect). */
+  button { font: inherit; color: inherit; background: none; border: none; cursor: pointer; }
+  input, textarea {
+    font: inherit; color: var(--fg); background: var(--surface);
+    border: 1px solid var(--border); border-radius: 6px; padding: 6px 9px; outline: none;
+  }
+  input::placeholder, textarea::placeholder { color: var(--fg-faint); }
+  input:focus, textarea:focus { border-color: var(--fg-muted); }
+  :focus-visible { outline: 2px solid var(--ring); outline-offset: -1px; border-radius: 4px; }
+  svg.ic { display: block; flex: none; }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
+
+  /* Invisible grab strip riding the list/reading divide — drag to resize the
+     middle pane. JS keeps it glued to the list pane's right edge. */
+  #splitbar {
+    position: fixed; top: 0; bottom: 0; width: 9px; cursor: col-resize; z-index: 30;
+  }
+  #splitbar:hover, body.splitting #splitbar { background: linear-gradient(90deg, transparent 3px, var(--accent) 4px, var(--accent) 5px, transparent 6px); }
+  body.splitting { cursor: col-resize; user-select: none; }
+  body.splitting iframe { pointer-events: none; }   /* mail iframes must not eat the drag */
+  @media (max-width: 620px) { #splitbar { display: none; } }
+  /* A modal owns the screen — no pane resizing (or its hover line) above it. */
+  body:has(.overlay) #splitbar { display: none; }
+  .searchwrap {
+    flex: none; min-width: 0; padding: 10px 10px 8px; border-bottom: 1px solid var(--divider);
+    background: var(--surface); display: flex; align-items: center; gap: 6px;
+  }
+  .searchwrap .searchpill { flex: 1 1 auto; min-width: 0; }
+  .searchwrap .icon-btn { flex: none; }
+  .searchpill {
+    display: flex; align-items: center; gap: 10px; background: var(--searchbg);
+    border: 1px solid transparent; border-radius: 999px; padding: 0 14px; height: 40px;
+    transition: background .12s, box-shadow .12s;
+  }
+  .searchpill:focus-within { background: var(--surface); box-shadow: var(--shadow-1); border-color: var(--border); }
+  .searchpill .search-ic { color: var(--fg-faint); flex: none; }
+  #search {
+    flex: 1; min-width: 0; border: none; background: none; padding: 0; font-size: 14px;
+    color: var(--fg); border-radius: 0;
+  }
+  #search:focus { border: none; }
+  .icon-btn {
+    width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center;
+    justify-content: center; color: var(--fg-muted); flex: none; transition: background .12s, color .12s;
+  }
+  .icon-btn:hover { background: var(--hover); color: var(--fg); }
+  #refreshbtn.spinning svg { animation: spin .8s linear infinite; }
+  /* Background warm-up in progress — a faint breathing pulse, not a spin. */
+  #refreshbtn.warming:not(.spinning) svg { animation: warmpulse 1.6s ease-in-out infinite; }
+  @keyframes warmpulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ---------- sidebar ---------- */
+  #sidebar { display: flex; flex-direction: column; min-height: 0; background: var(--bg); padding-top: 8px; }
+  #composebtn {
+    margin: 0 10px 12px; padding: 0 22px 0 18px; height: 48px; border-radius: 16px;
+    background: var(--pill-bg); color: var(--pill-fg); font-size: 14px; font-weight: 500;
+    display: inline-flex; align-items: center; gap: 12px; align-self: flex-start;
+    box-shadow: var(--shadow-1); transition: box-shadow .15s, filter .15s;
+  }
+  #composebtn:hover { box-shadow: var(--shadow-2); filter: brightness(.98); }
+  #labels { overflow-y: auto; padding: 0 8px 8px 0; flex: 1; }
+  .lbl {
+    display: flex; align-items: center; gap: 14px; width: 100%; padding: 0 12px 0 20px; height: 32px;
+    border-radius: 0 999px 999px 0; color: var(--fg-muted); text-align: left; font-size: 13px;
+  }
+  .lbl:hover { background: var(--hover); }
+  .lbl.active { background: var(--sel); color: var(--fg); font-weight: 700; }
+  html[data-theme="dark"] .lbl.active { color: #fff; }
+  .lbl .lname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lbl-sec { margin: 14px 8px 4px 20px; font-size: 12px; color: var(--fg-faint); }
+  #accounts { padding: 8px 10px 4px; border-top: 1px solid var(--divider); }
+  .acct-row { display: flex; align-items: center; }
+  .acct-row .acct-x { opacity: 0; padding: 5px 7px; border-radius: 50%; color: var(--fg-faint); flex: none; display: flex; }
+  .acct-row:hover .acct-x, .acct-row .acct-x:focus-visible { opacity: 1; }
+  .acct-row .acct-x:hover { background: var(--hover); color: var(--danger); }
+  .acct {
+    display: flex; align-items: center; gap: 9px; flex: 1; min-width: 0; padding: 6px 8px;
+    border-radius: 8px; text-align: left; color: var(--fg-muted);
+  }
+  .acct:hover { background: var(--hover); }
+  .acct.active { background: var(--hover); color: var(--fg); font-weight: 500; }
+  .acct .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--fg-faint); flex: none; }
+  .acct.active .dot { background: var(--accent); }
+  .acct .email { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #addacct { color: var(--fg-faint); padding: 6px 8px; width: 100%; text-align: left; border-radius: 8px; }
+  #addacct:hover { background: var(--hover); color: var(--fg); }
+  #aibar { padding: 4px 12px 12px; flex: none; display: flex; align-items: center; gap: 4px; }
+  #aibar #aitoggle { flex: 1; min-width: 0; }
+  #settingsbtn {
+    width: 30px; height: 30px; border-radius: 8px; display: flex; align-items: center;
+    justify-content: center; color: var(--fg-faint); flex: none;
+  }
+  #settingsbtn:hover { color: var(--fg-muted); background: var(--hover); }
+
+  /* ---------- list ---------- */
+  #listpane {
+    display: flex; flex-direction: column; min-height: 0; background: var(--surface);
+    border: 1px solid var(--divider); border-radius: 14px 14px 0 0; margin: 0 0 0 4px; overflow: hidden;
+  }
+  #list { overflow-y: auto; flex: 1; }
+  .row {
+    --row-bg: var(--bg);
+    position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 10px;
+    align-items: start; padding: 9px 12px 9px 10px; border-bottom: 1px solid var(--divider);
+    cursor: pointer; background: var(--row-bg);
+  }
+  .row.unread { --row-bg: var(--surface); }
+  .row:hover { --row-bg: var(--hover); box-shadow: inset 0 0 0 1px var(--divider); }
+  .row.active { --row-bg: var(--sel); }
+  /* Every line in a row truncates; nothing in a row is ever allowed to wrap.
+     min-width:0 on both the grid item and the flex row is what makes the
+     ellipsis actually engage — without it min-content wins and a long sender
+     or a bare date pushes the layout apart at narrow widths. */
+  .row .rowmain { min-width: 0; }
+  .row .top { display: flex; gap: 8px; align-items: baseline; flex-wrap: nowrap; min-width: 0; }
+  .row .from {
+    color: var(--fg-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    flex: 1 1 auto; min-width: 0;
+  }
+  .row.unread .from, .row.unread .subj { color: var(--fg); font-weight: 700; }
+  .row .date {
+    color: var(--fg-faint); font-size: 11px; flex: 0 0 auto; white-space: nowrap;
+    transition: opacity .12s;
+  }
+  .row.unread .date { color: var(--fg-muted); font-weight: 700; }
+  .row .subj { color: var(--fg-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row .snip { color: var(--fg-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row .count { color: var(--fg-faint); font-size: 11px; flex: 0 0 auto; white-space: nowrap; }
+  .row .star {
+    grid-row: 1 / span 3; align-self: center; color: var(--fg-faint); opacity: 0;
+    padding: 3px; border-radius: 50%; display: flex; transition: opacity .12s;
+  }
+  .row:hover .star, .row .star.on, .row .star:focus-visible { opacity: 1; }
+  .row .star.on { color: var(--star); }
+  .row .star.on svg { fill: var(--star); }
+  .row .star:hover { background: rgba(128,128,128,.15); }
+  /* Gmail's signature: the date makes way for triage on hover. The strip is
+     opaque (it inherits the row's own background) so it masks whatever it
+     covers; opacity:0 keeps it out of the way otherwise. */
+  .acts {
+    position: absolute; right: 0; top: 0; bottom: 0; transform: translateX(4px);
+    display: flex; align-items: center; gap: 2px; padding: 0 10px 0 16px; background: var(--row-bg);
+    opacity: 0; transition: opacity .12s ease-out, transform .12s ease-out;
+  }
+  .row:hover .acts, .row:focus-within .acts,
+  .mg-row:hover .acts, .mg-row:focus-within .acts { opacity: 1; transform: none; }
+  .act {
+    width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center;
+    justify-content: center; color: var(--fg-muted);
+  }
+  .act:hover { background: rgba(128,128,128,.16); color: var(--fg); }
+  .act.danger:hover { color: var(--danger); }
+  #loadmore {
+    margin: 12px auto; display: block; padding: 7px 18px; border: 1px solid var(--border);
+    border-radius: 999px; color: var(--accent); font-weight: 500;
+  }
+  #loadmore:hover { background: var(--hover); }
+  .empty { padding: 44px 20px; text-align: center; color: var(--fg-faint); overflow-wrap: anywhere; }
+  .empty-mark {
+    width: 44px; height: 44px; border-radius: 50%; background: var(--hover); color: var(--fg-faint);
+    display: flex; align-items: center; justify-content: center; margin: 0 auto 14px;
+  }
+  .empty-title { color: var(--fg-muted); font-size: 14px; }
+  .empty-sub { margin: 4px 0 0; font-size: 12px; color: var(--fg-faint); }
+
+  /* ---------- thread view ---------- */
+  #threadpane {
+    display: flex; flex-direction: column; min-height: 0; background: var(--surface);
+    border: 1px solid var(--divider); border-left: none; border-radius: 14px 14px 0 0;
+    margin: 0 4px 0 0; overflow: hidden;
+  }
+  #threadhead { padding: 16px 24px 8px; display: flex; align-items: flex-start; gap: 8px; }
+  #threadhead .head-main { flex: 1; min-width: 0; }
+  /* Real subjects are long ("FUSED-SERVER-STAGING-2VG - OperationalError: …").
+     One nowrap line clipped almost every one of them, so give it two and let a
+     single unbreakable token break rather than overflow. */
+  #threadhead h2 {
+    font-size: 20px; font-weight: 400; margin: 0; color: var(--fg); line-height: 1.3;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    overflow: hidden; overflow-wrap: anywhere;
+  }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+  .chip {
+    background: var(--chip); color: var(--chip-fg); border-radius: 999px;
+    padding: 2px 9px; font-size: 11px; white-space: nowrap;
+  }
+  .toolgroup { display: flex; gap: 2px; flex: none; position: relative; }
+  /* Gmail-style "Move to" dropdown — under the toolgroup in the thread view,
+     opening UPWARD above its button on the triage footer. */
+  #movemenu, #mgmovemenu {
+    position: absolute; z-index: 40; min-width: 180px; max-height: 320px;
+    overflow-y: auto; background: var(--bg); border: 1px solid var(--divider); border-radius: 10px;
+    box-shadow: 0 6px 24px rgba(0,0,0,.18); padding: 6px 0;
+  }
+  #movemenu { top: 38px; right: 0; }
+  #mgmovemenu { bottom: calc(100% - 6px); right: 16px; }
+  #movemenu .mv-head, #mgmovemenu .mv-head {
+    padding: 6px 14px 8px; font-size: 11px; text-transform: uppercase; letter-spacing: .04em;
+    color: var(--fg-faint); border-bottom: 1px solid var(--divider); margin-bottom: 4px;
+  }
+  #movemenu .mv-item, #mgmovemenu .mv-item {
+    display: flex; align-items: center; gap: 10px; width: 100%; padding: 7px 14px;
+    font-size: 13px; color: var(--fg); text-align: left;
+  }
+  #movemenu .mv-item:hover, #mgmovemenu .mv-item:hover { background: var(--hover); }
+  #movemenu .mv-item .ic, #mgmovemenu .mv-item .ic { color: var(--fg-muted); flex: none; }
+  .tool {
+    width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center;
+    justify-content: center; color: var(--fg-muted); flex: none; transition: background .12s, color .12s;
+  }
+  .tool:hover { background: var(--hover); color: var(--fg); }
+  .tool.danger:hover { color: var(--danger); }
+  #msgs { overflow-y: auto; flex: 1; padding: 8px 24px 4px; }
+  .msg { border-bottom: 1px solid var(--divider); padding: 12px 0; }
+  .msg:last-child { border-bottom: none; }
+  /* 4 columns: avatar · who · collapsed peek · date. The peek is what makes a
+     long thread readable — nine collapsed rows of "me … Aug 3" tell you
+     nothing about what is in them. */
+  .msg-head {
+    display: grid; grid-template-columns: auto minmax(0, auto) minmax(0, 1fr) auto;
+    gap: 12px; align-items: center; cursor: pointer;
+  }
+  .msg-head .mpeek {
+    color: var(--fg-faint); min-width: 0; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .msg:not(.collapsed) .msg-head .mpeek { visibility: hidden; }
+  .avatar {
+    width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center;
+    justify-content: center; font-size: 15px; font-weight: 500; flex: none;
+    background: hsl(var(--h) 60% 88%); color: hsl(var(--h) 70% 25%);
+  }
+  html[data-theme="dark"] .avatar { background: hsl(var(--h) 28% 30%); color: hsl(var(--h) 60% 88%); }
+  .msg-head .mwho { min-width: 0; }
+  .msg-head .mfrom { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .msg-head .maddr { color: var(--fg-faint); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* grid item, so flex:none did nothing — "Aug 3, 2026" wrapped to "Aug" / "3, 2…" */
+  .msg-head .mdate { color: var(--fg-faint); font-size: 11px; white-space: nowrap; }
+  .msg-meta {
+    padding: 6px 0 0 46px; color: var(--fg-faint); font-size: 11px; overflow-wrap: anywhere;
+  }
+  /* overflow-wrap:anywhere, not just word-break: a 400-char tracking URL in a
+     plain-text body is common and must never widen the pane. */
+  .msg-body {
+    padding: 8px 0 2px 46px; white-space: pre-wrap; word-break: break-word;
+    overflow-wrap: anywhere; color: var(--fg); min-width: 0;
+  }
+  .msg-body iframe {
+    width: 100%; border: 1px solid var(--divider); background: #fff; border-radius: 8px;
+    display: block; height: 80px; overflow: hidden;
+  }
+  .msg.collapsed .msg-body, .msg.collapsed .msg-meta, .msg.collapsed .atts { display: none; }
+  .atts { padding: 10px 0 0 46px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .att {
+    border: 1px solid var(--border); border-radius: 8px; padding: 5px 11px; color: var(--fg-muted);
+    display: inline-flex; align-items: center; gap: 7px; background: var(--bg);
+  }
+  .att:hover { background: var(--hover); color: var(--fg); }
+  #replybox { padding: 4px 24px 16px; flex: none; }
+  .reply-card {
+    border: 1px solid var(--border); border-radius: 16px; background: var(--surface);
+    padding: 10px 16px 12px; box-shadow: var(--shadow-1);
+  }
+  .reply-to { display: flex; align-items: center; gap: 7px; color: var(--fg-faint); font-size: 12px; cursor: pointer; }
+  .reply-to b { color: var(--fg-muted); font-weight: 500; }
+  .reply-to:hover b { text-decoration: underline; }
+  .reply-to .cc-note { color: var(--fg-faint); }
+  #rcpedit { margin-left: auto; color: var(--accent); font-size: 12px; padding: 2px 6px; border-radius: 6px; }
+  #rcpedit:hover { background: var(--hover); }
+  #rcpfields { padding: 6px 0 2px; border-bottom: 1px solid var(--border); margin-bottom: 4px; }
+  #rcpfields label { display: flex; align-items: center; gap: 8px; padding: 2px 0; font-size: 12px; }
+  /* direct child only — the chipfield's own spans must size to content */
+  #rcpfields label > span { width: 26px; color: var(--fg-faint); flex: none; }
+  #rcpfields input { flex: 1; border: none; padding: 3px 0; font-size: 12px; }
+  #rcpfields input:focus-visible { outline: none; box-shadow: 0 1px 0 var(--border); }
+  /* Gmail-style recipient chips: the original <input> stays (hidden) as the
+     value store every send path reads; the chipfield is pure presentation.
+     Chips drag between To/Cc/Bcc; the drop target highlights like Gmail. */
+  .chipfield {
+    flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center;
+    gap: 4px; padding: 2px 0; border-radius: 6px; cursor: text;
+  }
+  .chipfield.dragover { background: var(--hover); box-shadow: 0 0 0 4px var(--hover); }
+  .chipfield .rchip {
+    display: inline-flex; align-items: center; gap: 2px; max-width: 100%;
+    background: var(--chip); color: var(--chip-fg); border-radius: 999px;
+    padding: 2px 3px 2px 10px; font-size: 12px; cursor: grab; user-select: none;
+  }
+  .chipfield .rchip:active { cursor: grabbing; }
+  .chipfield .rchip.dragging { opacity: .35; }
+  .chipfield .rchip .rc-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chipfield .rchip .rc-x {
+    width: 16px; height: 16px; border-radius: 50%; flex: none; display: flex;
+    align-items: center; justify-content: center; font-size: 11px; color: var(--fg-faint);
+  }
+  .chipfield .rchip .rc-x:hover { background: var(--hover); color: var(--fg); }
+  .chipfield .chip-entry {
+    flex: 1; min-width: 70px; border: none; background: none; padding: 3px 0;
+    font: inherit; font-size: 12px; color: var(--fg);
+  }
+  .chipfield .chip-entry:focus-visible { outline: none; box-shadow: none; }
+  .cfield .chipfield .rchip, .cfield .chipfield .chip-entry { font-size: 13px; }
+  #replytext {
+    /* 2 lines by default (typing line + one spare); autosize grows it from there. */
+    width: 100%; resize: none; min-height: calc(2 * 1.5em + 8px); max-height: 200px;
+    overflow-y: auto; border: none; background: none; padding: 4px 0; border-radius: 0;
+    line-height: 1.5;
+  }
+  /* While the suggestion card is showing, the empty textarea is just a slot to
+     start typing in — keep it to a single line so the card gets the room. */
+  #suggest:not([hidden]) ~ #replytext { min-height: calc(1.5em + 8px); }
+  #replytext:focus { border: none; }
+  /* The global focus ring reads as a harsh blue box inside the card — swap it
+     for a barely-there lift on the card itself. */
+  #replytext:focus-visible { outline: none; }
+  .reply-card:focus-within { box-shadow: var(--shadow-1), 0 2px 8px rgba(60,64,67,.08); }
+  .reply-foot { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+  /* Select-to-fix: appears under the textarea while a selection exists. */
+  #fixbar { display: flex; align-items: center; gap: 8px; margin: 6px 0 2px; }
+  #fixbar[hidden] { display: none; }
+  #fixbar .sug-mark { color: var(--accent); flex: none; }
+  #fixprompt {
+    flex: 1; border: 1px dashed var(--border); border-radius: 999px; padding: 5px 12px;
+    font-size: 12px; background: var(--bg);
+  }
+  #fixprompt:focus { border-color: var(--fg-faint); border-style: solid; }
+  #fixgo { padding: 5px 14px; font-size: 12px; }
+  #fixbar.busy #fixprompt { color: var(--fg-faint); }
+  .pill { border-radius: 999px; }
+  .btn-primary {
+    background: var(--accent); color: var(--surface); font-weight: 500; padding: 8px 22px; border-radius: 8px;
+  }
+  html[data-theme="dark"] .btn-primary { color: #062e6f; }
+  .btn-primary:hover { filter: brightness(1.08); box-shadow: var(--shadow-1); }
+  .btn-primary:disabled { opacity: .5; cursor: default; box-shadow: none; }
+  .btn-secondary { border: 1px solid var(--border); padding: 8px 18px; border-radius: 999px; color: var(--accent); font-weight: 500; }
+  .btn-secondary:hover { background: var(--hover); }
+  .btn-danger-solid { background: var(--danger); color: var(--surface); }
+  html[data-theme="dark"] .btn-danger-solid { color: #601410; }
+  .btn-danger-solid:hover { filter: brightness(1.06); }
+
+  /* ---------- landing briefing ---------- */
+  #landing { flex: 1; overflow-y: auto; display: flex; align-items: center; justify-content: center; padding: 32px 24px; }
+  .land-card, .land-empty { width: 100%; max-width: 600px; }
+  .land-empty { text-align: center; color: var(--fg-faint); }
+  .land-mark {
+    width: 44px; height: 44px; border-radius: 12px; background: var(--accent-soft); color: var(--accent);
+    display: flex; align-items: center; justify-content: center; margin-bottom: 18px;
+  }
+  .land-empty .land-mark { margin: 0 auto 14px; }
+  #placeholder { margin: 0; font-size: 15px; color: var(--fg-muted); }
+  .land-hint { margin: 8px 0 0; font-size: 12px; color: var(--fg-faint); }
+  .land-title { font-size: 26px; font-weight: 400; margin: 0; color: var(--fg); text-wrap: balance; }
+  .land-sub { margin: 6px 0 18px; color: var(--fg-faint); font-size: 13px; }
+  #digest { max-width: 70ch; }
+  #digest .dg-body { color: var(--fg-muted); overflow-wrap: anywhere; }
+  #digest .dg-item {
+    display: flex; align-items: baseline; gap: 8px; width: 100%; text-align: left;
+    padding: 9px 12px; margin: 2px 0 2px -12px; border-radius: 10px; color: var(--fg); line-height: 1.5;
+  }
+  #digest .dg-item:hover { background: var(--hover); }
+  #digest .dg-item::before {
+    content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--accent);
+    flex: none; transform: translateY(-3px);
+  }
+  #digest .dg-n { color: var(--fg-faint); font-size: 11px; white-space: nowrap; margin-left: auto; }
+  #digest .dg-line { color: var(--fg-muted); padding: 4px 0; line-height: 1.6; }
+  #digest .dg-foot { margin-top: 14px; }
+  #digest .dg-redo {
+    color: var(--accent); font-size: 12px; font-weight: 500; padding: 6px 14px;
+    border: 1px solid var(--border); border-radius: 999px;
+  }
+  #digest .dg-redo:hover { background: var(--hover); }
+
+  /* ---------- AI triage (batch triage board, in the list pane) ---------- */
+  #mgboard { display: flex; flex-direction: column; height: 100%; }
+  #list:has(#mgboard) { overflow: hidden; }
+  #managehead { padding: 0 10px; flex: none; border-bottom: 1px solid var(--divider); }
+  #managehead .mg-sub { color: var(--fg-faint); font-size: 12px; margin: 6px 4px 0; }
+  #managehead .mg-sub:empty { display: none; }
+  /* One line, always: the row scrolls sideways (scrollbar hidden) and fades
+     at the edges when there is more to see. */
+  #mgtabs {
+    display: flex; gap: 4px; flex: 1; min-width: 0;
+    flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none;
+  }
+  #mgtabs::-webkit-scrollbar { display: none; }
+  #mgtabs.scrollable {
+    -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 14px, #000 calc(100% - 14px), transparent);
+    mask-image: linear-gradient(90deg, transparent 0, #000 14px, #000 calc(100% - 14px), transparent);
+  }
+  .mg-tab {
+    flex: none; padding: 8px 10px 10px; font-size: 13px; color: var(--fg-muted);
+    border-radius: 8px 8px 0 0; border-bottom: 2px solid transparent;
+    display: flex; align-items: center; gap: 6px;
+  }
+  #tabtip {
+    position: fixed; z-index: 60; pointer-events: none; white-space: nowrap;
+    background: rgba(32,33,36,.92); color: #fff; font-size: 11px;
+    padding: 3px 8px; border-radius: 6px;
+  }
+  .mg-tab .mg-tname {
+    display: block; max-width: 12ch; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap;
+  }
+  .mg-tab:hover { background: var(--hover); color: var(--fg); }
+  .mg-tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 500; }
+  .mg-tab .mg-n {
+    background: var(--chip); color: var(--chip-fg); border-radius: 999px; font-size: 11px;
+    padding: 1px 7px; font-weight: 400;
+  }
+  .mg-tab.active .mg-n { background: var(--accent-soft); color: var(--accent); }
+  #mglist { overflow-y: auto; flex: 1; padding: 4px 12px; }
+  .mg-row {
+    --row-bg: var(--bg);
+    position: relative; display: flex; align-items: center; gap: 10px; padding: 8px 10px;
+    border-radius: 10px; cursor: pointer; border-bottom: 1px solid var(--divider);
+    background: var(--row-bg);
+  }
+  /* Follow the row's rounded corners so the opaque strip doesn't poke out. */
+  .mg-row .acts { border-radius: 0 10px 10px 0; }
+  .mg-row:hover { --row-bg: var(--hover); }
+  /* The row whose thread is showing in the preview (the clicked row). */
+  .mg-row.peeking {
+    --row-bg: var(--hover);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
+  }
+  /* The checkbox's hit area is the row's whole left gutter, padding included —
+     negative margins stretch the label to the row's edges. */
+  .mg-row .mg-cbwrap {
+    flex: none; align-self: stretch; display: flex; align-items: center;
+    padding: 8px 10px; margin: -8px 0 -8px -10px; cursor: pointer;
+  }
+  /* Visible at rest, full-strength on hover; checked flips to the accent so
+     the mark reads at a glance. */
+  .mg-row input[type="checkbox"] {
+    flex: none; width: 14px; height: 14px; cursor: pointer;
+    accent-color: var(--fg-muted); opacity: .8; transition: opacity .12s;
+  }
+  .mg-row:hover input[type="checkbox"] { opacity: 1; }
+  .mg-row input[type="checkbox"]:checked { opacity: 1; accent-color: var(--accent); }
+  /* Opaque, via --row-bg, so the hover acts strip paints the same color as
+     the row it covers (a translucent tint here would show through as a seam). */
+  .mg-row:has(.mg-cb:checked) { --row-bg: color-mix(in srgb, #808080 4%, var(--bg)); }
+  .mg-row:has(.mg-cb:checked):hover, .mg-row.peeking:has(.mg-cb:checked) { --row-bg: var(--hover); }
+  .mg-row .mg-main { flex: 1; min-width: 0; }
+  .mg-row .mg-top { display: flex; gap: 8px; align-items: baseline; min-width: 0; }
+  .mg-row .mg-from { color: var(--fg); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 0 1 auto; }
+  .mg-row .mg-date { color: var(--fg-faint); font-size: 11px; margin-left: auto; flex: none; white-space: nowrap; }
+  .mg-row .mg-subj { color: var(--fg-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+  /* Unread reads exactly like the inbox list: bold and full-strength. */
+  .mg-row.unread .mg-from, .mg-row.unread .mg-subj { color: var(--fg); font-weight: 700; }
+  .mg-row.unread .mg-date { color: var(--fg-muted); font-weight: 700; }
+  .mg-rule {
+    flex: none; font-size: 10px; color: var(--fg-faint); border: 1px solid var(--border);
+    border-radius: 999px; padding: 1px 7px; white-space: nowrap;
+  }
+  .mg-group {
+    display: flex; align-items: center; gap: 8px; padding: 14px 10px 5px;
+    font-size: 11px; font-weight: 600; letter-spacing: .4px; text-transform: uppercase;
+    color: var(--fg-faint); position: sticky; top: 0; background: var(--surface); z-index: 1;
+  }
+  .mg-group .mg-n {
+    background: var(--chip); color: var(--chip-fg); border-radius: 999px; font-size: 10px;
+    padding: 1px 6px; font-weight: 400; letter-spacing: 0; text-transform: none;
+  }
+  /* Top bar of the board — same shape as the list pane's search + refresh row. */
+  #mgboard .mg-hd {
+    flex: none; display: flex; align-items: center; gap: 6px;
+    padding: 10px 10px 8px; border-bottom: 1px solid var(--divider);
+  }
+  #mgboard .mg-title {
+    flex: 1; min-width: 0; height: 40px; display: flex; align-items: center;
+    padding: 0 8px; font-size: 17px; font-weight: 500; color: var(--fg);
+  }
+  /* The board replaces the list, so searching/refreshing the list is moot. */
+  body[data-manage="1"] .searchwrap { display: none; }
+  /* The preview is read-only — no reply box until the thread is opened for real. */
+  body[data-manage="1"] #replybox { display: none; }
+  /* Message scrolls in the top part; the summary is a pinned footer that stays
+     on screen no matter how long the mail is. */
+  /* Centered ring while an un-prefetched preview loads. */
+  .pv-loading { flex: 1; display: flex; align-items: center; justify-content: center; }
+  .pv-loading .ring {
+    width: 28px; height: 28px; border-radius: 50%;
+    border: 3px solid var(--divider); border-top-color: var(--accent);
+    animation: pvspin .8s linear infinite;
+  }
+  @keyframes pvspin { to { transform: rotate(360deg); } }
+  #mgpreview { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  #mgpreview .pv-scroll { flex: 1; overflow-y: auto; min-height: 0; padding: 18px 24px; }
+  #mgpreview > #summary {
+    flex: none; margin: 0; padding: 12px 24px 36px;
+    border: none; border-top: 1px solid var(--divider); border-radius: 0;
+  }
+  #mgpreview .pv-title { font-size: 17px; font-weight: 500; color: var(--fg); margin: 10px 0 12px; }
+  #mgpreview .msg-head { cursor: default; }
+  /* The last message reads as the pane's own content — full width, no framed box. */
+  #mgpreview .msg-body { padding-left: 0; }
+  #mgpreview .msg-body iframe { border: none; border-radius: 0; background: transparent; }
+  #mgsettings {
+    flex: none; width: 30px; height: 30px; border-radius: 8px; display: flex;
+    align-items: center; justify-content: center; color: var(--fg-muted);
+  }
+  #mgsettings:hover { background: var(--hover); color: var(--fg); }
+  #mgsettings.active { background: var(--accent-soft); color: var(--accent); }
+  /* #mglist already pads 12px left/right — no extra horizontal inset here. */
+  #mgprefs { padding: 14px 0 20px; display: flex; flex-direction: column; gap: 10px; }
+  /* Category cards: compact rows that expand in place for editing. The open
+     card keeps the same gray shell so it reads as the card unfolding. */
+  .mgs-row {
+    border: 1px solid rgba(128,128,128,.14); border-radius: 12px;
+    background: rgba(128,128,128,.045);
+    transition: background .15s, border-color .15s, box-shadow .15s;
+  }
+  .mgs-row:not(.editing) {
+    display: flex; align-items: center; gap: 10px; padding: 12px 16px; cursor: pointer;
+  }
+  .mgs-row:not(.editing):hover {
+    background: rgba(128,128,128,.1);
+    border-color: rgba(128,128,128,.22);
+  }
+  .mgs-row:not(.editing):hover .mgs-pencil { opacity: 1; }
+  .mgs-row.editing {
+    display: flex; flex-direction: column; gap: 8px; padding: 12px 16px 12px;
+    border-color: rgba(128,128,128,.3); box-shadow: var(--shadow-1);
+  }
+  /* The revealed fields slide/fade in so the card feels like it unfolds. The
+     head row (name + destination) is exempt — it stays put across the toggle. */
+  .mgs-row.editing .mgs-lab, .mgs-row.editing .mgs-desc, .mgs-row.editing .mgs-tools {
+    animation: mgs-open .18s ease-out both;
+  }
+  @keyframes mgs-open {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: none; }
+  }
+  .mgs-row.editing .mgs-name, .mgs-row.editing .mgs-desc {
+    background: var(--surface);   /* fields pop against the card's gray */
+  }
+  .mgs-row .mgs-namev {
+    flex: 1 1 auto; color: var(--fg); font-weight: 500; min-width: 0; font-size: 13px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  /* Zero-width: the pencil paints over the free space after the name on hover
+     without reserving any room in the row. */
+  .mgs-row .mgs-pencil {
+    flex: none; width: 0; overflow: visible; color: var(--fg-faint);
+    display: flex; opacity: 0; transition: opacity .12s;
+    transform: translateX(-10px);   /* clear of the dropdown when the name runs long */
+  }
+  /* The destination dropdown keeps the same pill look and right-of-name spot
+     in BOTH states, so opening the card doesn't make it jump. Changing it on a
+     closed card saves at once. */
+  /* Each dropdown is sized by JS to hug its selected label (mgSizeDests).
+     Same boxy shape in both card states, so opening causes no jump. */
+  .mgs-row .mgs-dest {
+    margin-left: auto; flex: none; font: inherit; font-size: 12px;
+    padding: 6px 9px; border-radius: 6px; background: var(--surface);
+    color: var(--fg); border: 1px solid var(--border); cursor: pointer;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    transition: width .15s;
+  }
+  .mgs-row .mgs-dest:hover { border-color: rgba(128,128,128,.45); }
+  .mgs-row .mgs-head { display: flex; align-items: stretch; gap: 8px; }
+  .mgs-row .mgs-head .mgs-name { flex: 1 1 auto; min-width: 0; }
+  .mgs-row .mgs-lab {
+    font-size: 10px; font-weight: 600; letter-spacing: .5px; text-transform: uppercase;
+    color: var(--fg-faint); margin-top: 5px;
+  }
+  .mgs-row .mgs-name { font-size: 13px; color: var(--fg); font-weight: 500; }
+  .mgs-row .mgs-tools { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+  .mgs-row .mgs-save:disabled { opacity: .45; cursor: default; filter: none; }
+  .mgs-row .mgs-labrow { display: flex; align-items: center; gap: 6px; margin-top: 5px; }
+  .mgs-row .mgs-busy { margin-left: auto; color: var(--accent); font-size: 12px; }
+  .mgs-row.editing input:disabled, .mgs-row.editing select:disabled,
+  .mgs-row.editing textarea:disabled, .mgs-row.editing .mgs-tools button:disabled { opacity: .55; }
+  .mgs-row .mgs-labrow .mgs-lab { margin-top: 0; }   /* sparkle sits right after the text */
+  .mgs-row .mgs-ai {
+    flex: none; width: 24px; height: 24px; border-radius: 6px; color: var(--accent);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .mgs-row .mgs-ai:hover { background: var(--accent-soft); }
+  .mgs-row .mgs-ai:disabled { opacity: .5; cursor: default; }
+  .mgs-row .mgs-tools { justify-content: flex-end; }
+  .mgs-row .mgs-discard {
+    padding: 5px 14px; border-radius: 999px;
+    border: 1px solid var(--border); color: var(--fg-muted); font-size: 12px;
+  }
+  .mgs-row .mgs-discard:hover { background: var(--hover); color: var(--fg); }
+  .mgs-row .mgs-save {
+    padding: 5px 16px; border-radius: 999px;
+    background: var(--accent); color: #fff; font-size: 12px; font-weight: 500;
+  }
+  .mgs-row .mgs-save:hover { filter: brightness(1.1); }
+  .mgs-row .mgs-desc {
+    color: var(--fg-muted); font-size: 12px; line-height: 1.45;
+    resize: none; min-height: 34px; overflow: hidden;
+  }
+  .mgs-row .mgs-del {
+    width: 24px; height: 24px; border-radius: 6px; color: var(--fg-faint);
+    font-size: 16px; line-height: 1; display: flex; align-items: center; justify-content: center;
+  }
+  .mgs-row .mgs-del:hover { background: var(--hover); color: var(--danger); }
+  /* Two real buttons: the AI head start leads, from-scratch is secondary. */
+  #mgadd { display: flex; gap: 8px; margin-top: 2px; }
+  #mgadd .mgadd-sep { display: none; }
+  #mgadd button {
+    flex: 1; padding: 10px; font-size: 13px; font-weight: 500; border-radius: 999px;
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+    white-space: nowrap; min-width: 0; overflow: hidden;
+    transition: filter .15s, background .15s;
+  }
+  /* Tight on space: both labels drop their tail ("+ New" / "Categorize"). */
+  #mgadd.tight .mgadd-long { display: none; }
+  #mgadd #mgadd-ai { background: var(--accent); color: #fff; }
+  #mgadd #mgadd-ai:hover { filter: brightness(1.1); }
+  #mgadd #mgadd-blank {
+    background: rgba(128,128,128,.1); color: var(--fg);
+    border: 1px solid rgba(128,128,128,.25);
+  }
+  #mgadd #mgadd-blank:hover { background: rgba(128,128,128,.18); }
+  .mgs-row select {
+    font: inherit; font-size: 12px; padding: 5px 8px; border-radius: 8px;
+    background: var(--surface); color: var(--fg); border: 1px solid var(--border);
+    max-width: 160px; min-width: 0;
+  }
+  .mgs-note { padding: 12px; color: var(--fg-faint); font-size: 12px; }
+  #mgfoot {
+    flex: none; display: flex; align-items: center; gap: 12px; padding: 12px 16px;
+    border-top: 1px solid var(--divider); position: relative;
+  }
+  #mgfoot .mg-all { display: flex; align-items: center; gap: 7px; color: var(--fg-muted); font-size: 12px; cursor: pointer; }
+  #mgfoot .mg-hint { color: var(--fg-faint); font-size: 12px; margin-left: auto; }
+  #mgact { padding: 8px 20px; }
+  #mgact:disabled { opacity: .5; cursor: default; }
+  #mgfoot .btn-ghost {
+    margin-left: auto;
+    background: none; border: 1px solid var(--border); color: var(--fg-muted);
+    padding: 8px 16px; cursor: pointer; font: inherit; font-size: 13px;
+  }
+  #mgfoot .btn-ghost:hover { background: var(--hover); color: var(--fg); }
+  #mgfoot .btn-ghost:disabled { opacity: .5; cursor: default; }
+  #mgmove { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+  /* Tight on space: "Move to ▾" collapses to just its folder icon. */
+  #mgfoot.tight #mgmove .mgmv-txt { display: none; }
+  .mg-empty, .mg-spin { padding: 40px 20px; text-align: center; color: var(--fg-faint); }
+
+  /* ---------- onboarding (no account connected) ----------
+     The first thing a new user sees, so it owns the whole content area rather
+     than hiding in a corner of an otherwise empty mailbox. */
+  #onboard {
+    grid-column: 2 / -1; display: flex; align-items: center; justify-content: center;
+    padding: 32px 24px; overflow-y: auto;
+  }
+  .onb-card {
+    width: 100%; max-width: 460px; text-align: center; background: var(--surface);
+    border: 1px solid var(--divider); border-radius: 18px; padding: 40px 36px 32px;
+    box-shadow: var(--shadow-1);
+  }
+  .onb-mark {
+    width: 56px; height: 56px; border-radius: 16px; background: var(--accent-soft);
+    color: var(--accent); display: flex; align-items: center; justify-content: center;
+    margin: 0 auto 20px;
+  }
+  .onb-card h1 {
+    font-size: 24px; font-weight: 400; margin: 0 0 8px; color: var(--fg); text-wrap: balance;
+  }
+  .onb-card p {
+    margin: 0 auto 24px; color: var(--fg-muted); font-size: 13px; line-height: 1.6;
+    max-width: 44ch; text-wrap: pretty;
+  }
+  #onb-connect { padding: 11px 26px; font-size: 14px; }
+  .onb-note {
+    margin: 18px auto 0 !important; font-size: 12px; color: var(--fg-faint) !important;
+    line-height: 1.55;
+  }
+  .onb-note a { color: var(--accent); }
+  body[data-shell="onboard"] #listpane,
+  body[data-shell="onboard"] #threadpane { display: none; }
+  /* Nothing to search and nothing to divide from — the sidebar rule and the
+     live-looking search pill both read as broken chrome on a blank app. */
+  body[data-shell="onboard"] .searchwrap { visibility: hidden; }
+  body[data-shell="onboard"] #accounts { border-top: none; padding-top: 12px; }
+
+  /* ---------- modals ---------- */
+  .overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex;
+    align-items: center; justify-content: center; z-index: 10;
+  }
+  .modal {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 16px; width: 560px;
+    max-width: 92vw; max-height: 88vh; overflow-y: auto; padding: 22px; box-shadow: var(--shadow-2);
+  }
+  .modal h3 { margin: 0 0 12px; font-size: 16px; font-weight: 500; }
+  .modal .field { margin-bottom: 10px; display: flex; gap: 8px; align-items: center; }
+  .modal .field label { width: 96px; color: var(--fg-faint); flex: none; }
+  .modal .field input { flex: 1; }
+  .modal .actions { display: flex; gap: 8px; margin-top: 16px; justify-content: flex-end; align-items: center; }
+  .modal ol { padding-left: 18px; color: var(--fg-muted); }
+  .modal code { background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; }
+  .err { color: var(--danger); margin-right: auto; }
+
+  /* Compose is Gmail's bottom-right popup, not a dialog: the page behind stays
+     usable, so the wrapper must not eat pointer events (it keeps class
+     `overlay` — the Esc handler and the shortcut guard both key off it). */
+  .compose-pop {
+    background: none; pointer-events: none; align-items: flex-end; justify-content: flex-end;
+    padding: 0 24px 0 0;
+  }
+  .compose-card {
+    pointer-events: auto; width: min(560px, 94vw); max-height: 64vh; padding: 0; overflow: hidden;
+    display: flex; flex-direction: column; border-radius: 12px 12px 0 0; border-bottom: none;
+    animation: composePop .18s cubic-bezier(.25, 1, .5, 1);
+  }
+  @keyframes composePop { from { opacity: 0; transform: translateY(12px); } }
+  .cmp-head {
+    display: flex; align-items: center; gap: 8px; padding: 10px 10px 10px 16px;
+    background: var(--fg); color: var(--surface); font-size: 14px; font-weight: 500; flex: none;
+  }
+  html[data-theme="dark"] .cmp-head { background: #2d2e30; color: var(--fg); }
+  .cmp-head span { flex: 1; }
+  .cmp-head .icon-btn { width: 28px; height: 28px; color: inherit; }
+  .cmp-head .icon-btn:hover { background: rgba(128,128,128,.3); color: inherit; }
+  .cfield { display: flex; align-items: center; gap: 8px; padding: 0 16px; border-bottom: 1px solid var(--divider); flex: none; }
+  .cfield label { color: var(--fg-faint); flex: none; width: 54px; }
+  .cfield input {
+    flex: 1; min-width: 0; border: none; background: none; border-radius: 0; padding: 10px 0;
+  }
+  .cfield input:focus { border: none; }
+  .cfield input:disabled { color: var(--fg-muted); -webkit-text-fill-color: var(--fg-muted); opacity: 1; }
+  #c-body {
+    flex: 1; min-height: 120px; border: none; background: none; border-radius: 0;
+    padding: 12px 16px; resize: none;
+  }
+  #c-body:focus { border: none; }
+  .cmp-foot {
+    display: flex; align-items: center; gap: 10px; padding: 10px 16px 14px; flex: none;
+    border-top: 1px solid var(--divider);
+  }
+  .cmp-foot .err { order: 3; font-size: 12px; }
+  #attlist { display: flex; gap: 6px; flex-wrap: wrap; padding: 0 16px 8px; }
+  #attlist .att { cursor: default; }
+  #attlist .att button { color: var(--fg-faint); margin-left: 6px; }
+  .spin { color: var(--fg-faint); padding: 24px; text-align: center; }
+  #toast {
+    position: fixed; bottom: 22px; left: 24px; background: #202124; color: #f1f3f4;
+    border-radius: 8px; padding: 12px 18px; z-index: 20; display: none; align-items: center;
+    gap: 16px; box-shadow: var(--shadow-2); font-size: 13px;
+  }
+  html[data-theme="dark"] #toast { background: #e3e3e3; color: #1f1f1f; }
+  #toast button { color: #a8c7fa; font-weight: 500; }
+  html[data-theme="dark"] #toast button { color: #0b57d0; }
+  #toast button:hover { text-decoration: underline; }
+  /* Background-send indicator: bottom-right so it never covers the toast. */
+  #sendstatus {
+    position: fixed; bottom: 22px; right: 24px; background: #202124; color: #f1f3f4;
+    border-radius: 8px; padding: 12px 18px; z-index: 20; display: none; align-items: center;
+    gap: 10px; box-shadow: var(--shadow-2); font-size: 13px;
+  }
+  html[data-theme="dark"] #sendstatus { background: #e3e3e3; color: #1f1f1f; }
+  #sendstatus .spinner {
+    width: 14px; height: 14px; flex: none; border-radius: 50%;
+    border: 2px solid currentColor; border-top-color: transparent; opacity: .8;
+    animation: sendspin .8s linear infinite;
+  }
+  @keyframes sendspin { to { transform: rotate(360deg); } }
+
+  /* ---------- AI ---------- */
+  #aitoggle { display: flex; align-items: center; gap: 9px; width: 100%; color: var(--fg-faint); font-size: 12px; padding: 6px 4px; border-radius: 8px; }
+  #aitoggle:hover { color: var(--fg-muted); background: var(--hover); }
+  #aitoggle .sw { width: 28px; height: 16px; border-radius: 99px; background: var(--border); position: relative; flex: none; transition: background .15s; }
+  #aitoggle .sw::after {
+    content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px;
+    border-radius: 50%; background: var(--fg-faint); transition: transform .15s, background .15s;
+  }
+  #aitoggle.on .sw { background: var(--accent); }
+  #aitoggle.on .sw::after { transform: translateX(12px); background: var(--surface); }
+  #aitoggle.on { color: var(--fg-muted); }
+  #summary {
+    border: 1px solid var(--border); border-radius: 12px; background: var(--bg);
+    padding: 12px 14px; margin: 4px 0 14px; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 12px;
+  }
+  #summary .sum-mark { color: var(--accent); padding-top: 1px; }
+  #summary .sum-head { display: flex; align-items: center; gap: 8px; color: var(--fg-faint); font-size: 12px; margin-bottom: 4px; }
+  #summary .sum-body {
+    white-space: pre-wrap; color: var(--fg-muted); font-size: 13px; line-height: 1.6;
+    overflow-wrap: anywhere;   /* belt to the prompt's braces: a leaked URL can't overflow */
+  }
+  #summary .sum-body strong { color: var(--fg); }
+  #summary.err .sum-body { color: var(--fg-faint); }
+  #summary .redo { margin-left: auto; color: var(--accent); font-size: 12px; }
+  #summary .redo:hover { text-decoration: underline; }
+  .dots::after { content: "…"; animation: dots 1.2s steps(4, end) infinite; }
+  @keyframes dots { 0% { content: "" } 25% { content: "." } 50% { content: ".." } 75% { content: "…" } }
+
+  /* Suggested reply: a quiet ghost inside the reply card — click or Tab to take it. */
+  #suggest {
+    margin: 8px 0 4px; border: 1px dashed var(--border); border-radius: 10px; background: var(--bg);
+    padding: 8px 12px; cursor: pointer;
+  }
+  #suggest:hover { border-color: var(--fg-faint); background: var(--hover); }
+  #suggest .sug-head { display: flex; align-items: center; gap: 7px; color: var(--fg-faint); font-size: 12px; margin-bottom: 4px; }
+  #suggest .sug-mark { color: var(--accent); }
+  #suggest .sug-hint { margin-left: auto; }
+  #suggest .sug-body {
+    /* At most 2 lines tall; longer suggestions scroll inside the card. */
+    color: var(--fg-muted); white-space: pre-wrap; max-height: calc(2 * 1.5em); overflow-y: auto;
+    line-height: 1.5; overflow-wrap: anywhere;
+  }
+  kbd { border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; font: 11px/1.6 inherit; color: var(--fg-muted); }
+
+  /* ---------- width breakpoints (last on purpose — see the note up top) ---------- */
+  @media (max-width: 1100px) {
+    body { grid-template-columns: 200px minmax(260px, 340px) minmax(0, 1fr); }
+  }
+  /* Below ~900px three columns stop fitting: the reading pane collapsed to
+     nothing, list rows were clipped mid-date and the search pill shrank to a
+     stub. Gmail's answer is an icon rail, so that is what happens here. */
+  @media (max-width: 900px) {
+    body { grid-template-columns: 64px minmax(280px, 380px) minmax(0, 1fr); }
+    #composebtn {
+      width: 48px; min-width: 48px; padding: 0; margin: 0 8px 12px;
+      justify-content: center; align-self: center;
+    }
+    #composebtn span, .lbl .lname, .lbl-sec,
+    .acct .email, #addacct .acct-label, #aitoggle .lbl-text { display: none; }
+    .lbl { justify-content: center; padding: 0; border-radius: 999px; margin: 0 8px; height: 36px; }
+    #labels { padding: 0 0 8px; }
+    .acct { justify-content: center; padding: 8px 0; gap: 0; }
+    .acct .dot { width: 10px; height: 10px; }
+    #addacct { text-align: center; font-size: 17px; padding: 6px 0; }
+    .acct-row .acct-x { display: none; }
+    #aitoggle { justify-content: center; padding: 6px 0; }
+    #aibar { flex-direction: column; gap: 2px; padding: 4px 6px 10px; }
+    #accounts { padding: 8px 6px 4px; }
+  }
+  /* One pane at a time below ~620px: the list until you open something, the
+     thread after — body[data-view] is set by draw(). */
+  @media (max-width: 620px) {
+    body { grid-template-columns: 64px minmax(0, 1fr); }
+    #listpane, #threadpane, #onboard { grid-column: 2; grid-row: 1; }
+    body[data-view="thread"] #listpane { display: none; }
+    body[data-view="list"] #threadpane { display: none; }
+    #listpane, #threadpane { margin: 0; border-radius: 14px 14px 0 0; border-left: 1px solid var(--divider); }
+    .searchwrap { min-width: 0; }
+    .icon-btn { width: 32px; height: 32px; }
+    #threadhead, #msgs, #replybox { padding-left: 14px; padding-right: 14px; }
+    .msg-body, .msg-meta, .atts { padding-left: 0; }
+    #onboard { padding: 20px 14px; }
+    .onb-card { padding: 32px 22px 26px; }
+  }

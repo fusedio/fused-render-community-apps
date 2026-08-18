@@ -1,0 +1,37 @@
+[
+  {
+    "title": "Welcome to OpenNotion",
+    "status": "done",
+    "priority": "high",
+    "due": "",
+    "body": "# What this is\nA notes + tasks board stored as plain parquet snapshots on your own disk.\n\n- Click a row to open it and write notes\n- Every edit writes a new snapshot, so nothing is ever overwritten\n- Open the table menu to see the full history, or to move the lake elsewhere\n\nThese demo rows are seeded on first run. Delete them and they stay deleted."
+  },
+  {
+    "title": "Draft the weekly review",
+    "status": "prog",
+    "priority": "med",
+    "due": "",
+    "body": "## Sections\n- [ ] What shipped\n- [ ] What slipped, and why\n- [ ] One number that moved\n\n> Keep it to a single screen."
+  },
+  {
+    "title": "Plan the reading list",
+    "status": "none",
+    "priority": "low",
+    "due": "",
+    "body": "1. Designing Data-Intensive Applications\n2. The Log (Kreps)\n3. A Philosophy of Software Design\n"
+  },
+  {
+    "title": "Try the CLI on this same data",
+    "status": "none",
+    "priority": "med",
+    "due": "",
+    "body": "The UI and `lakectl.py` share one lake:\n\n- `lakectl.py tables`\n- `lakectl.py rows tasks`\n- `lakectl.py add tasks --set title=\"From the CLI\" --set status=prog\n\nReload the page and the new row is there."
+  },
+  {
+    "title": "Snapshot history is the undo button",
+    "status": "none",
+    "priority": "",
+    "due": "",
+    "body": "Nothing is mutated in place. Every write drops a new timestamped parquet file, so any past state of the table can be read back."
+  }
+]

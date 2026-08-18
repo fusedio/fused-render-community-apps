@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "name": "OpenTV",
+  "description": "Browse thousands of free public IPTV channels from iptv-org, play them in-page over HLS, and track which streams actually work.",
+  "author": { "name": "Surya" },
+  "tags": ["iptv", "video", "streaming", "hls", "player"],
+  "category": "productivity",
+  "version": "1.0.0",
+  "requires_python": true
+}

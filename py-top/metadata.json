@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "name": "PyTop",
+  "description": "A live process monitor in the browser: CPU/memory meters, a sortable process table, and — with confirmation — the ability to terminate processes.",
+  "author": { "name": "Surya" },
+  "tags": ["system", "processes", "monitor", "macos"],
+  "category": "productivity",
+  "version": "1.0.0",
+  "requires_python": true
+}

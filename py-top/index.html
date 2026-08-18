@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="fused-app">
+<meta charset="utf-8" />
+<title>PyTop</title>
+<style>
+  :root { color-scheme: dark;
+    --bg: #131417; --panel: #1b1d21; --border: #2a2d33;
+    --text: #e8eaed; --dim: #9aa0a6;
+    --green: #3fb950; --yellow: #d29922; --red: #f85149; --blue: #5b9dff; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 13px/1.5 "SF Mono", ui-monospace, Menlo, monospace;
+    height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+  header { display: flex; flex-wrap: wrap; gap: 14px 28px; align-items: center;
+    padding: 14px 20px; background: var(--panel); border-bottom: 1px solid var(--border);
+    flex: none; }
+  #tableWrap { flex: 1; overflow-y: auto; }
+  .meter { min-width: 220px; }
+  .meter .label { display: flex; justify-content: space-between; color: var(--dim); font-size: 11px; }
+  .bar { height: 8px; background: #24262b; border-radius: 4px; overflow: hidden; margin-top: 3px; }
+  .bar i { display: block; height: 100%; background: var(--green); transition: width .4s; }
+  .bar i.warn { background: var(--yellow); } .bar i.hot { background: var(--red); }
+  .sysinfo { color: var(--dim); font-size: 11px; }
+  .controls { margin-left: auto; display: flex; gap: 10px; align-items: center; }
+  input[type=search] { background: var(--bg); border: 1px solid var(--border); color: var(--text);
+    padding: 5px 10px; border-radius: 6px; font: inherit; width: 200px; outline: none; }
+  input[type=search]:focus { border-color: var(--blue); }
+  button.toggle { background: transparent; border: 1px solid var(--border); color: var(--dim);
+    border-radius: 6px; padding: 5px 10px; cursor: pointer; font: inherit; font-size: 12px;
+    white-space: nowrap; }
+  button.toggle.on { border-color: var(--blue); color: var(--blue); background: rgba(91,157,255,.1); }
+  button.toggle.danger:hover { border-color: var(--red); color: var(--red); background: rgba(248,81,73,.1); }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; padding: 8px 10px; color: var(--dim); font-size: 11px;
+    text-transform: uppercase; cursor: pointer; user-select: none; white-space: nowrap;
+    position: sticky; top: 0; background: var(--bg); border-bottom: 1px solid var(--border); }
+  th.active { color: var(--blue); }
+  td { padding: 4px 10px; border-bottom: 1px solid #1e2025; white-space: nowrap; }
+  td.cmd { max-width: 520px; overflow: hidden; text-overflow: ellipsis; color: var(--dim); }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tr:hover td { background: var(--panel); }
+  .hi-cpu { color: var(--yellow); } .vhi-cpu { color: var(--red); }
+  button.kill { background: transparent; border: 1px solid var(--border); color: var(--dim);
+    border-radius: 5px; padding: 1px 8px; cursor: pointer; font: inherit; font-size: 11px; }
+  button.kill:hover { border-color: var(--red); color: var(--red); }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spinner { width: 14px; height: 14px; border: 2px solid var(--border);
+    border-top-color: var(--blue); border-radius: 50%;
+    animation: spin .7s linear infinite; visibility: hidden; }
+  .spinner.on { visibility: visible; }
+  #loading { flex: 1; display: flex; flex-direction: column; gap: 14px;
+    align-items: center; justify-content: center; color: var(--dim); }
+  #loading .spinner { width: 32px; height: 32px; border-width: 3px; visibility: visible; }
+  #toast { position: fixed; bottom: 20px; right: 20px; background: var(--panel);
+    border: 1px solid var(--border); border-radius: 8px; padding: 10px 16px;
+    opacity: 0; transition: opacity .3s; pointer-events: none; }
+  #toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<header>
+  <div class="meter"><div class="label"><span>CPU</span><span id="cpuPct">–</span></div>
+    <div class="bar"><i id="cpuBar" style="width:0%"></i></div></div>
+  <div class="meter"><div class="label"><span>MEM</span><span id="memPct">–</span></div>
+    <div class="bar"><i id="memBar" style="width:0%"></i></div></div>
+  <div class="sysinfo" id="sysinfo">loading…</div>
+  <div class="controls">
+    <button id="frOnly" class="toggle">FusedRender only</button>
+    <button id="killAll" class="toggle danger" style="display:none">kill all</button>
+    <input type="search" id="filter" placeholder="filter (name, user, pid)">
+    <label style="color:var(--dim);font-size:11px"><input type="checkbox" id="pause"> pause</label>
+  </div>
+</header>
+<div id="loading"><div class="spinner"></div><div>loading processes…</div></div>
+<div id="tableWrap" style="display:none">
+<table>
+  <thead><tr id="heads"></tr></thead>
+  <tbody id="rows"></tbody>
+</table>
+</div>
+<div id="toast"></div>
+<script>
+const COLS = [
+  ["pid","PID","num"], ["user","USER",""], ["cpu","CPU%","num"], ["mem","MEM%","num"],
+  ["rss_kb","RSS","num"], ["state","S",""], ["etime","TIME","num"], ["command","COMMAND","cmd"], [null,"",""]
+];
+let sortKey = "cpu", sortAsc = false, data = null, busy = false, frOnly = false, frPids = [];
+
+const heads = document.getElementById("heads");
+COLS.forEach(([key, label]) => {
+  const th = document.createElement("th");
+  th.textContent = label;
+  if (key) th.onclick = () => { sortAsc = (sortKey === key) ? !sortAsc : false; sortKey = key; render(); };
+  th.dataset.key = key || "";
+  heads.appendChild(th);
+});
+
+function fmtRss(kb) {
+  if (kb > 1048576) return (kb/1048576).toFixed(1) + "G";
+  if (kb > 1024) return (kb/1024).toFixed(0) + "M";
+  return kb + "K";
+}
+function fmtBytes(b) { return (b/1073741824).toFixed(1) + "G"; }
+function esc(s) { return s.replace(/&/g,"&amp;").replace(/</g,"&lt;"); }
+
+function toast(msg) {
+  const t = document.getElementById("toast");
+  t.textContent = msg; t.classList.add("show");
+  setTimeout(() => t.classList.remove("show"), 2500);
+}
+
+async function killProc(pid, name) {
+  if (!confirm(`Send SIGTERM to ${pid} (${name})?`)) return;
+  const j = await fused.runPython("./processes.py", { action: "kill", pid: String(pid) });
+  if (j.ok) toast(`Sent ${j.signal} to ${pid}`);
+  else if (confirm(`TERM failed (${j.error}). Try SIGKILL -9?`)) {
+    const j2 = await fused.runPython("./processes.py", { action: "kill", pid: String(pid), force: "1" });
+    toast(j2.ok ? `Sent SIGKILL to ${pid}` : `Failed: ${j2.error}`);
+  }
+  setTimeout(refresh, 500);
+}
+
+function setBar(barId, pctId, pct, extra) {
+  const bar = document.getElementById(barId);
+  bar.style.width = Math.min(pct,100) + "%";
+  bar.className = pct > 85 ? "hot" : pct > 60 ? "warn" : "";
+  document.getElementById(pctId).textContent = pct.toFixed(1) + "%" + (extra ? "  (" + extra + ")" : "");
+}
+
+function render() {
+  if (!data) return;
+  const s = data.system;
+  setBar("cpuBar","cpuPct", 100 - s.cpu.idle);
+  const memPct = s.mem_total ? 100 * s.mem_used / s.mem_total : 0;
+  setBar("memBar","memPct", memPct, `${fmtBytes(s.mem_used)} / ${fmtBytes(s.mem_total)}`);
+  document.getElementById("sysinfo").textContent =
+    `${s.hostname} · ${s.ncpu} cores · load ${s.load.map(x=>x.toFixed(2)).join(" ")} · ${data.processes.length} procs`;
+
+  document.querySelectorAll("th").forEach(th => th.classList.toggle("active", th.dataset.key === sortKey));
+
+  const q = document.getElementById("filter").value.toLowerCase();
+  let procs = data.processes;
+  if (frOnly) {
+    // FusedRender processes plus all their descendants (via ppid links)
+    const keep = new Set(procs.filter(p => /fusedrender|fused_render/i.test(p.command)).map(p => p.pid));
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (const p of procs) if (!keep.has(p.pid) && keep.has(p.ppid)) { keep.add(p.pid); grew = true; }
+    }
+    procs = procs.filter(p => keep.has(p.pid));
+    // kill-all targets: everything in the tree except the FusedRender app binary itself
+    frPids = procs.filter(p => !/MacOS\/FusedRender(\s|$)/.test(p.command)).map(p => p.pid);
+  }
+  document.getElementById("killAll").style.display = frOnly ? "" : "none";
+  if (q) procs = procs.filter(p =>
+    p.command.toLowerCase().includes(q) || p.user.toLowerCase().includes(q) || String(p.pid).includes(q));
+  procs = [...procs].sort((a,b) => {
+    const va = a[sortKey], vb = b[sortKey];
+    const c = (typeof va === "number") ? va - vb : String(va).localeCompare(String(vb));
+    return sortAsc ? c : -c;
+  });
+
+  document.getElementById("rows").innerHTML = procs.slice(0, 400).map(p => {
+    const cls = p.cpu > 50 ? "vhi-cpu" : p.cpu > 10 ? "hi-cpu" : "";
+    const name = esc(p.command.split(" ")[0].split("/").pop()).replace(/'/g,"");
+    return `<tr>
+      <td class="num">${p.pid}</td><td>${esc(p.user)}</td>
+      <td class="num ${cls}">${p.cpu.toFixed(1)}</td>
+      <td class="num">${p.mem.toFixed(1)}</td>
+      <td class="num">${fmtRss(p.rss_kb)}</td>
+      <td>${esc(p.state)}</td><td class="num">${esc(p.etime)}</td>
+      <td class="cmd" title="${esc(p.command)}">${esc(p.command)}</td>
+      <td><button class="kill" onclick="killProc(${p.pid},'${name}')">kill</button></td>
+    </tr>`;
+  }).join("");
+}
+
+async function refresh() {
+  if (busy || document.getElementById("pause").checked) return;
+  busy = true;
+  try {
+    data = await fused.runPython("./processes.py", { action: "stats" });
+    document.getElementById("loading").style.display = "none";
+    document.getElementById("tableWrap").style.display = "";
+    render();
+  } catch (e) {
+    toast("refresh failed: " + e);
+  } finally {
+    busy = false;
+  }
+}
+document.getElementById("filter").addEventListener("input", render);
+document.getElementById("killAll").addEventListener("click", async () => {
+  if (!frPids.length) return toast("no FusedRender processes");
+  if (!confirm(`Send SIGTERM to ${frPids.length} FusedRender child process(es)?\n(The FusedRender app itself is spared.)`)) return;
+  const j = await fused.runPython("./processes.py", { action: "killmany", pid: frPids.join(",") });
+  toast(`killed ${j.killed}/${j.total}`);
+  setTimeout(refresh, 500);
+});
+document.getElementById("frOnly").addEventListener("click", (e) => {
+  frOnly = !frOnly;
+  e.target.classList.toggle("on", frOnly);
+  render();
+});
+refresh();
+setInterval(refresh, 3000);
+</script>
+</body>
+</html>

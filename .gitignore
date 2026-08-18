@@ -10,3 +10,6 @@ venv/
 # fused-render local state
 *.html.json
 .claude-split.json
+*.annotations.json
+*.recording.webm
+*.recording.status.json

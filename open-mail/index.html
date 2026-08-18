@@ -1,0 +1,2150 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="fused-app">
+<meta charset="utf-8">
+<title>OpenMail</title>
+<script>
+// Theme before first paint: a flash of the wrong palette is worse than any
+// millisecond this costs. Runs synchronously in <head>, before <body> exists.
+(function () {
+  var t = null;
+  try { t = localStorage.getItem("fused.mail.theme"); } catch (e) {}
+  if (t !== "light" && t !== "dark")
+    t = (window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches) ? "dark" : "light";
+  document.documentElement.setAttribute("data-theme", t);
+})();
+</script>
+<script>document.write('<link rel="stylesheet" href="' + fused.rawUrl("mail.css") + '">');</script>
+</head>
+<body>
+
+<div id="sidebar">
+  <button id="composebtn"></button>
+  <div id="labels"></div>
+  <div id="accounts"></div>
+  <div id="aibar">
+    <button id="aitoggle"><span class="sw"></span><span class="lbl-text">AI features</span></button>
+    <button id="settingsbtn" title="Settings" aria-label="Settings"></button>
+  </div>
+</div>
+
+<div id="listpane">
+  <div class="searchwrap">
+    <div class="searchpill">
+      <span class="search-ic" aria-hidden="true">
+        <svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/></svg>
+      </span>
+      <input id="search" placeholder="Search mail" spellcheck="false" aria-label="Search mail">
+    </div>
+    <button class="icon-btn" id="refreshbtn" aria-label="Refresh"></button>
+  </div>
+  <div id="list"><div class="spin">Loading…</div></div>
+</div>
+
+<div id="splitbar" aria-hidden="true"></div>
+
+<div id="threadpane">
+  <div id="landing"><div class="land-empty"><p id="placeholder">Select a conversation</p></div></div>
+</div>
+
+<div id="onboard" hidden>
+  <div class="onb-card">
+    <div class="onb-mark" aria-hidden="true"></div>
+    <h1>Welcome to Mail</h1>
+    <p>Connect your Gmail to read, search and reply — everything stays on this machine.</p>
+    <button class="btn-primary pill" id="onb-connect">Connect Gmail</button>
+    <p class="onb-note">
+      Gmail needs a 16-character <b>app password</b> (or OAuth) — your normal password won't work.
+      Nothing is uploaded; the credential is stored in <code>~/.fused-mail</code>.
+    </p>
+  </div>
+</div>
+
+<div id="toast" role="status" aria-live="polite"></div>
+<div id="sendstatus" role="status" aria-live="polite"><span class="spinner" aria-hidden="true"></span><span id="sendstatus-msg">Sending…</span></div>
+
+<script>
+"use strict";
+const PY = "./mail.py";
+const $ = (s, el) => (el || document).querySelector(s);
+const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+let state = { accounts: [], labels: [], threads: [], nextToken: "", thread: null, hasCreds: false };
+let listReq = 0, threadReq = 0;
+
+// ---------- icons ----------
+// Every glyph is inline SVG: the page loads zero external resources (no font
+// CDN, no icon sheet), which is a hard requirement for the exporter.
+const ICON = {
+  inbox: `<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>`,
+  star: `<path d="M12 2.6l2.9 5.88 6.49.95-4.7 4.58 1.11 6.46L12 17.42l-5.8 3.05 1.11-6.46-4.7-4.58 6.49-.95L12 2.6z"/>`,
+  send: `<path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/>`,
+  draft: `<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8M16 17H8M10 9H8"/>`,
+  report: `<path d="M7.86 2h8.28L22 7.86v8.28L16.14 22H7.86L2 16.14V7.86L7.86 2z"/><path d="M12 8v4M12 16h.01"/>`,
+  trash: `<path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>`,
+  important: `<path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>`,
+  tag: `<path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><path d="M7 7h.01"/>`,
+  archive: `<path d="M21 8v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8"/><path d="M2 3h20v5H2z"/><path d="M10 12h4"/>`,
+  mail: `<path d="M4 5h16c1.1 0 2 .9 2 2v10c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V7c0-1.1.9-2 2-2z"/><path d="M22 7l-10 7L2 7"/>`,
+  mailopen: `<path d="M2 10l10-6 10 6v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z"/><path d="M2 10l10 7 10-7"/>`,
+  /* Gmail's mark-as-unread: a closed envelope whose top-right corner yields
+     to a solid notification dot. */
+  mailunread: `<path d="M22 10.5V17a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h10.5"/><path d="M22 7.5L12 14 2 7"/><circle cx="19.5" cy="4.5" r="2.7" fill="currentColor" stroke="none"/>`,
+  refresh: `<path d="M21 4v6h-6"/><path d="M3 20v-6h6"/><path d="M4.6 9a8 8 0 0 1 13.2-3L21 10"/><path d="M3 14l3.2 3A8 8 0 0 0 19.4 15"/>`,
+  search: `<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/>`,
+  moon: `<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>`,
+  sun: `<circle cx="12" cy="12" r="4.5"/><path d="M12 1.5v2.2M12 20.3v2.2M4.2 4.2l1.6 1.6M18.2 18.2l1.6 1.6M1.5 12h2.2M20.3 12h2.2M4.2 19.8l1.6-1.6M18.2 5.8l1.6-1.6"/>`,
+  sparkle: `<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z"/><path d="M18.5 16.5l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z"/>`,
+  pencil: `<path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>`,
+  close: `<path d="M18 6L6 18M6 6l12 12"/>`,
+  back: `<path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/>`,
+  folderin: `<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><path d="M8 13h7"/><path d="M12.5 10.5L15 13l-2.5 2.5"/>`,
+  reply: `<path d="M9 15L4 10l5-5"/><path d="M20 20v-6a4 4 0 0 0-4-4H4.5"/>`,
+  check: `<path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="M22 4L12 14l-3-3"/>`,
+  gear: `<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>`,
+};
+const svg = (name, size, extra) =>
+  `<svg class="ic" width="${size || 18}" height="${size || 18}" viewBox="0 0 24 24" fill="none" ` +
+  `stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" ` +
+  `aria-hidden="true"${extra || ""}>${ICON[name] || ""}</svg>`;
+
+// ---------- theme ----------
+const THEME_KEY = "fused.mail.theme";
+const curTheme = () => document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light";
+// Instant, never animated — a cross-fade between palettes reads as a flash.
+// Lives in the Settings modal (gear, lower left).
+function toggleTheme() {
+  const next = curTheme() === "dark" ? "light" : "dark";
+  document.documentElement.setAttribute("data-theme", next);
+  try { localStorage.setItem(THEME_KEY, next); } catch (e) {}
+}
+
+// ---------- params ----------
+// `?account=demo` is a test-only backdoor (never rendered in the UI); with no
+// ?account the app opens the first connected account, else onboarding.
+// Test hook: ?onboarding=1 pretends nothing is connected.
+const forceOnboard = () => fused.params.get("onboarding") === "1";
+const realAccounts = () => forceOnboard() ? [] : state.accounts.filter(a => a.provider !== "demo");
+const defaultAccount = () => { const r = realAccounts()[0]; return r ? r.email : ""; };
+const P = {
+  get account() { return fused.params.get("account") || defaultAccount(); },
+  get label()   { return fused.params.get("label") || "INBOX"; },
+  get q()       { return fused.params.get("q") || ""; },
+  get thread()  { return fused.params.get("thread") || ""; },
+  get manage()  { return fused.params.get("manage") === "1"; },
+};
+const isOnboarding = () => forceOnboard() || (!P.account && !realAccounts().length);
+function setParam(k, v) { fused.params.set(k, String(v == null ? "" : v)); pushHistory(); }
+
+// ---------- history ----------
+// fused.params.set() writes the URL with replaceState, so the browser Back
+// button skips straight out of the app instead of walking back through the
+// threads/labels you opened. Mirror each batch of param writes into a real
+// history entry (state carries the snapshot; Back/Forward replays it).
+const HIST_KEYS = ["account", "label", "q", "thread", "manage"];
+function snapParams() {
+  const o = {};
+  for (const k of HIST_KEYS) { const v = fused.params.get(k); if (v) o[k] = v; }
+  return o;
+}
+let restoringHistory = false;
+let histQueued = false;
+// Handlers set several params in a row; coalesce them into one entry per tick
+// so one click never costs three presses of Back.
+function pushHistory() {
+  if (restoringHistory || histQueued) return;
+  histQueued = true;
+  queueMicrotask(() => {
+    histQueued = false;
+    const snap = snapParams();
+    const cur = history.state && history.state.mailParams;
+    if (cur && JSON.stringify(cur) === JSON.stringify(snap)) return;
+    try { history.pushState({ mailParams: snap }, "", location.href); } catch (e) {}
+  });
+}
+try { history.replaceState({ mailParams: snapParams() }, "", location.href); } catch (e) {}
+window.addEventListener("popstate", e => {
+  const snap = (e.state && e.state.mailParams) || {};
+  restoringHistory = true;
+  // Clear-then-set every tracked key, so params absent from the target state
+  // (e.g. a thread opened after this entry) actually go away.
+  try { for (const k of HIST_KEYS) fused.params.set(k, snap[k] || ""); }
+  finally { restoringHistory = false; }
+});
+
+// ---------- helpers ----------
+// toast(msg) — plain notice; toast(msg, {label, fn}) adds one action (Undo)
+// and doubles the timeout so the action stays reachable.
+function toast(msg, action) {
+  const t = $("#toast");
+  t.textContent = msg;
+  if (action) {
+    const b = document.createElement("button");
+    b.textContent = action.label;
+    b.addEventListener("click", () => { t.style.display = "none"; action.fn(); });
+    t.appendChild(b);
+  }
+  t.style.display = "flex";
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => t.style.display = "none", action ? 6000 : 2600);
+}
+function fmtDate(ms) {
+  const d = new Date(ms), now = new Date();
+  if (d.toDateString() === now.toDateString())
+    return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  if (d.getFullYear() === now.getFullYear())
+    return d.toLocaleDateString([], { month: "short", day: "numeric" });
+  return d.toLocaleDateString([], { year: "numeric", month: "short", day: "numeric" });
+}
+function fromName(from) {
+  const m = /^"?([^"<]*)"?\s*<.*>$/.exec(from || "");
+  return (m ? m[1].trim() : from) || "(unknown)";
+}
+// Avatar colour is a pure function of the address, so the same person is the
+// same colour everywhere and across reloads. Only the hue varies — saturation
+// and lightness are pinned to values that keep the initial at 4.5:1 on its own
+// disc in BOTH palettes (worst case, yellow: 4.85 light / 5.58 dark).
+function hueOf(s) {
+  let h = 0;
+  const v = String(s || "").toLowerCase();
+  for (let i = 0; i < v.length; i++) h = (h * 31 + v.charCodeAt(i)) | 0;
+  return Math.abs(h) % 360;
+}
+function initialOf(name) {
+  const c = (String(name || "").trim().replace(/^[^\p{L}\p{N}]+/u, "")[0] || "?");
+  return c.toUpperCase();
+}
+// Serialize engine calls: concurrent runPython to the same .py can orphan a response,
+// leaving its promise hung forever. One call in flight at a time.
+//
+// PRIORITY: background work (warming thread bodies, precomputing triage) shares
+// this one channel with everything the user is waiting on. A single IMAP
+// get_thread can take seconds, so a queue full of them used to sit in front of
+// the click that opened the triage board — the board showed "Reading the
+// inbox" until the whole warm sweep drained. Background callers now pass
+// {bg:true} and yield: they wait for the foreground to go quiet before taking
+// the channel, so a user action is behind at most ONE in-flight call.
+let pyQueue = Promise.resolve();
+let pyFg = 0;                      // foreground calls queued or in flight
+function py(params, opts) {
+  if (opts && opts.bg) return pyBg(params);
+  pyFg++;
+  const run = () => fused.runPython(PY, params);
+  const p = pyQueue.then(run, run);
+  pyQueue = p.catch(() => {});
+  p.then(() => pyFg--, () => pyFg--);
+  return p;
+}
+// Background call: park until nothing foreground is waiting, then queue.
+async function pyBg(params) {
+  while (pyFg > 0) await new Promise(r => setTimeout(r, 60));
+  const run = () => fused.runPython(PY, params);
+  const p = pyQueue.then(run, run);
+  pyQueue = p.catch(() => {});
+  return p;
+}
+
+// Background sends run OUTSIDE the pyQueue: an SMTP send (attachments, slow
+// network) can take many seconds, and queued behind it every click in the UI
+// would appear frozen. `key: null` opts out of the runtime's stale-cancel so
+// the send always runs to completion, concurrent with queued calls.
+let sendsInFlight = 0;
+function sendStatus() {
+  const el = $("#sendstatus");
+  if (!el) return;
+  if (sendsInFlight > 0) {
+    $("#sendstatus-msg").textContent =
+      sendsInFlight === 1 ? "Sending…" : `Sending ${sendsInFlight} messages…`;
+    el.style.display = "flex";
+  } else el.style.display = "none";
+}
+function sendInBackground(params, onDone, onError) {
+  sendsInFlight++; sendStatus();
+  fused.runPython(PY, params, { key: null })
+    .then(res => {
+      // mail.py reports expected failures as {error}, not an exception.
+      if (res && res.error) throw new Error(res.error);
+      onDone(res);
+    })
+    .catch(e => onError(e))
+    .finally(() => { sendsInFlight--; sendStatus(); });
+}
+
+// ---------- AI (local only — see spec 2026-08-03-mail-ai-scope.md) ----------
+// fused.ai runs the local claude CLI, so it exists only in the shell. Any page
+// containing the call is refused by the exporter (SPEC RH-11) — this app is
+// deliberately local-only, so we call it directly rather than gating on env.
+const AI_KEY = "fused.mail.ai";           // opt-in flag
+// v2: the prompt changed to one-bullet summaries — a new key orphans the old
+// long-form entries instead of showing them alongside fresh short ones.
+const AI_CACHE = "fused.mail.ai.summaries.v2";
+const AI_DRAFTS = "fused.mail.ai.drafts";
+const AI_DIGEST = "fused.mail.ai.digest";
+const SUMMARY_PROMPT =
+  "You summarize email threads for a busy reader in one glance. Reply with ONE short bullet " +
+  "starting '- ' — the single thing that matters now, telegram-brief, no full sentences " +
+  "needed. If (and only if) the thread asks something of someone, add one 'Action: ' line " +
+  "naming the owner and the ask. No preamble, no headings, no restating the subject, no " +
+  "background or pleasantries. Under 25 words total. " +
+  // Marketing mail is mostly tracking URLs; pasting one dumps 300 unreadable
+  // characters into a 60-word card. Name the destination instead.
+  "NEVER paste a URL, link or raw email address — refer to a link by where it goes " +
+  "(\"the Vanta link\", \"the invoice link\") and to a person by name.";
+const DRAFT_PROMPT =
+  "You draft email replies in the voice of the person replying. Match the thread's register. " +
+  "Output ONLY the reply body — no subject, no 'Here is a draft', no signature block beyond " +
+  "a first name if one fits. NEVER open with meta commentary about the task or a reaction to " +
+  "these instructions ('I'll draft a brief follow-up…', 'Sure, here's…', 'Perfect, that makes " +
+  "sense.', 'Got it, here's a draft:') — the first word must already be the email itself, and " +
+  "there must be no '---' divider or blank-line break between an intro and the reply. " +
+  "NEVER address a question to the user asking what to write or for more detail " +
+  "('What would you like to say?', 'Let me know if you'd like me to adjust this') — this " +
+  "text goes straight into the reply box, unread by anyone but the recipient, so make every " +
+  "reasonable assumption yourself and write the most plausible reply. " +
+  "If the thread looks fragmented, truncated or confusing, do NOT say so and do NOT ask " +
+  "which message to reply to — silently reply to the newest message with your best guess. " +
+  "End with a bare first name on its own line if a sign-off fits — never a closing word like " +
+  "'Thanks,' or 'Best,' before it. " +
+  "Keep it under 120 words unless the thread demands detail.";
+
+// Personal AI instructions from Settings (tone, sign-off, language…). Appended
+// to the drafting prompts so every suggested reply and fix follows them.
+const AI_PERSONA_KEY = "fused.mail.ai.persona";
+function personaText() {
+  try { return (localStorage.getItem(AI_PERSONA_KEY) || "").trim(); } catch (e) { return ""; }
+}
+function withPersona(prompt) {
+  const p = personaText();
+  return p ? prompt + "\n\nThe user's personal instructions for how they write — follow them " +
+    "(they win over the style defaults above, but never justify meta commentary or questions " +
+    "to the user):\n" + p : prompt;
+}
+
+const FIX_PROMPT =
+  "You revise a selected passage from an email draft according to an instruction. " +
+  "Output ONLY the revised passage — no quotes, no commentary, no explanation. " +
+  "NEVER ask a question or request clarification: your output replaces the passage " +
+  "verbatim, so anything that is not the revised text corrupts the draft. If the " +
+  "instruction is vague ('fix it', 'make it better'), improve grammar, clarity and " +
+  "flow yourself and return your best revision. " +
+  "Keep the register of the draft, and preserve the passage's leading/trailing " +
+  "whitespace and line structure so it splices back cleanly.";
+
+const DIGEST_PROMPT =
+  "You brief a busy reader on their unread email in one glance. You get numbered unread " +
+  "emails (sender, subject, snippet). Write at most 5 short bullets, most important first. " +
+  "Start every bullet with exactly ONE number in square brackets — the single most relevant " +
+  "email — like '[2] Marcus flagged the GPU budget'. The number is an internal anchor the " +
+  "reader never sees, so NEVER put a second bracket number anywhere in the text; when a " +
+  "bullet covers several emails, name them in words ('three Sentry alerts'). Group routine " +
+  "mail (newsletters, receipts, notifications) into one bullet. Under 80 words, no preamble, " +
+  "no headings. NEVER paste a URL or raw email address — name the sender or the destination " +
+  "in words instead.";
+
+let aiOn = localStorage.getItem(AI_KEY) === "1";
+let aiBroken = false;   // set when the CLI is missing, so we stop retrying
+let onboardingNow = false;   // no account connected → the welcome card owns the app
+
+// One tiny cache per derived artifact, all keyed (thread id : last message id)
+// so any new message invalidates, and all dropped together on disconnect.
+function readStore(key) { try { return JSON.parse(localStorage.getItem(key) || "{}"); } catch (e) { return {}; } }
+function storeGet(key, t) {
+  const last = t.messages[t.messages.length - 1];
+  return readStore(key)[t.id + ":" + last.id];
+}
+function storePut(key, t, text) {
+  const last = t.messages[t.messages.length - 1];
+  const c = readStore(key);
+  c[t.id + ":" + last.id] = text;
+  const keys = Object.keys(c);
+  if (keys.length > 200) delete c[keys[0]];   // crude cap; entries are small
+  try { localStorage.setItem(key, JSON.stringify(c)); } catch (e) {}
+}
+const cacheGet = t => storeGet(AI_CACHE, t);
+const cachePut = (t, x) => storePut(AI_CACHE, t, x);
+function clearAiStores() {
+  try { [AI_CACHE, AI_DRAFTS, AI_DIGEST, "fused.mail.manage.v1", "fused.mail.manage.rules"].forEach(k => localStorage.removeItem(k)); } catch (e) {}
+}
+// The account's own address — replyTarget-style comparisons need it, and the
+// demo account signs as you@demo.test rather than its account id.
+const myAddr = () => (P.account === "demo" ? "you@demo.test" : P.account).toLowerCase();
+
+// HTML mail → readable text. Dropping <style>/<script> bodies matters twice
+// over: their contents used to reach the model as prompt (a newsletter is
+// mostly CSS) and to leak into the collapsed-message preview.
+function stripHtml(html) {
+  return String(html || "")
+    .replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1>/gi, " ")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&nbsp;/g, " ").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'")
+    .replace(/&(?:#\d+|#x[0-9a-fA-F]+|[a-zA-Z]{2,8});/g, " ")
+    .replace(/&amp;/g, "&");
+}
+// Send the thread, not the mailbox: trimmed bodies, newest-last, capped.
+function threadToText(t, limit) {
+  const msgs = t.messages.slice(-8);
+  return "Subject: " + t.subject + "\n\n" + msgs.map(m =>
+    "From: " + m.from + "\n" +
+    (m.to ? "To: " + m.to + "\n" : "") +
+    (m.body_text || stripHtml(m.body_html)).replace(/\s+\n/g, "\n").trim().slice(0, limit || 1500)
+  ).join("\n\n---\n\n");
+}
+
+function aiFailText(err) {
+  if (err.type === "ai_unavailable") { aiBroken = true; return "AI unavailable — " + err.message; }
+  return (err.type || "error") + ": " + err.message;
+}
+
+// Settings (gear, lower left): personal instructions for AI replies — tone,
+// sign-off, language. Saving invalidates cached drafts so the new voice takes
+// effect immediately, including in the thread currently open.
+function openSettings() {
+  const { ov, close } = modal(`
+    <div class="modal" style="width:520px">
+      <h3>Settings</h3>
+      <p style="color:var(--fg-muted);margin:0 0 6px"><b>Theme</b></p>
+      <button class="btn-secondary" id="set-theme" style="margin:0 0 14px"></button>
+      <p style="color:var(--fg-muted);margin:0 0 6px"><b>AI reply instructions</b></p>
+      <p style="color:var(--fg-muted);margin:0 0 8px;font-size:12px">
+        How should AI-drafted replies sound? Tone, sign-off, language, things to avoid —
+        applied to every suggested reply and select-to-fix.
+      </p>
+      <textarea id="set-persona" rows="6" spellcheck="false"
+        style="width:100%;resize:vertical;border:1px solid var(--border);border-radius:8px;padding:8px 10px"
+        placeholder="e.g. Keep replies short and casual. Sign off with just 'Sina'. No exclamation marks. Reply in the sender's language."></textarea>
+      <div class="actions">
+        <button class="btn-secondary" id="set-cancel">Cancel</button>
+        <button class="btn-primary pill" id="set-save">Save</button>
+      </div>
+    </div>`);
+  const themeBtn = $("#set-theme", ov);
+  const themeLabel = () => curTheme() === "dark" ? "Switch to light theme" : "Switch to dark theme";
+  themeBtn.textContent = themeLabel();
+  themeBtn.addEventListener("click", () => { toggleTheme(); themeBtn.textContent = themeLabel(); });
+  const ta = $("#set-persona", ov);
+  ta.value = personaText();
+  $("#set-cancel", ov).addEventListener("click", close);
+  $("#set-save", ov).addEventListener("click", () => {
+    const next = ta.value.trim(), prev = personaText();
+    try { localStorage.setItem(AI_PERSONA_KEY, next); } catch (e) {}
+    close();
+    if (next === prev) return;
+    try { localStorage.removeItem(AI_DRAFTS); } catch (e) {}   // old-voice drafts are stale now
+    toast("Saved — replies will use your instructions");
+    if (aiOn && !aiBroken && state.thread && $("#suggest")) autoDraft();
+  });
+}
+
+function renderAiToggle() {
+  const b = $("#aitoggle");
+  b.classList.toggle("on", aiOn);
+  $(".lbl-text", b).textContent = aiOn ? "AI features on" : "AI features";
+}
+
+function toggleAi() {
+  if (!aiOn) {
+    const { ov, close } = modal(`
+      <div class="modal" style="width:460px">
+        <h3>Turn on AI features?</h3>
+        <p style="color:var(--fg-muted);margin:0 0 8px">
+          Summaries and drafts run through the <b>Claude Code CLI on this machine</b> —
+          your existing login is the credential; there is no API key.
+        </p>
+        <p style="color:var(--fg-muted);margin:0 0 8px">
+          The content of threads you open while this is on is <b>sent to Anthropic</b>.
+          Everything else stays on your machine, and you can turn it off any time.
+        </p>
+        <div class="actions">
+          <button class="btn-secondary" id="ai-cancel">Cancel</button>
+          <button class="btn-primary pill" id="ai-ok">Turn on</button>
+        </div>
+      </div>`);
+    $("#ai-cancel", ov).addEventListener("click", close);
+    $("#ai-ok", ov).addEventListener("click", () => {
+      aiOn = true; aiBroken = false;
+      localStorage.setItem(AI_KEY, "1");
+      renderAiToggle(); close();
+      if (state.thread) renderThread(); else renderLanding();
+    });
+    return;
+  }
+  aiOn = false;
+  localStorage.setItem(AI_KEY, "0");
+  renderAiToggle();
+  if (state.thread) renderThread(); else renderLanding();
+}
+
+async function runSummary(force) {
+  const t = state.thread;
+  const box = $("#summary");
+  if (!t || !box) return;
+  const body = $(".sum-body", box);
+  const redo = $(".redo", box);
+
+  if (!force) {
+    const hit = cacheGet(t);
+    if (hit) { box.classList.remove("err"); body.textContent = hit; redo.textContent = "Redo"; return; }
+  }
+  box.classList.remove("err");
+  body.innerHTML = `<span class="dots">Reading the thread</span>`;
+  redo.textContent = "";
+  const rid = threadReq;   // ignore the answer if the user moved on
+  try {
+    const res = await fused.ai(threadToText(t), { systemPrompt: SUMMARY_PROMPT, effort: "low" });
+    if (rid !== threadReq) return;
+    cachePut(t, res.text.trim());
+    body.textContent = res.text.trim();
+    redo.textContent = "Redo";
+  } catch (err) {
+    if (rid !== threadReq) return;
+    box.classList.add("err");
+    body.textContent = aiFailText(err);
+    redo.textContent = "Retry";
+  }
+}
+
+// Suggested reply: drafts itself when a thread opens (streamed into a ghost
+// panel above the reply box), cached like summaries. Click or Tab to take it.
+let suggestText = "";
+// The prompt forbids meta answers, but they still slip through ("I'd be happy
+// to help you draft a reply… could you clarify…"). A draft that talks ABOUT
+// replying instead of BEING the reply must never reach the box or the cache.
+const META_DRAFT = new RegExp([
+  "happy to help you draft", "i need to see the latest message",
+  "could you (please )?clarify", "which message (do you|would you like|should i)",
+  "the one you want to reply to", "i['’]?ll draft your reply",
+  "the thread (seems|looks|appears).{0,20}(fragmented|unclear|confusing|truncated)",
+].join("|"), "i");
+const badDraft = s => META_DRAFT.test(s || "");
+async function autoDraft() {
+  const t = state.thread, box = $("#suggest");
+  if (!t || !box) return;
+  suggestText = "";
+  // Every thread gets a suggestion. When I spoke last it's a follow-up nudge,
+  // not a reply (an earlier build skipped these — read as "AI is broken").
+  const last = t.messages[t.messages.length - 1];
+  const lastMine = addrOf(last.from).toLowerCase() === myAddr();
+  const ask = lastMine
+    ? "\n\nI sent the last message and nothing has come back. Write a brief, natural follow-up I could send to move this along."
+    : "\n\nWrite my reply to the latest message.";
+  const body = $(".sug-body", box);
+  // In-card now: a rebuilt pane can carry a preserved draft the user was typing —
+  // don't shove a suggestion above their own words (input clearing re-shows it).
+  const busy = !!($("#replytext") && $("#replytext").value.trim());
+  // A meta answer cached by an earlier build is treated as a miss and redrafted.
+  const hit = storeGet(AI_DRAFTS, t);
+  if (hit && !badDraft(hit)) { suggestText = hit; body.textContent = hit; box.hidden = busy; box.dataset.ready = "1"; autosizeReply(); return; }
+  box.hidden = busy;
+  autosizeReply();   // the card appearing changes the textarea's min-height
+  box.dataset.ready = "";
+  body.innerHTML = `<span class="dots">Drafting a reply</span>`;
+  const rid = threadReq;   // user moved on → drop the stream on the floor
+  let acc = "";
+  try {
+    await fused.ai(threadToText(t) + ask,
+      { systemPrompt: withPersona(DRAFT_PROMPT), effort: "low", onChunk: d => {
+          if (rid !== threadReq) return;
+          acc += d;
+          suggestText = acc;      // Tab mid-stream takes what exists so far
+          body.textContent = acc;
+        } });
+    if (rid !== threadReq) return;
+    suggestText = acc.trim();
+    // Belt-and-braces: the prompt forbids preambles, but strip a stray
+    // "I'll draft a brief follow-up…" / "Perfect, that makes sense. Here's…"
+    // style opener if one slips through — any first line that's clearly
+    // commentary ABOUT the reply rather than the reply itself, optionally
+    // followed by a blank line and/or a '---' divider before the real body.
+    const lines = suggestText.split("\n");
+    if (lines.length > 1 &&
+        /\b(draft|reply|follow[- ]?up|message)\b.{0,20}[:.]?\s*$/i.test(lines[0]) &&
+        /^(i['’]?ll|here['’]?s|sure|okay|perfect|great|got it|sounds good|that works|no problem|makes sense)\b/i.test(lines[0]))
+      suggestText = lines.slice(1).join("\n").trim();
+    // A lone '---' divider line near the top separates leftover commentary
+    // from the actual body — keep only what comes after the last such divider
+    // (also matches one sitting on the very first line, once any preamble
+    // line above it has already been stripped).
+    const divided = suggestText.replace(/^\s*-{3,}\s*\n/, "\n---\n").split(/\n\s*-{3,}\s*\n/);
+    if (divided.length > 1) suggestText = divided[divided.length - 1].trim();
+    // Same idea for a trailing "Let me know if you'd like me to adjust this…"
+    // style clarifying question — strip a lone closing line asking the user
+    // something rather than continuing the email.
+    const lines2 = suggestText.split("\n");
+    const lastLine = lines2[lines2.length - 1].trim();
+    if (lines2.length > 1 && /\?\s*$/.test(lastLine) &&
+        /\b(let me know|would you like|do you want|should i|shall i|any (changes|edits|adjustments))\b/i.test(lastLine))
+      suggestText = lines2.slice(0, -1).join("\n").trim();
+    // A closing word ('Thanks,' / 'Best,' / 'Regards,') stacked above a lone
+    // sign-off name is a fuller signature block than the prompt allows —
+    // keep just the name.
+    const lines3 = suggestText.split("\n");
+    if (lines3.length > 1 && /^(thanks|thank you|best|regards|cheers|sincerely|warmly)[,.!]?$/i.test(lines3[lines3.length - 2].trim()) &&
+        /^\w+[,.!]?$/.test(lines3[lines3.length - 1].trim()))
+      suggestText = lines3.slice(0, -2).concat(lines3[lines3.length - 1]).join("\n").trim();
+    if (badDraft(suggestText)) { suggestText = ""; box.hidden = true; autosizeReply(); return; }
+    storePut(AI_DRAFTS, t, suggestText);
+    body.textContent = suggestText;
+    // The user may have started typing while this streamed — stay out of the
+    // way now; clearing the box (input handler) brings the suggestion back.
+    box.hidden = !!($("#replytext") && $("#replytext").value.trim()) || box.dataset.taken === "1";
+    box.dataset.ready = "1";
+    autosizeReply();
+  } catch (err) {
+    if (rid !== threadReq) return;
+    if (err.type === "ai_unavailable") aiBroken = true;
+    box.hidden = true;   // a failed suggestion is not worth screen space
+    autosizeReply();
+  }
+}
+function acceptSuggestion() {
+  const box = $("#suggest"), ta = $("#replytext");
+  if (!box || box.hidden || !suggestText || badDraft(suggestText) || !ta) return;
+  ta.value = suggestText;
+  box.hidden = true;
+  box.dataset.taken = "1";   // don't resurface if the user later clears the box
+  ta.focus();
+  autosizeReply();
+}
+
+// Select-to-fix: select any part of the reply, type an instruction ("shorter",
+// "more formal", "mention Thursday"), and the model rewrites just that span.
+// The bar lives under the textarea and only shows while a selection exists.
+// Selection offsets are captured on every ta selection event — a textarea
+// keeps them while focus moves into the prompt input, so Fix still knows the
+// span even though the highlight looks inactive.
+function wireFixBar() {
+  const bar = $("#fixbar"), ta = $("#replytext");
+  if (!bar || !ta) return;
+  const inp = $("#fixprompt"), go = $("#fixgo");
+  let fs = 0, fe = 0;
+  const sync = () => {
+    if (bar.classList.contains("busy")) return;
+    if (ta.selectionEnd > ta.selectionStart) {
+      fs = ta.selectionStart; fe = ta.selectionEnd;
+      bar.hidden = false;
+    } else if (!bar.contains(document.activeElement)) bar.hidden = true;
+  };
+  ["select", "keyup", "mouseup"].forEach(ev => ta.addEventListener(ev, sync));
+  ta.addEventListener("input", () => { if (!bar.contains(document.activeElement)) bar.hidden = true; });
+  async function runFix() {
+    const instr = inp.value.trim();
+    if (!instr || fe <= fs) return;
+    const sel = ta.value.slice(fs, fe);
+    bar.classList.add("busy"); inp.disabled = true; go.disabled = true;
+    try {
+      const res = await fused.ai(
+        "Full draft:\n" + ta.value + "\n\nSelected passage:\n" + sel + "\n\nInstruction: " + instr,
+        { systemPrompt: withPersona(FIX_PROMPT), effort: "low" });
+      // fused.ai resolves to {text} — splicing the object itself printed "[object Object]"
+      const txt = String(res.text || "").replace(/\s+$/, sel.match(/\s*$/)[0]);
+      ta.setRangeText(txt, fs, fe, "select");
+      autosizeReply();
+      inp.value = ""; bar.hidden = true;
+      ta.focus();
+    } catch (err) {
+      if (err.type === "ai_unavailable") aiBroken = true;
+      toast(aiFailText(err));
+    }
+    bar.classList.remove("busy"); inp.disabled = false; go.disabled = false;
+  }
+  go.addEventListener("click", runFix);
+  inp.addEventListener("keydown", e => {
+    if (e.key === "Enter") { e.preventDefault(); runFix(); }
+    if (e.key === "Escape") { bar.hidden = true; ta.focus(); }
+  });
+}
+
+// Grows #replytext with its content, Gmail-style, instead of a fixed box —
+// height resets to "auto" first so shrinking (e.g. after clearing a draft)
+// isn't stuck at the tallest height it ever reached.
+function autosizeReply() {
+  const ta = $("#replytext");
+  if (!ta) return;
+  // scrollHeight is floored by the CURRENT min-height (1 line with the
+  // suggestion card showing, 2 lines without) — measure with height:auto so
+  // the floor, not a stale inline height, wins when the card toggles.
+  ta.style.height = "auto";
+  ta.style.height = ta.scrollHeight + "px";
+}
+
+// ---------- landing briefing ----------
+// The unread digest IS the reading pane when nothing is selected. It lives in
+// module state (`dg`) and repaints from it — loadThread() rewrites #threadpane
+// on every draw, so a DOM reference held across awaits can go stale.
+let dgRun = 0;
+let dg = { status: "idle", key: "", text: "", unread: [], error: "", count: 0 };
+// Reset-to-defaults plus a patch, then repaint — every state change goes here.
+function dgSet(patch) {
+  dg = { status: "idle", key: "", text: "", unread: [], error: "", count: 0, ...patch };
+  paintDigest();
+}
+
+function paintDigest() {
+  const title = $(".land-title"), sub = $(".land-sub");
+  if (title) title.textContent = dg.status === "empty" ? "All caught up" : "While you were away";
+  if (sub) {
+    sub.textContent = dg.status === "empty" ? "Nothing new needs you right now."
+      : dg.count ? dg.count + (dg.count === 1 ? " unread conversation" : " unread conversations")
+      : "";
+  }
+  const panel = $("#digest");
+  if (!panel) return;
+  const body = $(".dg-body", panel), redo = $(".dg-redo", panel);
+  const show = v => { if (redo) redo.hidden = !v; };
+  if (dg.status === "empty") {
+    body.innerHTML = `<div class="dg-line">Nothing unread — you're caught up.</div>`;
+    panel.dataset.ready = "1"; show(false);
+  } else if (dg.status === "ready") {
+    renderDigest(dg.text, dg.unread); panel.dataset.ready = "1"; show(true);
+  } else if (dg.status === "error") {
+    body.textContent = dg.error; panel.dataset.ready = ""; show(true);
+  } else if (dg.status === "loading") {
+    panel.dataset.ready = "";
+    if (dg.text) body.textContent = dg.text;
+    else body.innerHTML = `<span class="dots">Reading unread mail</span>`;
+    show(false);
+  } else {
+    body.innerHTML = ""; panel.dataset.ready = ""; show(false);
+  }
+}
+
+async function runDigest(force) {
+  if (!aiOn || aiBroken) return;
+  const rid = ++dgRun;
+  // A silent refresh (landing re-rendered, digest already resolved) must not
+  // blink the card back to a spinner before the cache answers.
+  const quiet = !force && (dg.status === "ready" || dg.status === "empty");
+  if (!quiet) dgSet({ status: "loading", count: dg.count });
+  let threads;
+  try {
+    threads = (P.label === "INBOX" && !P.q && state.threads.length)
+      ? state.threads
+      : ((await py({ op: "list_threads", account: P.account, label: "INBOX", q: "" })).threads || []);
+  } catch (e) {
+    if (rid === dgRun) dgSet({ status: "error", error: e.message });
+    return;
+  }
+  if (rid !== dgRun) return;
+  const unread = threads.filter(t => t.unread);
+  if (!unread.length) return dgSet({ status: "empty" });
+  const key = P.account + "|" + unread.map(t => t.id + ":" + t.date).join(",");
+  let cached = null;
+  try { cached = JSON.parse(localStorage.getItem(AI_DIGEST) || "null"); } catch (e) {}
+  if (!force && cached && cached.key === key)
+    return dgSet({ status: "ready", key, text: cached.text, unread, count: unread.length });
+  dgSet({ status: "loading", key, unread, count: unread.length });
+  const ctx = unread.map((t, i) => `[${i + 1}] From ${fromName(t.from)} — "${t.subject}": ${t.snippet}`).join("\n");
+  let acc = "";
+  try {
+    await fused.ai("Unread emails:\n" + ctx,
+      { systemPrompt: DIGEST_PROMPT, effort: "low",
+        onChunk: d => { if (rid !== dgRun) return; acc += d; dg.text = acc; paintDigest(); } });
+  } catch (err) {
+    if (rid !== dgRun) return;
+    if (err.type === "ai_unavailable") {
+      aiBroken = true; renderAiToggle();
+      dgSet({});
+      if (!state.thread) renderLanding();
+      return;
+    }
+    dgSet({ status: "error", key, unread, error: aiFailText(err), count: unread.length });
+    return;
+  }
+  if (rid !== dgRun) return;
+  try { localStorage.setItem(AI_DIGEST, JSON.stringify({ key, text: acc })); } catch (e) {}
+  dgSet({ status: "ready", key, text: acc, unread, count: unread.length });
+}
+// The [n] anchors are plumbing, not content: collect every leading ref, strip
+// every bracket from the shown text (the model sometimes emits "[7] [8] [17]"
+// despite instructions), link the bullet to the first ref that resolves.
+function renderDigest(text, unread) {
+  const body = $("#digest .dg-body");
+  if (!body) return;
+  body.innerHTML = text.trim().split("\n").map(line => {
+    let rest = line.trim().replace(/^[-•*]\s*/, "");
+    if (!rest) return "";
+    const refs = [];
+    let m;
+    while ((m = /^\[(\d+)\]\s*/.exec(rest))) { refs.push(parseInt(m[1], 10)); rest = rest.slice(m[0].length); }
+    rest = rest.replace(/\s*\[\d+\]/g, "").trim();          // stray inline refs too
+    const t = refs.map(n => unread[n - 1]).find(Boolean);
+    if (t) {
+      const extra = refs.length > 1 ? ` <span class="dg-n">${refs.length} mails</span>` : "";
+      return `<button class="dg-item" data-id="${esc(t.id)}"><span>${esc(rest)}</span>${extra}</button>`;
+    }
+    return `<div class="dg-line">${esc(rest)}</div>`;
+  }).join("");
+}
+// The briefing lives inside #threadpane, whose innerHTML is rewritten wholesale
+// — so its clicks are delegated from the pane, which is never replaced.
+$("#threadpane").addEventListener("click", e => {
+  const item = e.target.closest(".dg-item");
+  if (item) { setParam("thread", item.dataset.id); return; }
+  if (e.target.closest(".dg-manage")) { setParam("manage", "1"); return; }
+  if (e.target.closest(".dg-redo")) { runDigest(true); return; }
+});
+// Instant tooltip for the tabs — the native title delay made iconified tabs
+// feel unlabeled. One floating pill, repositioned per tab, no delay.
+let tabTipEl = null;
+function tabTipHide() { if (tabTipEl) { tabTipEl.remove(); tabTipEl = null; } }
+function showTip(el, text, key) {
+  if (!tabTipEl) {
+    tabTipEl = document.createElement("div");
+    tabTipEl.id = "tabtip";
+    document.body.appendChild(tabTipEl);
+  }
+  tabTipEl.textContent = text;
+  tabTipEl.dataset.for = key || "";
+  const r = el.getBoundingClientRect();
+  tabTipEl.style.top = (r.bottom + 4) + "px";
+  tabTipEl.style.left = Math.max(8, r.left + r.width / 2 - tabTipEl.offsetWidth / 2) + "px";
+}
+$("#listpane").addEventListener("mouseover", e => {
+  if (e.target.closest("#refreshbtn")) return;   // has its own instant tip below
+  const tab = e.target.closest(".mg-tab");
+  if (!tab || !tab.dataset.tip) { tabTipHide(); return; }
+  // Only when the name is actually hidden: iconified (no text span) or ellipsized.
+  const tname = tab.querySelector(".mg-tname");
+  if (tname && tname.scrollWidth <= tname.clientWidth) { tabTipHide(); return; }
+  showTip(tab, tab.dataset.tip, "tab");
+});
+$("#listpane").addEventListener("mouseleave", tabTipHide);
+$("#listpane").addEventListener("click", tabTipHide);
+// Real mail is often a FULL html document — injecting before <!DOCTYPE> puts
+// the parser in quirks mode and renders blank. Splice into <head>. The frame
+// is sandboxed with allow-same-origin (no allow-scripts): mail scripts stay
+// disabled but contentDocument is readable, so the frame can size itself to
+// its content — re-measured as images load, since they grow the layout late.
+function hydrateMailFrame(f, html) {
+  const inject = `<base target="_blank"><style>html,body{overflow:hidden}body{font:14px/1.5 -apple-system,sans-serif;margin:10px;color:#111;background:#fff}img{max-width:100%;height:auto}</style>`;
+  f.srcdoc = /<head[^>]*>/i.test(html)
+    ? html.replace(/<head[^>]*>/i, s => s + inject)
+    : (/<html[^>]*>/i.test(html) ? html.replace(/<html[^>]*>/i, s => s + "<head>" + inject + "</head>") : inject + html);
+  const resize = () => { f.style.height = f.contentDocument.documentElement.scrollHeight + "px"; };
+  f.addEventListener("load", () => {
+    resize();
+    f.contentDocument.querySelectorAll("img").forEach(img => img.addEventListener("load", resize));
+  });
+}
+// The AI summary card (thread view and triage preview share it).
+const summaryHtml = () => aiOn && !aiBroken ? `<div id="summary">
+        <span class="sum-mark" aria-hidden="true">${svg("sparkle", 18)}</span>
+        <div>
+          <div class="sum-head">Summary<button class="redo"></button></div>
+          <div class="sum-body"></div>
+        </div>
+      </div>` : "";
+// The hover action strip on a list/board row.
+const actsHtml = t => `
+        <div class="acts">
+          <button class="act" data-act="archive" title="Archive" aria-label="Archive">${svg("archive", 17)}</button>
+          <button class="act danger" data-act="trash" title="Move to trash" aria-label="Move to trash">${svg("trash", 17)}</button>
+          ${t.unread
+            ? `<button class="act" data-act="read" title="Mark as read" aria-label="Mark as read">${svg("mailopen", 17)}</button>`
+            : `<button class="act" data-act="unread" title="Mark as unread" aria-label="Mark as unread">${svg("mailunread", 17)}</button>`}
+        </div>`;
+function renderLanding() {
+  const pane = $("#threadpane");
+  state.thread = null;
+  if (!aiOn || aiBroken) {
+    pane.innerHTML = `
+      <div id="landing">
+        <div class="land-empty">
+          <div class="land-mark">${svg("mailopen", 22)}</div>
+          <p id="placeholder">Select a conversation</p>
+          ${aiOn ? "" : `<p class="land-hint">Turn on AI features for a catch-up briefing here</p>`}
+        </div>
+      </div>`;
+    return;
+  }
+  pane.innerHTML = `
+    <div id="landing">
+      <div class="land-card">
+        <div class="land-mark">${svg("sparkle", 22)}</div>
+        <h1 class="land-title">While you were away</h1>
+        <p class="land-sub"></p>
+        <div id="digest">
+          <div class="dg-body"></div>
+          <div class="dg-foot"><button class="dg-redo dg-manage" title="Batch-triage the inbox" hidden>Manage</button></div>
+        </div>
+      </div>
+    </div>`;
+  paintDigest();
+  if (dg.status !== "loading") runDigest(false);   // never restart an in-flight stream
+}
+
+// ---------- accounts + labels ----------
+async function loadAccounts() {
+  const res = await py({ op: "accounts" });
+  state.accounts = res.accounts || [];
+  state.hasCreds = !!res.has_credentials;
+  renderAccounts();
+}
+// Markup only — clicks are delegated from #accounts (wired at boot). The demo
+// account is never rendered; ?account=demo stays a test backdoor.
+function renderAccounts() {
+  $("#accounts").innerHTML =
+    realAccounts().map(a => `
+      <div class="acct-row">
+        <button class="acct ${a.email === P.account ? "active" : ""}" data-email="${esc(a.email)}" title="${esc(a.email)}">
+          <span class="dot"></span><span class="email">${esc(a.email)}</span>
+        </button>
+        <button class="acct-x" data-email="${esc(a.email)}" title="Disconnect" aria-label="Disconnect ${esc(a.email)}">${svg("close", 14)}</button>
+      </div>`).join("") +
+    // the label is dropped in the narrow icon rail, where it wrapped to three
+    // lines and spilled out of the 64px column
+    `<button id="addacct" title="Add account" aria-label="Add account">` +
+    `<span aria-hidden="true">+</span> <span class="acct-label">Add account</span></button>`;
+}
+$("#accounts").addEventListener("click", e => {
+  const x = e.target.closest(".acct-x");
+  if (x) return removeAccount(x.dataset.email);
+  const a = e.target.closest(".acct");
+  if (a) { setParam("thread", ""); setParam("label", "INBOX"); setParam("account", a.dataset.email); return; }
+  if (e.target.closest("#addacct")) addAccount();
+});
+
+// Overlays: mount with focus handling — focus the first field on open,
+// return focus to the opener on close (whatever path closed it).
+function mountOverlay(ov) {
+  const prev = document.activeElement;
+  document.body.appendChild(ov);
+  const first = ov.querySelector("input:not([disabled]), textarea, .btn-primary, button");
+  if (first) first.focus();
+  const origRemove = ov.remove.bind(ov);
+  ov.remove = () => { origRemove(); if (prev && prev.focus) prev.focus(); };
+}
+// Standard dialog shell: overlay + markup + focus handling + click-outside
+// close (skipped for the compose popup, which must stay open while reading).
+function modal(html, opts) {
+  const ov = document.createElement("div");
+  ov.className = "overlay" + ((opts && opts.cls) ? " " + opts.cls : "");
+  ov.innerHTML = html;
+  mountOverlay(ov);
+  const close = () => ov.remove();
+  if (!opts || !opts.noDismiss) ov.addEventListener("click", e => { if (e.target === ov) close(); });
+  return { ov, close };
+}
+// The single most repeated server call: add/remove labels on one thread.
+const modOp = (tid, add, remove) =>
+  py({ op: "modify", account: P.account, thread: tid, add_labels: add, remove_labels: remove });
+
+function removeAccount(email) {
+  const { ov, close } = modal(`
+    <div class="modal" style="width:420px">
+      <h3>Disconnect ${esc(email)}?</h3>
+      <p style="color:var(--fg-muted);margin:0 0 4px">
+        Removes the stored credential from this machine. No mail is deleted, and you can reconnect any time.
+      </p>
+      <div class="actions">
+        <span class="err" id="d-err"></span>
+        <button class="btn-secondary" id="d-cancel">Cancel</button>
+        <button class="btn-primary pill btn-danger-solid" id="d-ok">Disconnect</button>
+      </div>
+    </div>`);
+  $("#d-cancel", ov).addEventListener("click", close);
+  $("#d-ok", ov).addEventListener("click", async () => {
+    $("#d-ok", ov).disabled = true;
+    try {
+      const res = await py({ op: "remove_account", account: email });
+      if (res.error) { $("#d-err", ov).textContent = res.error; $("#d-ok", ov).disabled = false; return; }
+      close(); toast("Disconnected " + email);
+      clearAiStores();   // derived content (summaries/drafts/digest) dies with the credential
+      py({ op: "cache_clear", account: email }).catch(() => {});   // and so does its cached mail
+      diskDirty = null; clearTimeout(diskFlushT);   // don't let a queued flush rewrite it
+      listCache.clear(); threadCache.clear(); warmProbed.clear(); hydratedAcct = null;
+      dgSet({});
+      await loadAccounts();
+      // Fall through to the next connected account — or, if that was the last
+      // one, back to onboarding. (It used to land on the demo inbox.)
+      if (P.account === email) {
+        setParam("thread", ""); setParam("label", "INBOX"); setParam("account", defaultAccount());
+      }
+      scheduleDraw();
+    } catch (e) { $("#d-err", ov).textContent = e.message; $("#d-ok", ov).disabled = false; }
+  });
+}
+async function loadLabels() {
+  try {
+    const res = await py({ op: "labels", account: P.account });
+    state.labels = res.labels || [];
+    diskMark({ labels: state.labels });   // the sidebar paints from disk next boot
+  } catch (e) {
+    // Keep whatever the disk cache gave us rather than blanking the sidebar.
+    if (!state.labels.length) toast(e.message);
+    return;
+  }
+  renderLabels();
+}
+// Gmail returns system labels named by their raw ID ("STARRED", "CHAT") — title-case them.
+const SYS_LABEL_NAMES = {
+  INBOX: "Inbox", STARRED: "Starred", SENT: "Sent", DRAFT: "Drafts",
+  SPAM: "Spam", TRASH: "Trash", IMPORTANT: "Important", UNREAD: "Unread", CHAT: "Chat",
+};
+const LABEL_ICONS = {
+  INBOX: "inbox", STARRED: "star", SENT: "send", DRAFT: "draft", ARCHIVE: "archive",
+  SPAM: "report", TRASH: "trash", IMPORTANT: "important", UNREAD: "mail",
+};
+// Gmail-style "Move to" dropdown, shared by the thread toolbar and the triage
+// footer (each anchors it differently via its own #id styling). Click-away
+// closes it; the opener's own click toggles via the early return.
+function openMoveMenu(id, parent, opts, onPick) {
+  const open = $("#" + id);
+  if (open) return open.remove();
+  const menu = document.createElement("div");
+  menu.id = id;
+  menu.setAttribute("role", "menu");
+  menu.innerHTML = `<div class="mv-head">Move to</div>` + opts.map(o =>
+    `<button class="mv-item" role="menuitem" data-id="${esc(o.id)}">` +
+    `${svg(LABEL_ICONS[o.id] || "tag", 16)}<span>${esc(o.name)}</span></button>`).join("");
+  parent.appendChild(menu);
+  menu.addEventListener("click", ev => {
+    const b = ev.target.closest(".mv-item");
+    if (!b) return;
+    ev.stopPropagation();
+    menu.remove();
+    onPick(b.dataset.id);
+  });
+  // #mgmove is excluded so the footer button's own click toggles instead of
+  // close-then-reopen (the toolbar button stops propagation itself).
+  const away = ev => {
+    if (!ev.target.closest("#" + id + ", #mgmove")) { $("#" + id)?.remove(); document.removeEventListener("click", away); }
+  };
+  setTimeout(() => document.addEventListener("click", away), 0);
+}
+function labelName(l) {
+  return SYS_LABEL_NAMES[l.id] || (l.type === "system"
+    ? l.name.charAt(0) + l.name.slice(1).toLowerCase()
+    : l.name);
+}
+// User labels sorted like Gmail's sidebar, except "_"-prefixed labels rank
+// above numbers (ASCII puts "_" after digits; mapping it to \0 flips that).
+function userLabels() {
+  const key = l => l.name.toLowerCase().replaceAll("_", "\0");
+  return state.labels.filter(l => l.type !== "system")
+    .sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0));
+}
+function renderLabels() {
+  const sys = state.labels.filter(l => l.type === "system" && !/^CATEGORY_/.test(l.id) && l.id !== "CHAT");
+  const user = userLabels();
+  const btn = l => `<button class="lbl ${l.id === P.label && !P.manage ? "active" : ""}" data-id="${esc(l.id)}">` +
+    svg(LABEL_ICONS[l.id] || "tag", 18) + `<span class="lname">${esc(labelName(l))}</span></button>`;
+  // AI triage sits above Inbox: it opens the batch-triage board in the list pane.
+  const triage = `<button class="lbl ${P.manage ? "active" : ""}" id="triagelbl" title="Batch-triage the inbox">` +
+    svg("sparkle", 18) + `<span class="lname">AI triage</span></button>`;
+  $("#labels").innerHTML = triage + sys.map(btn).join("") +
+    (user.length ? `<div class="lbl-sec">Labels</div>` + user.map(btn).join("") : "");
+}
+$("#labels").addEventListener("click", e => {
+  const b = e.target.closest(".lbl");
+  if (!b) return;
+  if (b.id === "triagelbl") {
+    if (P.manage) { setParam("manage", ""); return; }   // second click closes the board
+    setParam("thread", ""); setParam("manage", "1");
+    return;
+  }
+  // Re-clicking the label you are already on means "check for new mail".
+  if (b.dataset.id === P.label && !P.manage && !P.thread && !P.q) {
+    loadLabels();
+    loadThreads(false);
+    return;
+  }
+  setParam("manage", ""); setParam("thread", ""); setParam("q", ""); setParam("label", b.dataset.id);
+});
+
+// ---------- thread list ----------
+// Stale-while-revalidate caches: switching labels (or reopening a thread)
+// paints instantly from the last known state while a fresh fetch runs behind
+// it. These Maps are the hot path; every write is ALSO queued to disk
+// (~/.fused-mail/cache via mail.py) so a page reload rehydrates them instead
+// of starting cold. Mail bodies therefore live on disk next to the credential
+// that fetched them — same trust boundary, and clearing the account clears it.
+const listCache = new Map();     // "account|label|q" -> {threads, nextToken}
+const threadCache = new Map();   // "account|threadId" -> get_thread result
+const listKey = (label, q) => `${P.account}|${label}|${q}`;
+const threadKey = id => `${P.account}|${id}`;
+
+// ---------- disk persistence ----------
+// Writes are batched: the page marks entries dirty and one flush per ~1.2s
+// (plus one on hide/unload) hands the whole batch to mail.py. Without the
+// batching, a list load would fire a write per row it touched.
+let diskDirty = null, diskFlushT = null, diskAcct = "";
+function diskMark(patch) {
+  if (!P.account) return;
+  if (!diskDirty || diskAcct !== P.account) {
+    diskDirty = { lists: {}, threads: {}, drop_lists: [], drop_threads: [] };
+    diskAcct = P.account;
+  }
+  if (patch.list) diskDirty.lists[patch.list[0]] = patch.list[1];
+  if (patch.thread) diskDirty.threads[patch.thread[0]] = patch.thread[1];
+  if (patch.dropList) diskDirty.drop_lists.push(patch.dropList);
+  if (patch.dropThread) diskDirty.drop_threads.push(patch.dropThread);
+  if (patch.clearLists) diskDirty.clear_lists = true;
+  if (patch.labels) diskDirty.labels = patch.labels;
+  clearTimeout(diskFlushT);
+  diskFlushT = setTimeout(flushDisk, 1200);
+}
+// Flushes are chained, never concurrent: two overlapping cache_put calls
+// would race on the same lists.json (and the loser's write would be dropped).
+let diskChain = Promise.resolve();
+function flushDisk() {
+  clearTimeout(diskFlushT);
+  if (!diskDirty || !diskAcct) return;
+  const batch = diskDirty, acct = diskAcct;
+  diskDirty = null;
+  // key:null — a cache write must never cancel (or be cancelled by) the
+  // user-facing mail calls sharing mail.py's stale-cancel channel.
+  const send = () => fused.runPython(PY, { op: "cache_put", account: acct, cache: batch }, { key: null })
+    .catch(() => {});   // a cache that fails to persist is not worth a toast
+  diskChain = diskChain.then(send, send);
+}
+addEventListener("visibilitychange", () => { if (document.hidden) flushDisk(); });
+addEventListener("pagehide", flushDisk);
+
+// Every cache write goes through these two, so nothing lands in memory
+// without also being queued for disk.
+function putList(key, val) {
+  listCache.set(key, val);
+  diskMark({ list: [key, val] });
+}
+function putThread(key, val) {
+  threadCache.set(key, val);
+  diskMark({ thread: [key.slice(key.indexOf("|") + 1), val] });
+}
+function dropThread(key) {
+  threadCache.delete(key);
+  diskMark({ dropThread: key.slice(key.indexOf("|") + 1) });
+}
+// The page currently on screen was already fixed up in place; only the OTHER
+// cached pages (Starred, Sent, All Mail…) went stale.
+function dropOtherPages() {
+  const keep = listKey(P.label, P.q);
+  for (const k of listCache.keys()) if (k !== keep) { listCache.delete(k); diskMark({ dropList: k }); }
+}
+// Server-mutating ops (triage, trash, send) make every cached page suspect.
+function invalidateCaches(tid) {
+  listCache.clear();
+  diskMark({ clearLists: true });
+  if (tid) dropThread(threadKey(tid));
+  else { threadCache.clear(); }
+}
+// Boot rehydration: list pages + labels + the most recently used thread
+// bodies, in ONE call, before the first draw — so a refresh with no new mail
+// paints the same view it had, with no network in the critical path.
+let hydratedAcct = null;
+async function hydrateFromDisk() {
+  if (!P.account || hydratedAcct === P.account) return;   // boot + first draw share one read
+  const acct = hydratedAcct = P.account;
+  let res;
+  try { res = await py({ op: "cache_get", account: acct }); }
+  catch (e) { hydratedAcct = null; return; }   // let a later draw retry
+  if (!res || acct !== P.account) return;
+  for (const [k, v] of Object.entries(res.lists || {}))
+    if (k.startsWith(acct + "|")) listCache.set(k, v);
+  for (const [id, t] of Object.entries(res.threads || {})) threadCache.set(`${acct}|${id}`, t);
+  if ((res.labels || []).length && !state.labels.length) {
+    state.labels = res.labels;
+    renderLabels();
+  }
+}
+async function loadThreads(append) {
+  const rid = ++listReq;
+  const key = listKey(P.label, P.q);
+  let hadCache = false;
+  if (!append) {
+    state.threads = []; state.nextToken = "";
+    const hit = listCache.get(key);
+    if (hit) {
+      hadCache = true;
+      state.threads = hit.threads; state.nextToken = hit.nextToken;
+      renderList();               // instant paint; the fetch below refreshes it
+    } else if (!P.manage) $("#list").innerHTML = `<div class="spin">Loading…</div>`;
+  }
+  // The refresh arrow spins for the whole background fetch — cached paint or
+  // not, it tells the user newer mail is on its way.
+  $("#refreshbtn").classList.add("spinning");
+  try {
+    const res = await py({ op: "list_threads", account: P.account, label: P.label, q: P.q,
+                           page_token: append ? state.nextToken : "" });
+    if (rid !== listReq) return;
+    if (res.error) { if (!hadCache && !P.manage) $("#list").innerHTML = `<div class="empty">${esc(res.error)}</div>`; return; }
+    state.threads = append ? state.threads.concat(res.threads) : res.threads;
+    state.nextToken = res.next_page_token || "";
+    putList(key, { threads: state.threads, nextToken: state.nextToken });
+  } catch (e) {
+    if (rid !== listReq) return;
+    // A cached view beats an error screen — keep it and mention the failure.
+    if (hadCache || P.manage) toast(e.message); else $("#list").innerHTML = `<div class="empty">${esc(e.message)}</div>`;
+    return;
+  } finally {
+    // Only the newest request owns the spinner — a stale one mustn't stop it.
+    if (rid === listReq) $("#refreshbtn").classList.remove("spinning");
+  }
+  renderList();
+  prefetch();
+  // Triage the inbox behind the scenes so the board is already sorted (and
+  // cached) by the time it is opened. Only fires for a plain inbox view, and
+  // only spends a model call on senders nothing already covers.
+  if (P.label === "INBOX" && !P.q && typeof prewarmTriage === "function") prewarmTriage();
+}
+
+// Background warm-up after each fresh list: visible threads first, then the
+// first page of the other main labels. ONE global warm queue drained by one
+// pump — sweeps (inbox load, board open, tab switch) only reorder/extend it,
+// so a thread is never fetched twice and a generation bump abandons the rest.
+let prefetchGen = 0;
+let warmQueue = [];          // thread ids, next-up first
+let warmBusy = false;        // pump has a fetch in flight
+let warmProbed = new Set();  // ids already looked for on disk (probe once, then network)
+function warmCount() { return warmQueue.length + (warmBusy ? 1 : 0); }
+function warmTipText() {
+  const n = warmCount();
+  return n > 0 ? `Warming ${n} mail${n === 1 ? "" : "s"} in the background` : "Refresh";
+}
+function warmUI() {
+  $("#refreshbtn").classList.toggle("warming", warmCount() > 0);
+  // Live-update the instant tooltip if it is showing over this button.
+  if (tabTipEl && tabTipEl.dataset.for === "refresh") tabTipEl.textContent = warmTipText();
+}
+function warmThreads(threads) {
+  const ids = threads.map(t => t.id).filter(id => !threadCache.has(threadKey(id)));
+  const front = new Set(ids);
+  // The newest sweep's order wins: its ids move to the front, the rest keep queuing.
+  warmQueue = [...ids, ...warmQueue.filter(id => !front.has(id))];
+  warmUI();
+  pumpWarm();
+}
+async function pumpWarm() {
+  if (warmBusy) return;
+  warmBusy = true;
+  try {
+    while (warmQueue.length) {
+      // Disk first, in bulk: after a reload most of the queue is already
+      // cached, and one local read settles 50 of them for the price of a
+      // single call — far cheaper than 50 network fetches. Each id is probed
+      // at most once, so a disk miss falls through to the network below.
+      const acct = P.account;
+      const probe = warmQueue.slice(0, 50)
+        .filter(id => !threadCache.has(threadKey(id)) && !warmProbed.has(id));
+      if (probe.length) {
+        probe.forEach(id => warmProbed.add(id));
+        try {
+          const hit = await py({ op: "cache_threads", account: acct, ids: probe }, { bg: true });
+          for (const [id, t] of Object.entries((hit && hit.threads) || {}))
+            if (acct === P.account) threadCache.set(`${acct}|${id}`, t);   // already ON disk
+        } catch (e) {}
+      }
+      const id = warmQueue.shift();
+      warmUI();
+      if (threadCache.has(threadKey(id))) continue;
+      try {
+        const r = await py({ op: "get_thread", account: acct, thread: id, mark_read: false }, { bg: true });
+        if (!r.error) putThread(`${acct}|${id}`, r);
+      } catch (e) { warmQueue.length = 0; break; }   // engine unhappy — stop warming
+    }
+  } finally { warmBusy = false; warmUI(); }
+}
+async function prefetch() {
+  const gen = ++prefetchGen;
+  warmThreads(state.threads.slice(0, 50));
+  for (const l of ["INBOX", "STARRED", "SENT"]) {
+    if (gen !== prefetchGen) return;
+    if (l === P.label || listCache.has(listKey(l, ""))) continue;
+    const acct = P.account;
+    try {
+      const r = await py({ op: "list_threads", account: acct, label: l, q: "", page_token: "" }, { bg: true });
+      if (gen !== prefetchGen) return;
+      if (!r.error) putList(`${acct}|${l}|`, { threads: r.threads, nextToken: r.next_page_token || "" });
+    } catch (e) { return; }
+  }
+}
+// Markup only; all interaction is delegated to #list below. Rows are focusable
+// buttons-in-behavior (tabindex + Enter/Space) so keyboard users can open mail.
+// Quick actions ride the same delegated listener via data-act — never a
+// per-row handler, or every list rebuild would leak listeners.
+function renderList() {
+  if (P.manage) return;   // the triage board owns #list; the list repaints on exit
+  const list = $("#list");
+  const scroll = list.scrollTop;           // rebuilding mustn't teleport a triage session
+  if (!state.threads.length) {
+    const searching = !!P.q;
+    list.innerHTML = `<div class="empty">
+      <div class="empty-mark" aria-hidden="true">${svg(searching ? "search" : "mailopen", 22)}</div>
+      <div class="empty-title">${searching ? "No results" : "No mail here"}</div>
+      <p class="empty-sub">${searching
+        ? `Nothing in this account matches “${esc(P.q)}”.`
+        : `New mail for this label will show up here.`}</p>
+    </div>`;
+    return;
+  }
+  list.innerHTML = state.threads.map(t => `
+    <div class="row ${t.unread ? "unread" : ""} ${t.id === P.thread ? "active" : ""}" data-id="${esc(t.id)}"
+         tabindex="0" role="button" aria-label="${esc(t.subject)} — ${esc(fromName(t.from))}${t.unread ? ", unread" : ""}">
+      <button class="star ${t.starred ? "on" : ""}" title="Star" aria-label="Star" aria-pressed="${t.starred}">${svg("star", 16)}</button>
+      <div class="rowmain">
+        <div class="top">
+          <span class="from">${esc(fromName(t.from))}</span>
+          ${t.msg_count > 1 ? `<span class="count">${t.msg_count}</span>` : ""}
+          <span class="date">${fmtDate(t.date)}</span>
+        </div>
+        <div class="subj">${esc(t.subject)}</div>
+        <div class="snip">${esc(t.snippet)}</div>
+      </div>
+      ${actsHtml(t)}
+    </div>`).join("") +
+    (state.nextToken ? `<button id="loadmore">Load more</button>` : "");
+  list.scrollTop = scroll;
+}
+
+// One listener owns the whole list: no per-row re-binding on rebuilds.
+$("#list").addEventListener("click", e => {
+  if (P.manage) return;   // the triage board rents this pane; its own handler owns clicks
+  const act = e.target.closest("[data-act]");
+  if (act) {
+    const id = act.closest(".row").dataset.id;
+    const kind = act.dataset.act;
+    if (kind === "archive") return archiveThread(id);
+    if (kind === "trash") return trashThread(id);
+    if (kind === "unread") return triage(id, ["UNREAD"], [], "Marked unread");
+    if (kind === "read") return triage(id, [], ["UNREAD"], "Marked read");
+    return;
+  }
+  const star = e.target.closest(".star");
+  if (star) return toggleStar(star.closest(".row").dataset.id);
+  if (e.target.closest("#loadmore")) return loadThreads(true);
+  const row = e.target.closest(".row");
+  if (row) setParam("thread", row.dataset.id);
+});
+$("#list").addEventListener("keydown", e => {
+  if (e.key !== "Enter" && e.key !== " ") return;
+  const row = e.target.closest(".row");
+  if (row && e.target === row) { e.preventDefault(); setParam("thread", row.dataset.id); }
+});
+
+// Optimistic star with ROLLBACK — the old handler left the UI lying about
+// server state on failure, and rebuilt the entire list to flip one glyph.
+async function toggleStar(id) {
+  const t = state.threads.find(x => x.id === id);
+  if (!t) return;
+  const on = !t.starred;
+  const paint = v => {
+    const b = $(`.row[data-id="${CSS.escape(id)}"] .star`);
+    if (b) { b.classList.toggle("on", v); b.setAttribute("aria-pressed", String(v)); }
+  };
+  t.starred = on; paint(on);
+  try {
+    await modOp(id, on ? ["STARRED"] : [], on ? [] : ["STARRED"]);
+    // The current list mutated in place; only the *other* cached pages (e.g.
+    // a prefetched Starred) are stale now.
+    dropThread(threadKey(id));
+    dropOtherPages();
+  } catch (e) {
+    t.starred = !on; paint(!on);
+    toast("Couldn't update star — " + e.message);
+  }
+}
+
+// Move the active highlight without rebuilding the list (the common case:
+// the user just opened a different thread).
+function updateActiveRow() {
+  document.querySelectorAll("#list .row.active").forEach(r => r.classList.remove("active"));
+  if (P.thread) {
+    const r = $(`.row[data-id="${CSS.escape(P.thread)}"]`);
+    if (r) r.classList.add("active");
+  }
+}
+
+// ---------- thread view ----------
+async function loadThread() {
+  const pane = $("#threadpane");
+  if (!P.thread) {
+    if (P.manage) renderManage();   // board in the middle pane…
+    renderLanding();                // …and the catch-up landing on the right
+    return;
+  }
+  const rid = ++threadReq;
+  const hit = threadCache.get(threadKey(P.thread));
+  if (hit) { state.thread = hit; markRowRead(hit.id); renderThread(); }
+  else pane.innerHTML = `<div class="spin">Loading…</div>`;
+  // Even on a cache hit the real fetch still runs: it marks the thread read
+  // on the server and picks up any message that arrived since the prefetch.
+  let res;
+  try { res = await py({ op: "get_thread", account: P.account, thread: P.thread, mark_read: true }); }
+  catch (e) { if (rid === threadReq && !hit) pane.innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+  if (rid !== threadReq) return;
+  if (res.error) { if (!hit) pane.innerHTML = `<div class="empty">${esc(res.error)}</div>`; return; }
+  putThread(threadKey(res.id), res);
+  const changed = !hit || JSON.stringify(hit) !== JSON.stringify(res);
+  state.thread = res;
+  markRowRead(res.id);
+  if (changed) renderThread();   // don't churn the pane (and its iframes) for identical data
+}
+function markRowRead(id) {
+  const row = state.threads.find(t => t.id === id);
+  if (row && row.unread) {
+    row.unread = false;
+    const el = $(`.row[data-id="${CSS.escape(id)}"]`);
+    if (el) el.classList.remove("unread");
+  }
+}
+// Inline SVG paperclip — the 📎 emoji was the one pictorial icon in an
+// otherwise glyph-only vocabulary.
+const CLIP_SVG = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M21.4 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.2-9.19a4 4 0 015.65 5.66l-9.2 9.19a2 2 0 01-2.82-2.83l8.49-8.48"/></svg>`;
+
+function threadChips(t) {
+  const ids = (t.labels || []).filter(id => !/^CATEGORY_/.test(id) && id !== "UNREAD" && id !== "CHAT");
+  const names = ids.map(id => {
+    const l = state.labels.find(x => x.id === id);
+    return l ? labelName(l) : (SYS_LABEL_NAMES[id] || null);
+  }).filter(Boolean);
+  if (!names.length) return "";
+  return `<div class="chips">` + names.map(n => `<span class="chip">${esc(n)}</span>`).join("") + `</div>`;
+}
+
+// Which messages the user manually expanded/collapsed — kept across
+// renderThread() rebuilds so a background refetch can't revert a click.
+let expandState = new Map(), expandThreadId = null;
+function renderThread() {
+  const t = state.thread;
+  if (!t) return;
+  // Preserve a mid-typed reply only across rebuilds of the SAME thread (AI
+  // toggle, star elsewhere, send-refresh). Switching threads must start the
+  // reply box empty — carrying it over pasted one thread's draft into another.
+  const sameThread = expandThreadId === t.id;
+  if (!sameThread) { expandState = new Map(); expandThreadId = t.id; }
+  const prevReply = sameThread && $("#replytext") ? $("#replytext").value : "";
+  const msgs = t.messages.map((m, i) => {
+    const defaultCollapsed = t.messages.length > 1 && i < t.messages.length - 1;
+    const collapsed = expandState.has(i) ? !expandState.get(i) : defaultCollapsed;
+    const body = m.body_html
+      ? `<iframe sandbox="allow-same-origin" data-html-idx="${i}"></iframe>`
+      : esc(m.body_text);
+    const who = fromName(m.from), addr = addrOf(m.from);
+    const peek = (m.body_text || stripHtml(m.body_html)).replace(/\s+/g, " ").trim().slice(0, 160);
+    return `
+    <div class="msg ${collapsed ? "collapsed" : ""}" data-idx="${i}">
+      <div class="msg-head">
+        <span class="avatar" style="--h:${hueOf(addr || who)}" aria-hidden="true">${esc(initialOf(who))}</span>
+        <span class="mwho">
+          <span class="mfrom">${esc(who)}</span>
+          ${addr && addr !== who ? `<span class="maddr">${esc(addr)}</span>` : ""}
+        </span>
+        <span class="mpeek">${esc(peek)}</span>
+        <span class="mdate">${fmtDate(m.date)}</span>
+      </div>
+      <div class="msg-meta">to ${esc(m.to)}${m.cc ? " · cc " + esc(m.cc) : ""}</div>
+      <div class="msg-body">${body}</div>
+      ${m.attachments.length ? `<div class="atts">` + m.attachments.map((a, ai) =>
+        `<button class="att" data-mi="${i}" data-ai="${ai}">${CLIP_SVG} ${esc(a.filename)} <span style="color:var(--fg-faint)">${Math.round(a.size/1024)} KB</span></button>`
+      ).join("") + `</div>` : ""}
+    </div>`;
+  }).join("");
+  const inTrash = (t.labels || []).includes("TRASH");
+  // The card header names the human; the placeholder keeps the address (other
+  // code and the tests both read it there). Saying "Reply to <addr>" twice,
+  // stacked, was the first thing that looked wrong in the screenshots.
+  const rt = replyTarget(t), rtName = replyTargetName(t, rt);
+  const ccAll = replyAllCc(t, rt);   // reply-all is the default; Cc/Bcc reveals and edits it
+  $("#threadpane").innerHTML = `
+    <div id="threadhead">
+      <div class="head-main">
+        <h2>${esc(t.subject)}</h2>
+        ${threadChips(t)}
+      </div>
+      <div class="toolgroup" role="group" aria-label="Thread actions">
+        <button class="tool" id="t-unread" title="Mark unread (u)" aria-label="Mark unread">${svg("mail", 18)}</button>
+        <button class="tool" id="t-archive" title="Archive (e)" aria-label="Archive">${svg("archive", 18)}</button>
+        <button class="tool" id="t-move" title="Move to" aria-label="Move to" aria-haspopup="menu">${svg("folderin", 18)}</button>
+        <button class="tool danger" id="t-trash" title="${inTrash ? "Already in trash" : "Move to trash"}" aria-label="Move to trash">${svg("trash", 18)}</button>
+      </div>
+      <button class="tool" id="t-close" title="Close (Esc)" aria-label="Close thread">${svg("close", 18)}</button>
+    </div>
+    <div id="msgs">
+      ${summaryHtml()}
+      ${msgs}
+    </div>
+    <div id="replybox">
+      <div class="reply-card">
+        <div class="reply-to">${svg("reply", 14)}<b>${esc(rtName)}</b>${ccAll.length
+          ? `<span class="cc-note">+ ${ccAll.length} cc</span>` : ""}
+          <button id="rcpedit" title="Edit recipients">Cc/Bcc</button></div>
+        <div id="rcpfields" hidden>
+          <label><span>To</span><input id="rcpto" value="${esc(rt)}"></label>
+          <label><span>Cc</span><input id="rcpcc" value="${esc(ccAll.join(", "))}"></label>
+          <label><span>Bcc</span><input id="rcpbcc" value=""></label>
+        </div>
+        ${aiOn && !aiBroken ? `<div id="suggest" hidden>
+          <div class="sug-head"><span class="sug-mark" aria-hidden="true">${svg("sparkle", 14)}</span>Suggested reply<span class="sug-hint"><kbd>Tab</kbd> to use</span></div>
+          <div class="sug-body"></div>
+        </div>` : ""}
+        <textarea id="replytext" placeholder="Reply to ${esc(rt)}…"></textarea>
+        ${aiOn && !aiBroken ? `<div id="fixbar" hidden>
+          <span class="sug-mark" aria-hidden="true">${svg("sparkle", 14)}</span>
+          <input id="fixprompt" placeholder="Fix selection — e.g. “shorter”, “more formal”…">
+          <button id="fixgo" class="btn-primary pill">Fix</button>
+        </div>` : ""}
+        <div class="reply-foot">
+          <button class="btn-primary pill" id="replysend" title="Send (⌘Enter)">Send</button>
+        </div>
+      </div>
+    </div>`;
+  if (prevReply) $("#replytext").value = prevReply;
+  autosizeReply();
+
+  document.querySelectorAll("iframe[data-html-idx]").forEach(f =>
+    hydrateMailFrame(f, t.messages[parseInt(f.dataset.htmlIdx, 10)].body_html));
+  const pane = $("#threadpane");
+  pane.querySelectorAll(".msg-head").forEach(h =>
+    h.addEventListener("click", () => {
+      const el = h.parentElement;
+      const nowCollapsed = el.classList.toggle("collapsed");
+      expandState.set(parseInt(el.dataset.idx, 10), !nowCollapsed);
+    }));
+  // Scoped to the pane: a document-wide ".att" also grabbed the compose
+  // modal's attachment chips when both were open.
+  pane.querySelectorAll(".att").forEach(b =>
+    b.addEventListener("click", async () => {
+      const m = t.messages[parseInt(b.dataset.mi, 10)];
+      const a = m.attachments[parseInt(b.dataset.ai, 10)];
+      b.disabled = true;
+      try {
+        const res = await py({ op: "attachment", account: P.account, message_id: m.id,
+                               attachment_id: a.id, filename: a.filename });
+        window.open(fused.rawUrl(res.path), "_blank");
+      } catch (e) { toast(e.message); }
+      b.disabled = false;
+    }));
+  $("#t-close").addEventListener("click", () => setParam("thread", ""));
+  $("#t-unread").addEventListener("click", () => triage(t.id, ["UNREAD"], [], "Marked unread"));
+  $("#t-archive").addEventListener("click", () => archiveThread(t.id));
+  $("#t-move").addEventListener("click", e => { e.stopPropagation(); toggleMoveMenu(t.id); });
+  $("#t-trash").addEventListener("click", () => trashThread(t.id));
+  $("#replysend").addEventListener("click", sendReply);
+  ["#rcpto", "#rcpcc", "#rcpbcc"].forEach(s => chipify($(s)));
+  // The whole recipient line toggles the editor, like Gmail — clicking the
+  // name (or "+ n cc") is how people expect to get at the fields; the Cc/Bcc
+  // button inside the line just bubbles up to the same handler.
+  $(".reply-to").addEventListener("click", () => {
+    const f = $("#rcpfields");
+    f.hidden = !f.hidden;
+    if (!f.hidden) $("#rcpto")._chipfocus();
+  });
+  $("#replytext").addEventListener("keydown", e => {
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") sendReply();
+  });
+  $("#replytext").addEventListener("input", e => {
+    // The suggestion lives inside the card now: yield to the user's own words,
+    // but come back if they clear the box without having accepted it. Toggle
+    // BEFORE autosizing — the card's visibility sets the textarea's min-height.
+    const box = $("#suggest");
+    if (box) box.hidden = !!e.target.value.trim() || box.dataset.taken === "1";
+    autosizeReply();
+  });
+  if ($("#suggest")) {
+    $("#suggest").addEventListener("click", acceptSuggestion);
+    autoDraft();
+  }
+  wireFixBar();
+  if ($("#summary")) {
+    $(".redo", $("#summary")).addEventListener("click", () => runSummary(true));
+    runSummary(false);
+  }
+}
+async function triage(tid, add, remove, msg) {
+  // Optimistic like archive: flip the row now, sync the server behind it.
+  const row = state.threads.find(t => t.id === tid);
+  const wasUnread = row ? row.unread : null;
+  if (row && (add.includes("UNREAD") || remove.includes("UNREAD"))) {
+    row.unread = add.includes("UNREAD");
+    renderList();
+  }
+  toast(msg);
+  try { await modOp(tid, add, remove); }
+  catch (e) {
+    if (row && wasUnread !== null) { row.unread = wasUnread; renderList(); }
+    return toast("Couldn't update — " + e.message);
+  }
+  invalidateOtherPages(tid);
+}
+
+// Optimistic removal shared by archive/trash/move: the row disappears and the
+// pane advances NOW; the server call runs behind it, and only a failure (or
+// Undo) puts the row back. No full reload on success — that caused flicker.
+function removeRowOptimistic(tid) {
+  const idx = state.threads.findIndex(t => t.id === tid);
+  const removed = idx >= 0 ? state.threads.splice(idx, 1)[0] : null;
+  if (removed) renderList();
+  if (P.thread === tid) {
+    const next = state.threads[idx] || state.threads[idx - 1];
+    setParam("thread", next ? next.id : "");
+  }
+  return { idx, removed };
+}
+function restoreRow({ idx, removed }) {
+  if (!removed) return;
+  state.threads.splice(Math.min(idx, state.threads.length), 0, removed);
+  renderList();
+}
+// The current list was already fixed in place — only the OTHER cached pages
+// (Starred, Sent, All Mail…) went stale.
+function invalidateOtherPages(tid) {
+  dropThread(threadKey(tid));
+  dropOtherPages();
+}
+// Shared optimistic shape for archive/trash/move (inbox AND triage board):
+// the row leaves NOW, the server call runs behind it; failure restores the
+// row, Undo reverses the move on the server and repairs the UI via afterUndo.
+async function undoableMove(tid, msg, failMsg, doCall, undoCall, removeFn, restoreFn, afterUndo) {
+  const undo = removeFn(tid);
+  toast(msg, { label: "Undo", fn: async () => {
+    try { await undoCall(); } catch (e) { return toast("Undo failed — " + e.message); }
+    afterUndo(undo);
+  } });
+  try { await doCall(); }
+  catch (e) { restoreFn(undo); return toast(failMsg + " — " + e.message); }
+  invalidateOtherPages(tid);
+}
+const reloadAfterUndo = tid => () => { invalidateCaches(tid); loadThreads(false); };
+const archiveThread = tid => undoableMove(tid, "Archived", "Couldn't archive",
+  () => modOp(tid, [], ["INBOX"]), () => modOp(tid, ["INBOX"], []),
+  removeRowOptimistic, restoreRow, reloadAfterUndo(tid));
+// Thread-toolbar "Move to": Inbox and Spam plus every user label. Moving adds
+// the target label and drops INBOX (moving TO Inbox just re-adds it).
+function toggleMoveMenu(tid) {
+  const opts = [{ id: "INBOX", name: "Inbox" }, { id: "SPAM", name: "Spam" },
+    ...userLabels().map(l => ({ id: l.id, name: labelName(l) }))].filter(o => o.id !== P.label);
+  openMoveMenu("movemenu", $("#t-move").parentElement, opts,
+    id => moveThread(tid, id, opts.find(x => x.id === id).name));
+}
+const moveThread = (tid, labelId, name) => undoableMove(tid, `Moved to ${name}`, "Couldn't move",
+  () => modOp(tid, [labelId], labelId === "INBOX" ? [] : ["INBOX"]),
+  () => modOp(tid, ["INBOX"], labelId === "INBOX" ? [] : [labelId]),
+  removeRowOptimistic, restoreRow, reloadAfterUndo(tid));
+const trashThread = tid => undoableMove(tid, "Moved to trash", "Couldn't move to trash",
+  () => py({ op: "trash", account: P.account, thread: tid }), () => modOp(tid, ["INBOX"], ["TRASH"]),
+  removeRowOptimistic, restoreRow, reloadAfterUndo(tid));
+const addrOf = s => { const m = /<([^>]+)>/.exec(s || ""); return (m ? m[1] : (s || "")).trim(); };
+
+// Who a reply is addressed to. NOT simply the last message's sender: once you
+// have replied once, that is YOU, and every further reply silently goes to
+// yourself instead of the person you are talking to. Walk back to the last
+// message that isn't mine; if the whole thread is mine, use who it was sent to.
+function replyTarget(t) {
+  const me = P.account.toLowerCase();
+  for (let i = t.messages.length - 1; i >= 0; i--) {
+    const from = addrOf(t.messages[i].from);
+    if (from && from.toLowerCase() !== me) return from;
+  }
+  const first = t.messages[0];
+  return addrOf((first.to || "").split(",")[0]) || addrOf(first.from);
+}
+// Reply-all Cc list: everyone on the newest incoming message (From + To + Cc)
+// except me and the To recipient. Kept as full "Name <addr>" strings where the
+// thread had them, deduped by bare address.
+function replyAllCc(t, toAddr) {
+  const me = myAddr(), toLc = String(toAddr || "").toLowerCase();
+  const split = s => String(s || "").split(",").map(x => x.trim()).filter(Boolean);
+  let src = null;
+  for (let i = t.messages.length - 1; i >= 0; i--) {
+    if (addrOf(t.messages[i].from).toLowerCase() !== me) { src = t.messages[i]; break; }
+  }
+  if (!src) src = t.messages[0];
+  const seen = new Set([me, toLc]);
+  const out = [];
+  for (const r of [src.from, ...split(src.to), ...split(src.cc)]) {
+    const a = addrOf(r).toLowerCase();
+    if (!a || seen.has(a)) continue;
+    seen.add(a);
+    out.push(r);
+  }
+  return out;
+}
+// Display name for that address, if the thread ever showed one.
+function replyTargetName(t, addr) {
+  const a = String(addr || "").toLowerCase();
+  for (let i = t.messages.length - 1; i >= 0; i--) {
+    const m = t.messages[i];
+    if (addrOf(m.from).toLowerCase() === a) {
+      const n = fromName(m.from);
+      return n && n !== "(unknown)" ? n : addr;
+    }
+  }
+  return addr;
+}
+
+// ---------- recipient chips ----------
+// Gmail-style chips, draggable between To/Cc/Bcc. The original <input> stays
+// (hidden) as the value store every send path reads; chipify keeps it in sync.
+// Split "a@x.com, Name <b@y.com>, \"Last, First\" <c@z.com>" on commas that
+// sit outside <> and quotes — display names legitimately contain commas.
+function splitAddrs(s) {
+  const out = []; let cur = "", angle = false, quote = false;
+  for (const ch of String(s || "")) {
+    if (ch === '"') quote = !quote;
+    else if (ch === "<" && !quote) angle = true;
+    else if (ch === ">" && !quote) angle = false;
+    if (ch === "," && !angle && !quote) { out.push(cur); cur = ""; }
+    else cur += ch;
+  }
+  out.push(cur);
+  return out.map(x => x.trim()).filter(Boolean);
+}
+let chipDrag = null;   // { field, addr } during a chip drag
+function chipify(input) {
+  let addrs = splitAddrs(input.value);
+  const field = document.createElement("div");
+  field.className = "chipfield";
+  field.setAttribute("role", "listbox");
+  field.setAttribute("aria-label", input.id);
+  const entry = document.createElement("input");
+  entry.className = "chip-entry";
+  entry.placeholder = input.placeholder || "";
+  entry.setAttribute("autocomplete", "off");
+  field.appendChild(entry);
+  input.after(field);
+  input.hidden = true;
+  input._chipfocus = () => entry.focus();
+
+  const sync = () => { input.value = addrs.join(", "); };
+  const commit = () => {
+    const v = entry.value.trim().replace(/,+$/, "").trim();
+    if (v) { addrs.push(...splitAddrs(v)); entry.value = ""; render(); }
+  };
+  function render() {
+    sync();
+    field.querySelectorAll(".rchip").forEach(c => c.remove());
+    addrs.forEach((a, i) => {
+      const chip = document.createElement("span");
+      chip.className = "rchip";
+      chip.draggable = true;
+      chip.title = a;
+      const label = document.createElement("span");
+      label.className = "rc-label";
+      label.textContent = a;
+      const x = document.createElement("button");
+      x.className = "rc-x";
+      x.type = "button";
+      x.textContent = "✕";
+      x.setAttribute("aria-label", "Remove " + a);
+      x.addEventListener("click", e => { e.stopPropagation(); addrs.splice(i, 1); render(); });
+      chip.append(label, x);
+      // Gmail-style click-to-edit: the chip dissolves back into editable text.
+      // Commit whatever is already half-typed first so it isn't lost.
+      chip.addEventListener("click", () => {
+        commit();
+        addrs.splice(addrs.indexOf(a), 1);
+        render();
+        entry.value = a;
+        entry.focus();
+        entry.select();
+      });
+      chip.addEventListener("dragstart", e => {
+        chipDrag = { field, addr: a };
+        chip.classList.add("dragging");
+        e.dataTransfer.setData("text/plain", a);
+        e.dataTransfer.effectAllowed = "move";
+      });
+      chip.addEventListener("dragend", () => { chipDrag = null; chip.classList.remove("dragging"); field.classList.remove("dragover"); });
+      field.insertBefore(chip, entry);
+    });
+    entry.placeholder = addrs.length ? "" : (input.placeholder || "");
+  }
+  // Take a chip from whichever field it currently lives in (possibly this one)
+  // and insert it here — before the chip under the cursor, else at the end.
+  function acceptDrop(e) {
+    if (!chipDrag) return;
+    const { field: src, addr } = chipDrag;
+    src._chipremove(addr);
+    let at = addrs.length;
+    const over = e.target.closest(".rchip");
+    if (over) at = [...field.querySelectorAll(".rchip")].indexOf(over);
+    addrs.splice(at, 0, addr);
+    render();
+  }
+  field._chipremove = a => { const i = addrs.indexOf(a); if (i >= 0) { addrs.splice(i, 1); render(); } };
+  field.addEventListener("dragover", e => { if (chipDrag) { e.preventDefault(); e.dataTransfer.dropEffect = "move"; field.classList.add("dragover"); } });
+  field.addEventListener("dragleave", e => { if (!field.contains(e.relatedTarget)) field.classList.remove("dragover"); });
+  field.addEventListener("drop", e => { e.preventDefault(); field.classList.remove("dragover"); acceptDrop(e); });
+  field.addEventListener("click", e => { if (e.target === field) entry.focus(); });
+  entry.addEventListener("keydown", e => {
+    if (e.key === "Enter" || e.key === ",") { e.preventDefault(); commit(); }
+    else if (e.key === "Tab") commit();   // let focus move on, but keep the address
+    else if (e.key === "Backspace" && !entry.value && addrs.length) { addrs.pop(); render(); }
+  });
+  entry.addEventListener("blur", commit);
+  render();
+}
+
+async function sendReply() {
+  const t = state.thread, txt = $("#replytext").value.trim();
+  if (!t || !txt) return;
+  const last = t.messages[t.messages.length - 1];   // threading anchor: newest message
+  // Recipients come from the (possibly edited) fields; reply-all is prefilled.
+  const replyTo = $("#rcpto").value.trim() || replyTarget(t);
+  const cc = $("#rcpcc").value.trim(), bcc = $("#rcpbcc").value.trim();
+  // The send runs in the background: clear the box right away so the composer
+  // stays usable, and restore the draft if the send comes back with an error.
+  $("#replytext").value = "";  // renderThread preserves drafts across rebuilds — this one is on its way
+  sendInBackground(
+    { op: "reply", account: P.account, thread: t.id, reply_to_message: last.id,
+      to: replyTo, cc, bcc, body: txt },
+    () => {
+      toast("Sent");
+      invalidateCaches(t.id);
+      if (state.thread && state.thread.id === t.id) loadThread();
+    },
+    e => {
+      toast("Send failed: " + e.message);
+      // Put the draft back only if the user hasn't started typing a new one.
+      const box = $("#replytext");
+      if (box && !box.value.trim()) box.value = txt;
+    });
+}
+
+// ---------- compose ----------
+// Gmail's bottom-right popup, not a dialog: the wrapper keeps class `overlay`
+// (the Esc handler and shortcut guard key off it) but stays pointer-transparent
+// with no click-outside close, so the mailbox behind remains usable.
+let composeAtts = [];
+function openCompose(prefill) {
+  composeAtts = prefill && prefill.attachments ? prefill.attachments.slice() : [];
+  const { ov, close } = modal(`
+    <div class="modal compose-card" role="dialog" aria-label="New message">
+      <div class="cmp-head">
+        <span>New Message</span>
+        <button class="icon-btn" id="c-cancel" title="Close" aria-label="Close">${svg("close", 16)}</button>
+      </div>
+      <div class="cfield"><label for="c-from">From</label><input id="c-from" value="${esc(P.account === "demo" ? "you@demo.test" : P.account)}" disabled title="Sends from the active account — switch accounts in the sidebar"></div>
+      <div class="cfield"><label for="c-to">To</label><input id="c-to" placeholder="alice@example.com, bob@example.com"></div>
+      <div class="cfield"><label for="c-cc">Cc</label><input id="c-cc"></div>
+      <div class="cfield"><label for="c-subj">Subject</label><input id="c-subj"></div>
+      <textarea id="c-body" placeholder="Write your message…"></textarea>
+      <div id="attlist"></div>
+      <div class="cmp-foot">
+        <button class="btn-primary pill" id="c-send">Send</button>
+        <input type="file" id="c-file" multiple hidden>
+        <button class="icon-btn" id="c-attach" title="Attach files" aria-label="Attach files">${CLIP_SVG}</button>
+        <span class="err" id="c-err"></span>
+      </div>
+    </div>`, { cls: "compose-pop", noDismiss: true });
+  if (prefill) {   // restoring a failed background send — set values before chipify reads them
+    $("#c-to", ov).value = prefill.to || "";
+    $("#c-cc", ov).value = prefill.cc || "";
+    $("#c-subj", ov).value = prefill.subject || "";
+    $("#c-body", ov).value = prefill.body || "";
+  }
+  chipify($("#c-to", ov));
+  chipify($("#c-cc", ov));
+  const renderAtts = () => {
+    $("#attlist", ov).innerHTML = composeAtts.map((a, i) =>
+      `<span class="att">${CLIP_SVG} ${esc(a.filename)}<button data-i="${i}" aria-label="Remove ${esc(a.filename)}">✕</button></span>`).join("");
+    ov.querySelectorAll("#attlist button").forEach(b =>
+      b.addEventListener("click", () => { composeAtts.splice(parseInt(b.dataset.i, 10), 1); b.parentElement.remove(); }));
+  };
+  if (composeAtts.length) renderAtts();
+  $("#c-cancel", ov).addEventListener("click", close);
+  $("#c-attach", ov).addEventListener("click", () => $("#c-file", ov).click());
+  $("#c-file", ov).addEventListener("change", async e => {
+    for (const f of e.target.files) {
+      if (f.size > 5 * 1024 * 1024) { $("#c-err", ov).textContent = f.name + " over 5 MB cap"; continue; }
+      // FileReader gives base64 natively; the old per-byte string concat was
+      // O(n²) and froze the tab for seconds on MB-sized files.
+      const data_b64 = await new Promise((res, rej) => {
+        const r = new FileReader();
+        r.onload = () => res(String(r.result).split(",")[1] || "");
+        r.onerror = () => rej(r.error || new Error("read failed"));
+        r.readAsDataURL(f);
+      });
+      composeAtts.push({ filename: f.name, mime: f.type || "application/octet-stream", data_b64 });
+    }
+    renderAtts();
+  });
+  $("#c-send", ov).addEventListener("click", () => {
+    const to = $("#c-to", ov).value.trim();
+    if (!to) { $("#c-err", ov).textContent = "To is required"; return; }
+    // Close right away — the send continues in the background with the
+    // bottom-right indicator. On failure the toast offers a one-click restore.
+    const payload = { op: "send", account: P.account, to, cc: $("#c-cc", ov).value.trim(),
+                      subject: $("#c-subj", ov).value.trim(), body: $("#c-body", ov).value,
+                      attachments: composeAtts };
+    close();
+    sendInBackground(payload,
+      () => {
+        toast("Sent");
+        invalidateCaches();   // a new sent thread isn't in any cached page
+        if (P.label === "SENT") loadThreads(false);
+      },
+      e => toast("Send failed: " + e.message,
+                 { label: "Restore draft", fn: () => openCompose(payload) }));
+  });
+  $("#c-to", ov)._chipfocus();
+}
+
+// ---------- add account ----------
+function addAccount() {
+  const { ov, close } = modal(`
+    <div class="modal">
+      <h3>Connect a Gmail account</h3>
+      <p style="color:var(--fg-muted);margin:0 0 10px">
+        Paste a Google <b>app password</b> — 16 characters from
+        <a href="https://myaccount.google.com/apppasswords" target="_blank" style="color:var(--accent)">myaccount.google.com/apppasswords</a>
+        (requires 2-Step Verification). Your <b>normal Gmail password will not work</b>,
+        and Workspace admins can disable app passwords — if blocked, use OAuth instead.
+      </p>
+      <div class="field"><label>Email</label><input id="a-email" placeholder="you@gmail.com" autocomplete="off"></div>
+      <div class="field"><label>App password</label><input id="a-pw" placeholder="xxxx xxxx xxxx xxxx" autocomplete="off"></div>
+      <div class="actions">
+        <span class="err" id="a-err"></span>
+        <button class="btn-secondary" id="a-oauth">Use OAuth instead</button>
+        <button class="btn-secondary" id="a-cancel">Cancel</button>
+        <button class="btn-primary pill" id="a-connect">Connect</button>
+      </div>
+    </div>`);
+  $("#a-cancel", ov).addEventListener("click", close);
+  $("#a-connect", ov).addEventListener("click", async () => {
+    const email = $("#a-email", ov).value.trim();
+    const pw = $("#a-pw", ov).value.trim();
+    if (!email || !pw) { $("#a-err", ov).textContent = "both fields required"; return; }
+    $("#a-connect", ov).disabled = true;
+    $("#a-err", ov).textContent = "connecting…";
+    try {
+      const res = await py({ op: "add_imap_account", account: email, app_password: pw });
+      if (res.error) { $("#a-err", ov).textContent = res.error; $("#a-connect", ov).disabled = false; return; }
+      close(); toast("Connected " + res.email);
+      await loadAccounts();
+      setParam("thread", ""); setParam("label", "INBOX"); setParam("account", res.email);
+    } catch (e) { $("#a-err", ov).textContent = e.message; $("#a-connect", ov).disabled = false; }
+  });
+  $("#a-pw", ov).addEventListener("keydown", e => { if (e.key === "Enter") $("#a-connect", ov).click(); });
+  $("#a-oauth", ov).addEventListener("click", () => { close(); addOauthAccount(); });
+  $("#a-email", ov).focus();
+}
+
+async function addOauthAccount() {
+  if (!state.hasCreds) {
+    const { ov, close } = modal(`
+      <div class="modal">
+        <h3>One-time Google OAuth setup</h3>
+        <ol>
+          <li>Go to <code>console.cloud.google.com</code> → create (or pick) a project.</li>
+          <li>Enable the <b>Gmail API</b> (APIs &amp; Services → Library).</li>
+          <li>OAuth consent screen → Internal (Workspace) or External + add yourself as test user.</li>
+          <li>Credentials → Create credentials → <b>OAuth client ID</b> → type <b>Desktop app</b>.</li>
+          <li>Download the JSON and save it as <code>~/.fused-mail/credentials.json</code>.</li>
+        </ol>
+        <p style="color:var(--fg-muted)">Then click "Add account" again — a browser consent window opens per account. (The app-password path skips all of this.)</p>
+        <div class="actions"><button class="btn-primary pill" id="s-ok">Got it</button></div>
+      </div>`);
+    $("#s-ok", ov).addEventListener("click", close);
+    return;
+  }
+  try {
+    const res = await py({ op: "start_auth" });
+    if (res.error) return toast(res.error);
+  } catch (e) { return toast(e.message); }
+  toast("Opening Google consent…");
+  let consentOpened = false;
+  const poll = setInterval(async () => {
+    const st = await py({ op: "auth_status" }).catch(() => null);
+    if (!st) return;
+    if (st.status === "pending") {
+      // the detached worker can't open a browser itself — the app does it
+      if (st.url && !consentOpened) { consentOpened = true; window.open(st.url, "_blank"); }
+      return;
+    }
+    clearInterval(poll);
+    if (st.status === "ok") {
+      toast("Added " + st.email);
+      await loadAccounts();
+      setParam("account", st.email);
+    } else if (st.status === "error") {
+      toast("Auth failed: " + (st.error || "unknown"));
+    }
+  }, 2000);
+  setTimeout(() => clearInterval(poll), 5 * 60 * 1000);
+}
+
+// ---------- wiring ----------
+// Each section re-renders only when its own inputs changed; opening a thread
+// just moves the active highlight. Two shells share the chrome: the mailbox,
+// and the onboarding card (which hides every mailbox-shaped control).
+function applyShell(onboarding) {
+  onboardingNow = onboarding;
+  document.body.dataset.shell = onboarding ? "onboard" : "mail";
+  document.body.dataset.view = P.thread ? "thread" : "list";
+  document.body.dataset.manage = P.manage ? "1" : "";
+  $("#onboard").hidden = !onboarding;
+  $("#listpane").hidden = onboarding;
+  $("#threadpane").hidden = onboarding;
+  $("#composebtn").hidden = onboarding;
+  $("#labels").hidden = onboarding;
+  $("#aibar").hidden = onboarding;
+  $("#search").disabled = onboarding;
+  renderAiToggle();
+  requestAnimationFrame(positionSplitbar);
+}
+
+let lastKey = "", lastThread = null, lastManage = null;
+async function draw() {
+  $("#search").value = P.q;
+  if (isOnboarding()) {
+    applyShell(true);
+    renderAccounts();          // renders "+ Add account" and nothing else
+    lastKey = ""; lastThread = null;   // force a full draw once an account lands
+    return;
+  }
+  applyShell(false);
+  const key = [P.account, P.label, P.q].join("|");
+  const acctChanged = !lastKey || lastKey.split("|")[0] !== P.account;
+  const listChanged = key !== lastKey;
+  const manageChanged = P.manage !== lastManage;
+  const threadChanged = P.thread !== lastThread || manageChanged;
+  lastKey = key; lastThread = P.thread; lastManage = P.manage;
+  if (acctChanged) {
+    // Switching accounts: land the outgoing account's pending writes, then
+    // paint the incoming one from ITS disk cache before any fetch.
+    flushDisk();
+    state.labels = []; warmProbed.clear();
+    await hydrateFromDisk();
+    renderAccounts(); loadLabels();
+  }
+  else if (listChanged || manageChanged) renderLabels();   // active highlight moved
+  // Leaving the triage board hands the middle pane back to the thread list.
+  if (listChanged || (manageChanged && !P.manage)) await loadThreads(false);
+  updateActiveRow();
+  if (threadChanged || listChanged) loadThread();
+}
+// Handlers set several params in a row (thread + label + account); coalesce
+// the resulting onChange storm into one draw per tick.
+let drawQueued = false;
+function scheduleDraw() {
+  if (drawQueued) return;
+  drawQueued = true;
+  queueMicrotask(() => { drawQueued = false; draw(); });
+}
+
+// Draggable split between the middle pane and the reading pane. The width
+// lives in a CSS var on <html> and survives reloads via localStorage.
+const SPLIT_KEY = "fused.mail.listw";
+function clampListW(w) {
+  return Math.min(Math.max(w, 280), Math.max(320, window.innerWidth - 240 - 380));
+}
+function applyListW(w) {
+  document.documentElement.style.setProperty("--listw", clampListW(w) + "px");
+  positionSplitbar();
+}
+function positionSplitbar() {
+  const r = $("#listpane").getBoundingClientRect();
+  const sb = $("#splitbar");
+  sb.hidden = !r.width || $("#listpane").hidden;
+  sb.style.left = (r.right - 4) + "px";
+}
+{
+  const saved = parseInt(localStorage.getItem(SPLIT_KEY) || "", 10);
+  if (saved) applyListW(saved);
+}
+window.addEventListener("resize", positionSplitbar);
+// Tab iconification depends on available width — re-fit after resizes settle.
+let tabsRefitT = null;
+window.addEventListener("resize", () => {
+  clearTimeout(tabsRefitT);
+  tabsRefitT = setTimeout(() => { if (P.manage && $("#mgtabs")) paintManage(); }, 150);
+});
+requestAnimationFrame(positionSplitbar);
+$("#splitbar").addEventListener("mousedown", e => {
+  e.preventDefault();
+  document.body.classList.add("splitting");
+  const left = $("#listpane").getBoundingClientRect().left;
+  const move = ev => applyListW(ev.clientX - left);
+  const up = () => {
+    document.removeEventListener("mousemove", move);
+    document.removeEventListener("mouseup", up);
+    document.body.classList.remove("splitting");
+    const w = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--listw"), 10);
+    if (w) try { localStorage.setItem(SPLIT_KEY, String(w)); } catch (err) {}
+    if (P.manage && $("#mgtabs")) paintManage();   // tabs re-fit to the new width
+  };
+  document.addEventListener("mousemove", move);
+  document.addEventListener("mouseup", up);
+});
+
+$("#composebtn").innerHTML = svg("pencil", 18) + `<span>Compose</span>`;
+$("#composebtn").addEventListener("click", openCompose);
+$(".onb-mark").innerHTML = svg("mail", 28);
+$("#onb-connect").addEventListener("click", addAccount);
+$("#settingsbtn").innerHTML = svg("gear", 17);
+$("#settingsbtn").addEventListener("click", openSettings);
+$("#refreshbtn").innerHTML = svg("refresh", 19);
+$("#refreshbtn").addEventListener("mouseenter", e => showTip(e.currentTarget, warmTipText(), "refresh"));
+$("#refreshbtn").addEventListener("mouseleave", tabTipHide);
+$("#refreshbtn").addEventListener("click", async () => {
+  const b = $("#refreshbtn");
+  b.classList.add("spinning");
+  try { await Promise.all([loadLabels(), loadThreads(false)]); }
+  finally { b.classList.remove("spinning"); }
+});
+$("#aitoggle").addEventListener("click", toggleAi);
+renderAiToggle();
+$("#search").addEventListener("keydown", e => {
+  if (e.key === "Enter") { setParam("manage", ""); setParam("thread", ""); setParam("q", e.target.value.trim()); }
+  if (e.key === "Escape") { e.target.value = ""; setParam("q", ""); e.target.blur(); }
+});
+
+// Keyboard layer: j/k walk the list, e archive, u unread, c compose, / search,
+// Esc closes modal → thread. Inert while typing, so shortcuts never eat input.
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape") {
+    const ovs = document.querySelectorAll(".overlay");
+    if (ovs.length) { ovs[ovs.length - 1].remove(); return; }
+    const a = document.activeElement;
+    if (a && (a.tagName === "INPUT" || a.tagName === "TEXTAREA")) return; // field's own Esc
+    if (P.thread) setParam("thread", "");   // the briefing IS the empty state now
+    else if (P.manage) setParam("manage", "");
+    return;
+  }
+  // Tab takes the suggested reply — unless real focus traversal is in play
+  // (another field focused, or the reply box already has the user's own text).
+  if (e.key === "Tab") {
+    const box = $("#suggest"), ta = $("#replytext");
+    if (box && !box.hidden && suggestText && ta) {
+      const a = document.activeElement;
+      const otherField = a && a !== ta && (a.tagName === "INPUT" || a.tagName === "TEXTAREA");
+      const taBusy = a === ta && ta.value.trim();
+      if (!otherField && !taBusy) { e.preventDefault(); acceptSuggestion(); return; }
+    }
+  }
+  const t = e.target;
+  if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (document.querySelector(".overlay")) return;
+  if (e.key === "j" || e.key === "k") {
+    e.preventDefault();
+    if (!state.threads.length) return;
+    const idx = state.threads.findIndex(x => x.id === P.thread);
+    const pick = idx === -1
+      ? (e.key === "j" ? 0 : state.threads.length - 1)
+      : (e.key === "j" ? Math.min(idx + 1, state.threads.length - 1) : Math.max(idx - 1, 0));
+    setParam("thread", state.threads[pick].id);
+    const el = $(`.row[data-id="${CSS.escape(state.threads[pick].id)}"]`);
+    if (el) el.scrollIntoView({ block: "nearest" });
+  } else if (e.key === "e" && P.thread) { e.preventDefault(); archiveThread(P.thread); }
+  else if (e.key === "u" && P.thread) { e.preventDefault(); triage(P.thread, ["UNREAD"], [], "Marked unread"); }
+  else if (e.key === "c") { e.preventDefault(); openCompose(); }
+  else if (e.key === "/") { e.preventDefault(); $("#search").focus(); }
+});
+
+fused.params.onChange(scheduleDraw);
+// Disk first, then draw: the cached view paints with no network in the path,
+// and draw()'s own fetches reconcile it from there.
+loadAccounts().then(hydrateFromDisk).then(draw).then(() => {
+  // Warm the triage config once the first paint is done: it is a small local
+  // file, and having it in memory is what lets the board open without a round
+  // trip. Background priority, so it never delays anything on screen.
+  if (typeof loadMgConfig === "function") loadMgConfig(true).catch(() => {});
+});
+</script>
+<script>document.write('<script src="' + fused.rawUrl("triage.js") + '"><\/script>');</script>
+</body>
+</html>
