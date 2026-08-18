@@ -1296,8 +1296,12 @@ def _serve():
 
     def do_copy(mid, src, dst):
         c = get_conn(mid)
-        # Same no-overwrite / no-copy-into-directory contract as do_rename:
-        # cp -a onto an existing path would clobber it or drop src inside it.
+        # Same no-overwrite / no-copy-into-directory contract as do_rename, but
+        # cp has no atomic "fail if dst exists" — cp -n skips silently (exit 0),
+        # so it would report success while writing nothing, or nest src inside a
+        # dst directory. So copy to a temp sibling and rename it into place: the
+        # SFTP rename is the same no-clobber primitive do_rename trusts, so a dst
+        # that appears in the race window fails loudly instead.
         with c["lock"]:
             try:
                 sftp_of(c).stat(dst)
@@ -1306,10 +1310,19 @@ def _serve():
                 dst_exists = False
         if dst_exists:
             raise Http(409, f"{posixpath.basename(dst)} already exists")
+        tmp = f"{dst}.fused-copy-{os.urandom(6).hex()}"
         with Busy():
-            # -n keeps cp's own no-clobber contract in case dst appeared in the
-            # gap between the check above and this running.
-            sh(c, f"cp -a -n -- {shlex.quote(src)} {shlex.quote(dst)}", timeout=None)
+            sh(c, f"cp -a -- {shlex.quote(src)} {shlex.quote(tmp)}", timeout=None)
+        with c["lock"]:
+            try:
+                sftp_of(c).rename(tmp, dst)
+                renamed = True
+            except OSError:
+                renamed = False
+        if not renamed:
+            with Busy():
+                sh(c, f"rm -rf -- {shlex.quote(tmp)}", timeout=None)
+            raise Http(409, f"{posixpath.basename(dst)} already exists")
         return {"ok": True}
 
     def do_delete(mid, path):
