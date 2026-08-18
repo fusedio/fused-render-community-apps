@@ -303,6 +303,52 @@ def test_start_build_keys_by_folder_and_cache_dir(tmp_path, monkeypatch):
         ragserver._BUILDS.pop(key_b, None)
 
 
+def test_move_cache_reports_failed_files_instead_of_silent_success(tmp_path, monkeypatch):
+    docs = tmp_path / "docs"; docs.mkdir()
+    (docs / "a.md").write_text("hi", encoding="utf-8")
+    a = tmp_path / "cacheA"; b = tmp_path / "cacheB"
+    ragserver.build_index(str(docs), cache_dir=str(a))
+
+    def flaky_move(src, dst):
+        raise OSError("simulated: file locked")
+    monkeypatch.setattr(shutil, "move", flaky_move)
+
+    r = ragserver.move_cache(str(a), str(b))
+    assert r["ok"] is False
+    assert r["moved"] == 0
+    assert os.listdir(a) != []   # the file that failed to move is still where it was
+
+
+def test_move_cache_holds_build_lock_for_the_whole_operation(tmp_path, monkeypatch):
+    docs = tmp_path / "docs"; docs.mkdir()
+    (docs / "a.md").write_text("hi", encoding="utf-8")
+    a = tmp_path / "cacheA"; b = tmp_path / "cacheB"
+    ragserver.build_index(str(docs), cache_dir=str(a))
+
+    entered = threading.Event()
+    release = threading.Event()
+
+    def slow_move(src, dst):
+        entered.set()
+        assert release.wait(5), "test setup itself timed out"
+    monkeypatch.setattr(shutil, "move", slow_move)
+
+    t = threading.Thread(target=ragserver.move_cache, args=(str(a), str(b)), daemon=True)
+    t.start()
+    assert entered.wait(5), "move_cache never reached the move step"
+
+    # _BUILD_LOCK must still be held by move_cache at this exact point -- a
+    # concurrent start_build() for the same folder must not be able to touch
+    # the .duckdb files mid-move.
+    got_lock = ragserver._BUILD_LOCK.acquire(blocking=False)
+    if got_lock:
+        ragserver._BUILD_LOCK.release()
+
+    release.set()
+    t.join(5)
+    assert got_lock is False
+
+
 def test_move_cache_preserves_index(tmp_path):
     docs = tmp_path / "docs"; docs.mkdir()
     (docs / "grind.md").write_text("Dial the grinder finer to slow the shot down.", encoding="utf-8")

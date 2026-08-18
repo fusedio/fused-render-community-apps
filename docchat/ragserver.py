@@ -471,35 +471,43 @@ def move_cache(old_dir, new_dir):
         return {"ok": False, "error": "empty destination path"}
     if os.path.normcase(old) == os.path.normcase(new):
         return {"ok": True, "moved": 0, "same": True, "from": _fwd(old), "to": _fwd(new)}
-    with _BUILD_LOCK:                       # never yank a file out from under a running build
+    # Held for the WHOLE operation (not just this initial check) — a build
+    # starting midway through the move loop below would otherwise write to a
+    # .duckdb file while it's being relocated.
+    with _BUILD_LOCK:
         if any(b.get("state") == "building" for b in _BUILDS.values()):
             return {"ok": False, "error": "An index is still building — wait for it to finish, then move the cache."}
-    try:
-        os.makedirs(new, exist_ok=True)
-    except OSError as e:
-        return {"ok": False, "error": "cannot create " + _fwd(new) + " (" + type(e).__name__ + ")"}
-    with _DB_LOCK:
-        for p in list(_CONS):
-            if os.path.normcase(os.path.dirname(p)) == os.path.normcase(old):
-                try:
-                    _CONS.pop(p).close()
-                except Exception:
-                    pass
-    moved = 0
-    if os.path.isdir(old):
-        for name in sorted(os.listdir(old)):
-            if not (name.endswith(".duckdb") or name.endswith(".duckdb.wal")):
-                continue
-            try:
+        try:
+            os.makedirs(new, exist_ok=True)
+        except OSError as e:
+            return {"ok": False, "error": "cannot create " + _fwd(new) + " (" + type(e).__name__ + ")"}
+        with _DB_LOCK:
+            for p in list(_CONS):
+                if os.path.normcase(os.path.dirname(p)) == os.path.normcase(old):
+                    try:
+                        _CONS.pop(p).close()
+                    except Exception:
+                        pass
+        moved = 0
+        failed = []
+        if os.path.isdir(old):
+            for name in sorted(os.listdir(old)):
+                if not (name.endswith(".duckdb") or name.endswith(".duckdb.wal")):
+                    continue
                 dst = os.path.join(new, name)
-                if os.path.exists(dst):
-                    os.remove(dst)
-                shutil.move(os.path.join(old, name), dst)
-                if name.endswith(".duckdb"):
-                    moved += 1
-            except OSError:
-                pass
-    return {"ok": True, "moved": moved, "from": _fwd(old), "to": _fwd(new)}
+                try:
+                    if os.path.exists(dst):
+                        os.remove(dst)
+                    shutil.move(os.path.join(old, name), dst)
+                    if name.endswith(".duckdb"):
+                        moved += 1
+                except OSError as e:
+                    failed.append(name + " (" + type(e).__name__ + ")")
+        if failed:
+            return {"ok": False, "moved": moved, "from": _fwd(old), "to": _fwd(new),
+                    "error": "moved " + str(moved) + " index" + ("" if moved == 1 else "es")
+                    + ", but failed on: " + ", ".join(failed)}
+        return {"ok": True, "moved": moved, "from": _fwd(old), "to": _fwd(new)}
 
 
 def start_build(folder, rebuild=False, cache_dir=None):
