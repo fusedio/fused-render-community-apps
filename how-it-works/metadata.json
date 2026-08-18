@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "name": "How Fused Render works",
+  "description": "A guided explainer of the whole authoring model — page, Python, and the one fused.runPython() call between them — demonstrated on itself with live sliders.",
+  "author": { "name": "Surya", "github": "iamsdas" },
+  "tags": ["tutorial", "starter", "example", "python"],
+  "category": "starters",
+  "version": "1.0.0",
+  "requires_python": true
+}
