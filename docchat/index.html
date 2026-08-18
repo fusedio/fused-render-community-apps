@@ -1031,10 +1031,10 @@ async function onParams(){
   if(folderChanged && !q && srv.ready && state.idxState !== "ready") indexNow(false);   // cached source is already shown; don't rebuild
 
   if(q && q !== state.processedQ){
+    if(state.busy) return;                  // don't mark it processed yet -- retry once free, below
     state.processedQ = q;
-    if(state.busy) return;
     setBusy(true);
-    try{ await runQuestion(q); } finally{ setBusy(false); }
+    try{ await runQuestion(q); } finally{ setBusy(false); onParams(); }   // pick up a question that arrived mid-answer
   } else if(!q && !transcript.querySelector(".turn")){ renderWelcome(); }
 }
 function ask(text){ text = (text||"").trim(); if(!text) return; input.value = ""; autosize(); fused.params.set("q", text); }
