@@ -1,5 +1,5 @@
 "use strict";
-// AI triage board (the Manage view). Loaded by mail.html AFTER its main
+// AI triage board (the Manage view). Loaded by index.html AFTER its main
 // script, so every helper there ($, py, svg, state, caches...) already
 // exists; everything here is invoked at event/draw time, never at parse.
 

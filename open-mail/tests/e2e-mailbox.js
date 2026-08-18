@@ -1,16 +1,21 @@
 // Mailbox regression suite — runs entirely against the built-in `demo` account,
 // so it needs no credentials and touches no real mail.
 //
-//   node examples/mail/tests/e2e-mailbox.js            (server on :8865)
-//   PORT=9000 node examples/mail/tests/e2e-mailbox.js
+//   bunx playwright install chromium        (once)
+//   node tests/e2e-mailbox.js               (server on :8865)
+//   PORT=9000 node tests/e2e-mailbox.js
 //
-// Resets the demo inbox first: rm ~/.fused-mail/demo_state.json
-const PW = "/Users/akshilthumar/.nvm/versions/node/v22.17.1/lib/node_modules/@playwright/mcp/node_modules/playwright";
-const { chromium } = require(PW);
-const SHELL = "/Users/akshilthumar/Library/Caches/ms-playwright/chromium_headless_shell-1234/chrome-headless-shell-mac-arm64/chrome-headless-shell";
+// Reset the demo inbox first: rm -f ~/.fused-mail/demo_state.json
+//
+// Playwright resolves its own bundled browser; override only if you must:
+//   PLAYWRIGHT_MODULE=/path/to/playwright  CHROMIUM_PATH=/path/to/chrome
+const { chromium } = require(process.env.PLAYWRIGHT_MODULE || "playwright");
+const SHELL = process.env.CHROMIUM_PATH || undefined;
 
 const PORT = process.env.PORT || "8865";
-const MAIL = "/Users/akshilthumar/Desktop/fused/fused-render-worktrees/mail-inbox/examples/mail/mail.html";
+// The app is one directory up from this file; APP_PATH can point elsewhere.
+const MAIL = process.env.APP_PATH ||
+  require("path").resolve(__dirname, "..", "index.html");
 const BASE = `http://127.0.0.1:${PORT}/embed${MAIL}`;
 // The demo mailbox is invisible chrome now — it never renders in the sidebar,
 // and `?account=demo` is the backdoor the suites use to reach the provider.
@@ -32,7 +37,7 @@ async function appFrame(page) {
 }
 
 (async () => {
-  const browser = await chromium.launch({ executablePath: SHELL });
+  const browser = await chromium.launch(SHELL ? { executablePath: SHELL } : {});
   const page = await browser.newPage({ viewport: { width: 1400, height: 860 } });
   page.on("pageerror", e => console.log("[pageerror]", e.message.slice(0, 300)));
 

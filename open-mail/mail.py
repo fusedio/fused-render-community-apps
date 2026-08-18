@@ -4,13 +4,12 @@
 #     "google-auth-oauthlib",
 # ]
 # ///
-# NOTE: deliberately NO @fused.udf here. On this machine the real fused SDK is
-# importable in the run venv, and its udf object executes on the configured
-# REMOTE Fused env (server_rt2 lambda: HOME=/tmp, no local fs, no subprocess) —
-# useless for a mail client that owns local token files and spawns an OAuth
-# browser flow. A bare main() keeps the builtin engine's child on THIS machine.
-# Run the server with FUSED_RENDER_ENGINE=builtin (the fused engine never calls
-# a bare main()).
+# NOTE: deliberately NO @fused.udf here. Where the fused SDK is importable in
+# the run venv, a decorated udf executes on the configured REMOTE Fused env
+# (no local filesystem, no subprocess) — useless for a mail client that owns
+# local token files and spawns a local OAuth browser flow. A bare main() keeps
+# the builtin engine's child on the user's own machine. Run the server with
+# FUSED_RENDER_ENGINE=builtin (the fused engine never calls a bare main()).
 def main(
     op: str = "accounts",
     account: str = "",
@@ -47,11 +46,21 @@ def main(
     MAIL_DIR = os.path.expanduser("~/.fused-mail")
 
     # ------------------------------------------------------------------ paths
+    # Everything the app ships (this script, add_account.py, vendor_imaplib.py,
+    # an optional bundled credentials.json) is resolved against APP_DIR, never
+    # the process cwd — the engine may run the child from anywhere. The engine
+    # may also exec this body isolated from module globals, so __file__ can be
+    # missing; its preamble puts the script's directory at sys.path[0].
+    try:
+        APP_DIR = os.path.dirname(os.path.abspath(__file__))
+    except NameError:
+        APP_DIR = os.path.abspath(sys.path[0])
+
     # OAuth client: a user-supplied one wins, else the client shipped next to this
-    # script (installed-app secrets are not confidential — see README "Sharing").
+    # script (installed-app secrets are not confidential — see readme "Sharing").
     creds_path = os.path.join(MAIL_DIR, "credentials.json")
     if not os.path.exists(creds_path):
-        bundled = os.path.abspath("./credentials.json")
+        bundled = os.path.join(APP_DIR, "credentials.json")
         if os.path.exists(bundled):
             creds_path = bundled
     accounts_path = os.path.join(MAIL_DIR, "accounts.json")
@@ -425,7 +434,7 @@ def main(
             return imaplib
         except ModuleNotFoundError:
             import importlib.util
-            path = os.path.abspath("./vendor_imaplib.py")
+            path = os.path.join(APP_DIR, "vendor_imaplib.py")
             spec = importlib.util.spec_from_file_location("imaplib", path)
             mod = importlib.util.module_from_spec(spec)
             sys.modules["imaplib"] = mod
@@ -1259,9 +1268,9 @@ def main(
 
     if op == "start_auth":
         if not os.path.exists(creds_path):
-            return {"error": "credentials.json missing — see README setup", "has_credentials": False}
+            return {"error": "credentials.json missing — see readme setup", "has_credentials": False}
         write_json(auth_status_path, {"status": "pending", "started_at": time.time()})
-        helper = os.path.abspath("./add_account.py")
+        helper = os.path.join(APP_DIR, "add_account.py")
         log = open(os.path.join(MAIL_DIR, "auth.log"), "ab")
         subprocess.Popen(
             [sys.executable, helper],

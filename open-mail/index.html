@@ -123,7 +123,7 @@ function toggleTheme() {
 // ---------- params ----------
 // `?account=demo` is a test-only backdoor (never rendered in the UI); with no
 // ?account the app opens the first connected account, else onboarding.
-// Test hook (TEST-PLAN §8): ?onboarding=1 pretends nothing is connected.
+// Test hook: ?onboarding=1 pretends nothing is connected.
 const forceOnboard = () => fused.params.get("onboarding") === "1";
 const realAccounts = () => forceOnboard() ? [] : state.accounts.filter(a => a.provider !== "demo");
 const defaultAccount = () => { const r = realAccounts()[0]; return r ? r.email : ""; };

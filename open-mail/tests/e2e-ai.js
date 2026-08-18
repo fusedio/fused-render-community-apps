@@ -1,15 +1,20 @@
 // AI feature suite — demo account only; needs the `claude` CLI installed.
-//   rm -f ~/.fused-mail/demo_state.json && node examples/mail/tests/e2e-ai.js
+//   rm -f ~/.fused-mail/demo_state.json && node tests/e2e-ai.js
+//
+// Needs `bunx playwright install chromium` once. Playwright resolves its own
+// browser; PLAYWRIGHT_MODULE / CHROMIUM_PATH / APP_PATH override the defaults.
 //
 // Covers the AI layer (summary, suggested reply, landing briefing) plus the
 // two chrome features that ship with it: the theme toggle and the list's
 // hover quick actions. Makes ~4 real model calls, so give it a few minutes.
-const path = "/Users/akshilthumar/.nvm/versions/node/v22.17.1/lib/node_modules/@playwright/mcp/node_modules/playwright";
-const { chromium } = require(path);
+const { chromium } = require(process.env.PLAYWRIGHT_MODULE || "playwright");
+const SHELL = process.env.CHROMIUM_PATH || undefined;
 const PORT = process.env.PORT || "8865";
+const MAIL = process.env.APP_PATH ||
+  require("path").resolve(__dirname, "..", "index.html");
 // ?account=demo — the demo mailbox no longer renders in the sidebar, and
 // without the param the app would open the first REAL account.
-const URL = `http://127.0.0.1:${PORT}/embed/Users/akshilthumar/Desktop/fused/fused-render-worktrees/mail-inbox/examples/mail/mail.html?account=demo`;
+const URL = `http://127.0.0.1:${PORT}/embed${MAIL}?account=demo`;
 let pass = 0, fail = 0;
 const ok = (n, c) => c ? (pass++, console.log("PASS", n)) : (fail++, console.log("FAIL", n));
 
@@ -29,7 +34,7 @@ const digestReady = f => f.waitForFunction(() => {
 }, null, { timeout: 150000 });
 
 (async () => {
-  const browser = await chromium.launch({ executablePath: "/Users/akshilthumar/Library/Caches/ms-playwright/chromium_headless_shell-1234/chrome-headless-shell-mac-arm64/chrome-headless-shell" });
+  const browser = await chromium.launch(SHELL ? { executablePath: SHELL } : {});
   const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
   page.on("pageerror", e => console.log("[pageerror]", e.message.slice(0, 200)));
   await page.goto(URL);
