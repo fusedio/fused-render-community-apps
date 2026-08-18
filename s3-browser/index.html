@@ -907,24 +907,37 @@ async function openDownload() {
 async function startDownload() {
   const dest = $("dlDest").value.trim();
   if (!dest) { toast("Enter a destination folder", true); return; }
-  const files = selFiles().map((x) => x.key), folders = selFolders().map((x) => x.prefix);
+  const sel = selFiles();
+  const files = sel.map((x) => x.key), sizes = sel.map((x) => x.size), folders = selFolders().map((x) => x.prefix);
   $("dlStart").disabled = true;
-  const plan = await callDl("plan", { bucket: bucket(), keys: JSON.stringify(files), prefixes: JSON.stringify(folders), dest_dir: dest });
-  $("dlStart").disabled = false;
+  let plan;
+  try {
+    plan = await callDl("plan", { bucket: bucket(), keys: JSON.stringify(files), sizes: JSON.stringify(sizes), prefixes: JSON.stringify(folders), dest_dir: dest });
+  } catch (e) {
+    toast(e.message || String(e), true); return;
+  } finally {
+    $("dlStart").disabled = false;
+  }
   if (plan.error) { toast(plan.error.message, true); return; }
   $("dlScrim").classList.remove("open");
   runDownload(plan.job, dest);
 }
-async function runDownload(job, dest) {
-  const tid = addTransfer({ name: dest.split(/[\\/]/).filter(Boolean).pop() || dest, kind: "download", total: 0 });
+async function runDownload(job, dest, tid) {
+  if (tid) restartTransfer(tid, 0); else tid = addTransfer({ name: dest.split(/[\\/]/).filter(Boolean).pop() || dest, kind: "download", total: 0 });
+  setRetry(tid, () => runDownload(job, dest, tid));
   const handle = fused.trackJob({ id: "s3dl:" + job, title: "Download to " + dest.split(/[\\/]/).pop(), kind: "download", unit: "bytes", cancellable: true });
-  while (true) {
-    const s = await callDl("step", { job });
-    if (s.error) { handle.fail(s.error.message); finishTransfer(tid, "error", s.error.message); return; }
-    updateTransfer(tid, { done: s.done_bytes, total: s.total_bytes, detail: `${s.done_files}/${s.total_files} files` + (s.errors.length ? ` · ${s.errors.length} errors` : "") });
-    handle.update({ done: s.done_bytes, total: s.total_bytes, detail: (s.current || "").split("/").pop() });
-    if (s.status === "done") { handle.finish("Downloaded"); finishTransfer(tid, "done", `${s.done_files} file(s) saved` + (s.errors.length ? `, ${s.errors.length} failed` : "")); toast(`Saved ${s.done_files} file(s)`); return; }
-    if (handle.cancelRequested) { handle.cancelled(); finishTransfer(tid, "cancelled"); return; }
+  try {
+    while (true) {
+      const s = await callDl("step", { job });
+      if (s.error) { handle.fail(s.error.message); finishTransfer(tid, "error", s.error.message); return; }
+      updateTransfer(tid, { done: s.done_bytes, total: s.total_bytes, detail: `${s.done_files}/${s.total_files} files` + (s.errors.length ? ` · ${s.errors.length} errors` : "") });
+      handle.update({ done: s.done_bytes, total: s.total_bytes, detail: (s.current || "").split("/").pop() });
+      if (s.status === "done") { handle.finish("Downloaded"); finishTransfer(tid, "done", `${s.done_files} file(s) saved` + (s.errors.length ? `, ${s.errors.length} failed` : "")); toast(`Saved ${s.done_files} file(s)`); return; }
+      if (handle.cancelRequested) { handle.cancelled(); finishTransfer(tid, "cancelled"); return; }
+    }
+  } catch (e) {
+    handle.fail(e.message || String(e));
+    finishTransfer(tid, "error", e.message || String(e));
   }
 }
 async function doMkdir() {
@@ -1211,6 +1224,11 @@ async function saveModal() {
     secret_key: auth === "keys" ? (keepCreds ? prev.secret_key : $("mSecretKey").value) : "",
     session_token: auth === "keys" ? (keepCreds ? (prev.session_token || "") : $("mToken").value.trim()) : "",
   };
+  // A keys connection missing either half would silently fall back to the default
+  // AWS credential chain (env/profile) while still showing as key auth — reject it.
+  if (auth === "keys" && (!a.access_key || !a.secret_key)) {
+    toast("Access key and secret key are both required for key auth", true); return;
+  }
   if (editingId) ACCOUNTS = ACCOUNTS.map((x) => x.id === editingId ? a : x);
   else ACCOUNTS.push(a);
   BUCKET_CACHE.delete(a.id);   // credentials/profile may have changed

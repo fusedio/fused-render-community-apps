@@ -48,8 +48,9 @@ def _safe_local(dest_dir: str, key: str) -> str:
     return local
 
 
-def _expand(client, bucket, keys, prefixes):
-    items = [{"key": k, "size": None} for k in keys]
+def _expand(client, bucket, keys, prefixes, sizes=None):
+    sizes = sizes or []
+    items = [{"key": k, "size": sizes[i] if i < len(sizes) else None} for i, k in enumerate(keys)]
     for pfx in prefixes:
         token = None
         while True:
@@ -70,7 +71,7 @@ def _expand(client, bucket, keys, prefixes):
 
 def main(action: str = "plan", account_id: str = "", profile: str = "", region: str = "",
          anonymous: bool = False, endpoint_url: str = "", bucket: str = "",
-         keys: str = "", prefixes: str = "", dest_dir: str = "", job: str = ""):
+         keys: str = "", prefixes: str = "", sizes: str = "", dest_dir: str = "", job: str = ""):
     os.makedirs(JOB_DIR, exist_ok=True)
 
     if action == "default_dir":
@@ -81,7 +82,8 @@ def main(action: str = "plan", account_id: str = "", profile: str = "", region: 
             if not dest_dir:
                 return {"error": {"code": "NoDestination", "message": "choose a destination folder"}}
             client = s3lib.client(s3lib.resolve(account_id, profile, region, anonymous, endpoint_url))
-            items = _expand(client, bucket, json.loads(keys or "[]"), json.loads(prefixes or "[]"))
+            items = _expand(client, bucket, json.loads(keys or "[]"), json.loads(prefixes or "[]"),
+                            json.loads(sizes or "[]"))
             import uuid
             job = uuid.uuid4().hex[:12]
             _write(_job_path(job), {
