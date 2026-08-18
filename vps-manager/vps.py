@@ -1296,8 +1296,20 @@ def _serve():
 
     def do_copy(mid, src, dst):
         c = get_conn(mid)
+        # Same no-overwrite / no-copy-into-directory contract as do_rename:
+        # cp -a onto an existing path would clobber it or drop src inside it.
+        with c["lock"]:
+            try:
+                sftp_of(c).stat(dst)
+                dst_exists = True
+            except OSError:
+                dst_exists = False
+        if dst_exists:
+            raise Http(409, f"{posixpath.basename(dst)} already exists")
         with Busy():
-            sh(c, f"cp -a -- {shlex.quote(src)} {shlex.quote(dst)}", timeout=None)
+            # -n keeps cp's own no-clobber contract in case dst appeared in the
+            # gap between the check above and this running.
+            sh(c, f"cp -a -n -- {shlex.quote(src)} {shlex.quote(dst)}", timeout=None)
         return {"ok": True}
 
     def do_delete(mid, path):
