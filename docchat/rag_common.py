@@ -191,10 +191,8 @@ def list_dir(path):
             continue
         if os.path.isdir(full):
             dirs.append({"name": name, "path": full})
-        elif os.path.splitext(name)[1].lower() in TEXT_EXTS:
+        elif len(files) < 300 and os.path.splitext(name)[1].lower() in TEXT_EXTS:
             files.append({"name": name, "path": full})
-            if len(files) >= 300:
-                break
     return dirs, files
 
 

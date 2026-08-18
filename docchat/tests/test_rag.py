@@ -146,6 +146,15 @@ def test_browse_lists_dirs_and_files(tmp_path):
     assert r2["path"] == str(tmp_path).replace("\\", "/")
 
 
+def test_list_dir_keeps_dirs_past_file_cap(tmp_path):
+    for i in range(305):
+        (tmp_path / ("a%04d.txt" % i)).write_text("x", encoding="utf-8")
+    (tmp_path / "zzz_subdir").mkdir()                      # sorts after every file
+    dirs, files = rc.list_dir(str(tmp_path))
+    assert len(files) == 300                               # file cap still applies
+    assert [d["name"] for d in dirs] == ["zzz_subdir"]     # dirs past the cap still listed
+
+
 def test_index_files_and_preview(tmp_path):
     (tmp_path / "a.md").write_text("Alpha document about grinders and burrs.", encoding="utf-8")
     (tmp_path / "b.md").write_text("Beta document about milk steaming and microfoam.", encoding="utf-8")
