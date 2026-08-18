@@ -83,6 +83,7 @@
   .rail-sec{padding:10px 12px;border-bottom:1px solid var(--rule);flex:none}
   .eyebrow{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
   .eyebrow > span{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);font-weight:600}
+  .eyebrow .acts{display:flex;align-items:baseline;gap:10px}
   .act{background:none;border:0;color:var(--ink-2);font-size:12px;cursor:pointer;padding:0;font-family:var(--sans)}
   .act:hover{color:var(--ink);text-decoration:underline;text-underline-offset:2px}
   .act:disabled{opacity:.4;cursor:default;text-decoration:none}
@@ -314,7 +315,7 @@
         </div>
       </div>
       <div class="rail-sec">
-        <div class="eyebrow"><span>Index</span><button class="act" id="idxAction" data-kind="build">Index now</button></div>
+        <div class="eyebrow"><span>Index</span><div class="acts"><button class="act" id="idxRebuild" hidden title="Wipe this index and re-embed every file">Rebuild</button><button class="act" id="idxAction" data-kind="build">Index now</button></div></div>
         <div class="idxline" id="idxLine"><span class="idot" id="idxDot"></span><span class="itxt" id="idxText">Not indexed yet</span></div>
         <div class="rule" id="idxRule" hidden><i></i></div>
         <div class="ignored" id="ignoredLine" hidden></div>
@@ -368,7 +369,7 @@ const transcript=$("transcript"), input=$("q"), sendBtn=$("send");
 const main=$("main"), themeBtn=$("themeBtn"), appEl=$("app");
 const segAi=$("segAi"), segPassages=$("segPassages"), modelSel=$("modelSel");
 const changeBtn=$("changeSrc"), srcLine=$("srcLine");
-const idxLine=$("idxLine"), idxAction=$("idxAction"), idxRule=$("idxRule");
+const idxLine=$("idxLine"), idxAction=$("idxAction"), idxRebuild=$("idxRebuild"), idxRule=$("idxRule");
 const srvLine=$("srvLine"), overlay=$("overlay"), modelStatus=$("modelStatus");
 
 const AI_AVAILABLE = (typeof fused.ai === "function");
@@ -591,7 +592,7 @@ function renderIndex(info){
   else if(info.state === "ready"){
     state.idxDocs = info.docs; state.idxChunks = info.chunks;
     label = "Ready · "+info.docs+" file"+(info.docs===1?"":"s")+" · "+info.chunks+" chunk"+(info.chunks===1?"":"s")+(info.truncated?" · capped":"");
-    act = "Re-index"; kind = "rebuild";
+    act = "Re-index"; kind = "build";   // incremental: diff mtimes, re-embed only what changed
   }
   else if(info.state === "error"){ label = String(info.msg||"Index failed").slice(0,80); act = "Retry"; kind = "rebuild"; cls = "err"; }
   state.idxState = info.state;
@@ -600,10 +601,12 @@ function renderIndex(info){
   $("idxDot").className = "idot" + (dotCls ? " "+dotCls : "");
   $("idxText").textContent = label;
   idxAction.textContent = act; idxAction.dataset.kind = kind; idxAction.hidden = !showAct;
+  idxRebuild.hidden = info.state !== "ready";   // full wipe-and-re-embed, for a suspect index
   if(pct != null){ idxRule.hidden = false; idxRule.querySelector("i").style.width = pct+"%"; }
   else { idxRule.hidden = true; }
 }
 idxAction.addEventListener("click", () => { if(state.busy) return; indexNow(idxAction.dataset.kind === "rebuild"); });
+idxRebuild.addEventListener("click", () => { if(state.busy) return; indexNow(true); });
 
 // ---- files list (what actually got indexed) ----
 async function onIndexReady(){
