@@ -460,7 +460,7 @@ function connParams() {
   if (region()) p.region = region();
   return p;
 }
-async function call(action, extra = {}, conn = connParams()) { return fused.runPython("./s3.py", { action, ...conn, ...extra }); }
+async function call(action, extra = {}, conn = connParams(), opts) { return fused.runPython("./s3.py", { action, ...conn, ...extra }, opts); }
 async function callPreview(extra = {}) { return fused.runPython("./preview.py", { ...connParams(), ...extra }); }
 function embedUrl(localPath) {
   return window.location.origin + "/explorer/embed/" +
@@ -895,7 +895,9 @@ function clearTransfers() {
 }
 
 // ---- download (recursive, chunked, to a local folder) ----
-async function callDl(action, extra = {}) { return fused.runPython("./download.py", { action, ...connParams(), ...extra }); }
+// key:null opts out of runPython's per-file stale-cancellation: a download must
+// finish, never be aborted by another download.py call landing on the same channel.
+async function callDl(action, extra = {}) { return fused.runPython("./download.py", { action, ...connParams(), ...extra }, { key: null }); }
 async function openDownload() {
   if (!SEL.size) return;
   const files = selFiles(), folders = selFolders();
@@ -980,16 +982,11 @@ async function doRename(key) {
 }
 const MULTIPART_THRESHOLD = 8 * 1024 * 1024;   // files larger than this upload in parts
 const PART_SIZE = 8 * 1024 * 1024;
-async function callUp(action, extra = {}, conn = connParams()) { return fused.runPython("./upload.py", { action, ...conn, ...extra }); }
+// key:null opts out of runPython's per-file stale-cancellation, so concurrent
+// uploads (doUpload runs several at once) all finish instead of aborting each
+// other — an aborted call's promise never settles, which stranded them at 0 B.
+async function callUp(action, extra = {}, conn = connParams()) { return fused.runPython("./upload.py", { action, ...conn, ...extra }, { key: null }); }
 function blobToB64(blob) { return new Promise((ok, fail) => { const r = new FileReader(); r.onload = () => ok(r.result.split(",")[1]); r.onerror = () => fail(r.error || new Error("Could not read file")); r.readAsDataURL(blob); }); }
-// A runPython call that never resolves would strand a transfer at 0 B with no way
-// to recover; bound it so a lost response becomes a retryable error instead.
-const UPLOAD_CALL_TIMEOUT = 180000;
-function withTimeout(promise, ms, label) {
-  let t;
-  const timer = new Promise((_, fail) => { t = setTimeout(() => fail(new Error(label + " timed out — no response")), ms); });
-  return Promise.race([promise, timer]).finally(() => clearTimeout(t));
-}
 
 // Uploads run in the background (a few at a time) and never trigger a full
 // refetch: each finished file is inserted straight into the cached listing.
@@ -1020,7 +1017,7 @@ async function uploadOne(file, bkt, pfx, conn, tid) {
   setRetry(tid, () => uploadOne(file, bkt, pfx, conn, tid));
   try {
     if (file.size <= MULTIPART_THRESHOLD) {
-      const res = await withTimeout(call("upload", { bucket: bkt, key, content_b64: await blobToB64(file), content_type: file.type || "" }, conn), UPLOAD_CALL_TIMEOUT, "Upload");
+      const res = await call("upload", { bucket: bkt, key, content_b64: await blobToB64(file), content_type: file.type || "" }, conn, { key: null });
       if (res.error) { finishTransfer(tid, "error", res.error.message); return; }
       finishTransfer(tid, "done");
       noteUploaded(bkt, key, file.size, conn.account_id);
@@ -1036,7 +1033,7 @@ async function uploadOne(file, bkt, pfx, conn, tid) {
     try {
       for (let p = 1; p <= totalParts; p++) {
         const b64 = await blobToB64(file.slice((p - 1) * partSize, p * partSize));
-        const res = await withTimeout(callUp("part", { job, part_number: String(p), content_b64: b64 }, conn), UPLOAD_CALL_TIMEOUT, "Upload part");
+        const res = await callUp("part", { job, part_number: String(p), content_b64: b64 }, conn);
         if (res.error) throw new Error(res.error.message);
         const doneBytes = Math.min(p * partSize, file.size);
         updateTransfer(tid, { done: doneBytes, detail: `${p}/${totalParts} parts` });
