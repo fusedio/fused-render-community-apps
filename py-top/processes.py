@@ -1,4 +1,4 @@
-"""runPython target for pytop.html: system stats + process list via bash, and kill.
+"""runPython target for PyTop (index.html): system stats + process list via bash, and kill.
 
 Stdlib only. Actions:
   main(action="stats")            -> {"system": {...}, "processes": [...]}

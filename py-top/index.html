@@ -3,7 +3,7 @@
 <head>
   <meta name="fused-app">
 <meta charset="utf-8" />
-<title>pytop</title>
+<title>PyTop</title>
 <style>
   :root { color-scheme: dark;
     --bg: #131417; --panel: #1b1d21; --border: #2a2d33;
@@ -113,10 +113,10 @@ function toast(msg) {
 
 async function killProc(pid, name) {
   if (!confirm(`Send SIGTERM to ${pid} (${name})?`)) return;
-  const j = await fused.runPython("./pytop.py", { action: "kill", pid: String(pid) });
+  const j = await fused.runPython("./processes.py", { action: "kill", pid: String(pid) });
   if (j.ok) toast(`Sent ${j.signal} to ${pid}`);
   else if (confirm(`TERM failed (${j.error}). Try SIGKILL -9?`)) {
-    const j2 = await fused.runPython("./pytop.py", { action: "kill", pid: String(pid), force: "1" });
+    const j2 = await fused.runPython("./processes.py", { action: "kill", pid: String(pid), force: "1" });
     toast(j2.ok ? `Sent SIGKILL to ${pid}` : `Failed: ${j2.error}`);
   }
   setTimeout(refresh, 500);
@@ -182,7 +182,7 @@ async function refresh() {
   if (busy || document.getElementById("pause").checked) return;
   busy = true;
   try {
-    data = await fused.runPython("./pytop.py", { action: "stats" });
+    data = await fused.runPython("./processes.py", { action: "stats" });
     document.getElementById("loading").style.display = "none";
     document.getElementById("tableWrap").style.display = "";
     render();
@@ -196,7 +196,7 @@ document.getElementById("filter").addEventListener("input", render);
 document.getElementById("killAll").addEventListener("click", async () => {
   if (!frPids.length) return toast("no FusedRender processes");
   if (!confirm(`Send SIGTERM to ${frPids.length} FusedRender child process(es)?\n(The FusedRender app itself is spared.)`)) return;
-  const j = await fused.runPython("./pytop.py", { action: "killmany", pid: frPids.join(",") });
+  const j = await fused.runPython("./processes.py", { action: "killmany", pid: frPids.join(",") });
   toast(`killed ${j.killed}/${j.total}`);
   setTimeout(refresh, 500);
 });
