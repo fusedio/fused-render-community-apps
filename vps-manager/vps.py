@@ -1311,18 +1311,24 @@ def _serve():
         if dst_exists:
             raise Http(409, f"{posixpath.basename(dst)} already exists")
         tmp = f"{dst}.fused-copy-{os.urandom(6).hex()}"
-        with Busy():
-            sh(c, f"cp -a -- {shlex.quote(src)} {shlex.quote(tmp)}", timeout=None)
-        with c["lock"]:
-            try:
-                sftp_of(c).rename(tmp, dst)
-                renamed = True
-            except OSError:
-                renamed = False
-        if not renamed:
+        try:
             with Busy():
-                sh(c, f"rm -rf -- {shlex.quote(tmp)}", timeout=None)
-            raise Http(409, f"{posixpath.basename(dst)} already exists")
+                sh(c, f"cp -a -- {shlex.quote(src)} {shlex.quote(tmp)}", timeout=None)
+            with c["lock"]:
+                try:
+                    sftp_of(c).rename(tmp, dst)
+                except OSError:
+                    raise Http(409, f"{posixpath.basename(dst)} already exists")
+        except Exception:
+            # cp failed partway, the rename lost the race, or the channel
+            # dropped mid-op — never leave the staged temp behind. Best-effort
+            # (rm -rf since the temp may be a tree); the original error wins.
+            try:
+                with Busy():
+                    sh(c, f"rm -rf -- {shlex.quote(tmp)}", timeout=None)
+            except Exception:
+                pass
+            raise
         return {"ok": True}
 
     def do_delete(mid, path):
