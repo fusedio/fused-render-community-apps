@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "name": "OpenMic",
+  "description": "Record a meeting from your mic or a shared tab, get a live transcript, and let the local model write the title and summary.",
+  "author": { "name": "Surya" },
+  "tags": ["meetings", "audio", "transcript", "notes", "summary"],
+  "category": "local-ai",
+  "version": "1.0.0",
+  "requires_python": true
+}

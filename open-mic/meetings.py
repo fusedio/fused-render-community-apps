@@ -2,9 +2,27 @@ def main(action: str = "list", meeting_id: str = "", title: str = "",
          audio_b64: str = "", started_at: str = "", new_root: str = "", duration: str = ""):
     import os, json, base64, shutil
 
-    config_dir = os.path.join(os.path.expanduser("~"), ".fused-render", "cache", "openmic")
+    # Everything this app writes lives under one global per-app directory,
+    # never in the app folder. Override with OPEN_MIC_CACHE_DIR.
+    config_dir = os.environ.get("OPEN_MIC_CACHE_DIR") or os.path.join(
+        os.path.expanduser("~"), ".fused-render", "cache", "open-mic")
+    config_dir = os.path.abspath(os.path.expanduser(config_dir))
     config_path = os.path.join(config_dir, "config.json")
     default_root = os.path.join(config_dir, "meetings")
+
+    # One-time migration from the pre-1.0 directory name ("openmic").
+    if not os.path.exists(config_dir):
+        legacy = os.path.join(os.path.expanduser("~"), ".fused-render", "cache", "openmic")
+        if os.path.isdir(legacy):
+            try:
+                os.makedirs(os.path.dirname(config_dir), exist_ok=True)
+                shutil.move(legacy, config_dir)
+            except Exception:
+                # Migration failed — keep reading the old location rather than
+                # orphaning existing meetings.
+                config_dir = legacy
+                config_path = os.path.join(config_dir, "config.json")
+                default_root = os.path.join(config_dir, "meetings")
 
     root = default_root
     try:
