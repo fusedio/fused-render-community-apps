@@ -1,0 +1,1697 @@
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Temperature Explorer</title>
+
+<style>
+  :root {
+    --ink: #0b0b0b;
+    --ink-2: #52514e;
+    --muted: #898781;
+    --grid: #e1e0d9;
+    --baseline: #c3c2b7;
+    --accent: #0071e3;
+    --warm: #e34948;
+    --cool: #2a78d6;
+    --mid: #f0efec;
+    --plot-surface: rgba(255, 255, 255, 0.5);
+
+    --glass: linear-gradient(180deg, rgba(255,255,255,0.80), rgba(255,255,255,0.62));
+    --glass-solid: linear-gradient(180deg, rgba(255,255,255,0.92), rgba(255,255,255,0.84));
+    --glass-blur: blur(30px) saturate(180%);
+    --glass-edge: rgba(255, 255, 255, 0.72);
+    --glass-shadow:
+      0 1px 1px rgba(15, 23, 42, 0.04),
+      0 10px 30px rgba(15, 23, 42, 0.10),
+      0 28px 60px rgba(15, 23, 42, 0.06);
+    --glass-sheen: inset 0 1px 0 rgba(255, 255, 255, 0.92);
+    --hairline: rgba(15, 23, 42, 0.09);
+    --radius: 18px;
+
+    --font: 'Roboto', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --mono: 'Roboto Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; }
+  body {
+    font-family: var(--font); color: var(--ink); background: #eef1f4;
+    -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+  }
+  #boot {
+    position: fixed; inset: 0; display: grid; place-items: center;
+    padding: 2rem; text-align: center; color: var(--ink-2); font-size: 15px; line-height: 1.6;
+  }
+  #boot code { font-family: var(--mono); background: #fff; padding: 2px 6px; border-radius: 6px; border: 1px solid var(--hairline); }
+
+  #app { position: fixed; inset: 0; }
+  #map { position: absolute; inset: 0; }
+
+  .glass {
+    background: var(--glass);
+    backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-edge);
+    border-radius: var(--radius);
+    box-shadow: var(--glass-shadow), var(--glass-sheen);
+  }
+
+  /* the HUD is a click-through layer; only real controls take pointer events,
+     so the map keeps the whole viewport as its drag surface */
+  .hud { position: absolute; inset: 0; pointer-events: none; }
+  .hud > * { pointer-events: auto; }
+
+  /* ---- top-left: the search field is the primary control; the wordmark is a
+     small caption above it rather than a panel of its own ---- */
+  .topleft { position: absolute; top: 16px; left: 16px; width: 300px; pointer-events: none; }
+  .topleft > * { pointer-events: auto; }
+  .brand {
+    display: inline-flex; align-items: center; gap: 6px; margin: 0 0 7px 2px;
+    font-size: 9.5px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.1em;
+    color: var(--ink-2); padding: 3px 9px 3px 7px; border-radius: 20px;
+    background: rgba(255,255,255,0.62); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  }
+  .brand .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--warm); flex: none; }
+  .search { position: relative; padding: 0; border-radius: 12px; }
+  .search input {
+    width: 100%; height: 38px; padding: 0 12px 0 34px; font-size: 13.5px; font-family: var(--font);
+    border: 0; border-radius: 12px; background: transparent; color: var(--ink); outline: none;
+  }
+  .search input::placeholder { color: var(--muted); }
+  .search:focus-within { box-shadow: var(--glass-shadow), var(--glass-sheen), 0 0 0 3px rgba(0,113,227,0.20); }
+  .search .icon { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: var(--muted); font-size: 15px; pointer-events: none; }
+  .results {
+    position: absolute; z-index: 30; top: calc(100% + 6px); left: 0; right: 0;
+    background: var(--glass-solid); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-edge); border-radius: 12px; box-shadow: var(--glass-shadow);
+    overflow: hidden auto; max-height: 264px;
+  }
+  .results.hidden { display: none; }
+  .results div {
+    padding: 8px 11px; font-size: 12.5px; cursor: pointer; line-height: 1.35;
+    border-bottom: 1px solid rgba(15,23,42,0.05);
+  }
+  .results div:last-child { border-bottom: 0; }
+  .results div:hover, .results div.active { background: rgba(0,113,227,0.09); }
+
+
+  /* ---- top-right: headline numbers, one compact horizontal strip ---- */
+  .tiles { position: absolute; top: 16px; right: 16px; display: flex; padding: 7px 4px; }
+  .tile { padding: 0 13px; }
+  .tile + .tile { border-left: 1px solid var(--hairline); }
+  .tile .k { font-size: 9px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); white-space: nowrap; }
+  .tile .row { display: flex; align-items: baseline; gap: 6px; margin-top: 2px; }
+  .tile .v { font-size: 18px; font-weight: 500; letter-spacing: -0.02em; line-height: 1.15; }
+  .tile .s { font-size: 10px; color: var(--ink-2); white-space: nowrap; }
+  .tile .s b { font-weight: 500; font-family: var(--mono); }
+
+  /* ---- top-right, directly under the tiles: a horizontal tool row. It stays in
+     the top band on purpose — anchored down the right edge it collided with the
+     top of the dock on shorter viewports. ---- */
+  .tools { position: absolute; top: 71px; right: 16px; display: flex; padding: 4px; gap: 2px; }
+  .tools button {
+    width: 32px; height: 32px; border: 0; border-radius: 10px; background: transparent; cursor: pointer;
+    color: var(--ink-2); font-size: 15px; font-family: var(--font); display: grid; place-items: center;
+    transition: background .14s, color .14s;
+  }
+  .tools button:hover { background: rgba(15,23,42,0.06); color: var(--ink); }
+  .tools button.on { background: var(--accent); color: #fff; }
+  .tools .sep { width: 1px; background: var(--hairline); margin: 4px 2px; }
+  .tools svg, .ghost svg {
+    width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.5;
+    stroke-linecap: round; stroke-linejoin: round; transition: transform .26s cubic-bezier(.4,0,.2,1);
+  }
+  .dock.shut #shutBtn svg { transform: rotate(180deg); }
+
+  /* the marquee is drawn over the map for box-zoom, and inside the svg for the
+     plot — same gesture, two surfaces */
+  #mapMarquee {
+    position: absolute; display: none; pointer-events: none; z-index: 5;
+    border: 1.5px solid var(--accent); border-radius: 4px;
+    background: rgba(0, 113, 227, 0.12); box-shadow: 0 0 0 1px rgba(255,255,255,0.7);
+  }
+  #map.arming .maplibregl-canvas-container { cursor: crosshair; }
+
+  /* the pin marks a sampled grid point, not a place — so it reads as a target
+     dot rather than a teardrop: warm core, white ring, one slow outward pulse */
+  .pin { position: relative; width: 20px; height: 20px; cursor: grab; }
+  .pin:active { cursor: grabbing; }
+  .pin span { position: absolute; left: 50%; top: 50%; border-radius: 50%; transform: translate(-50%, -50%); }
+  .pin .pulse {
+    width: 20px; height: 20px; border: 1.5px solid var(--warm);
+    animation: pin-pulse 2.6s cubic-bezier(.2,.6,.3,1) infinite;
+  }
+  .pin .ring {
+    width: 15px; height: 15px; background: #fff;
+    box-shadow: 0 1px 3px rgba(15,23,42,.34), 0 0 0 0.5px rgba(15,23,42,.14);
+  }
+  .pin .core { width: 8px; height: 8px; background: var(--warm); }
+  @keyframes pin-pulse {
+    0% { width: 12px; height: 12px; opacity: .55; }
+    70% { width: 42px; height: 42px; opacity: 0; }
+    100% { width: 42px; height: 42px; opacity: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) { .pin .pulse { animation: none; opacity: .3; } }
+
+  /* ---- bottom-right: the analysis dock ---- */
+  .dock {
+    position: absolute; right: 16px; bottom: 16px; left: auto;
+    width: min(880px, calc(100vw - 32px)); height: min(52vh, 468px);
+    display: flex; flex-direction: column; overflow: hidden; padding: 0;
+    transition: height .26s cubic-bezier(.4,0,.2,1), width .26s cubic-bezier(.4,0,.2,1);
+  }
+  .dock.wide { width: calc(100vw - 32px); height: min(72vh, 720px); }
+  /* expanded, the dock reaches under the map chrome — fade the chrome out
+     rather than let it sit on top of the chart */
+  .tiles, .tools { transition: opacity .22s, visibility .22s; }
+  .hud:has(.dock.wide) .tiles, .hud:has(.dock.wide) .tools,
+  .hud:has(.dock.wide) .attrib { opacity: 0; visibility: hidden; }
+  .dock.shut { height: 46px; }
+  /* display:none, not opacity — at narrow widths the dock is height:auto and an
+     invisible body would still reserve its full height */
+  .dock.shut .dock-body { display: none; }
+
+  .dock-bar {
+    flex: 0 0 46px; display: flex; align-items: center; gap: 8px; padding: 0 8px 0 10px;
+    border-bottom: 1px solid var(--hairline);
+  }
+  .dock.shut .dock-bar { border-bottom-color: transparent; }
+  .dock-body { flex: 1; min-height: 0; display: flex; flex-direction: column; transition: opacity .18s; }
+
+  .views { display: flex; gap: 2px; background: rgba(15,23,42,0.05); border-radius: 10px; padding: 3px; }
+  .views button {
+    border: 0; background: transparent; padding: 6px 11px; border-radius: 8px; cursor: pointer;
+    font-family: var(--font); font-size: 12.5px; font-weight: 500; color: var(--ink-2);
+    white-space: nowrap; transition: background .15s, color .15s, box-shadow .15s;
+  }
+  .views button:hover { color: var(--ink); }
+  .views button.on {
+    background: #fff; color: var(--ink);
+    box-shadow: 0 1px 2px rgba(15,23,42,0.16), 0 0 0 0.5px rgba(15,23,42,0.04);
+  }
+  .spacer { flex: 1 1 auto; min-width: 4px; }
+  /* the years block, not the spacer, absorbs the bar's free width — otherwise
+     both grow and the track never gets bigger than a couple of hundred pixels */
+  .dock-bar .spacer { flex: 0 0 4px; }
+  .ghost {
+    border: 0; background: transparent; cursor: pointer; width: 30px; height: 30px; border-radius: 9px;
+    color: var(--ink-2); font-size: 14px; font-family: var(--font); display: grid; place-items: center;
+    transition: background .14s, color .14s;
+  }
+  .ghost:hover { background: rgba(15,23,42,0.06); color: var(--ink); }
+  .ghost.ok, .ghost.ok:hover { color: #0a6b0a; background: rgba(12,163,12,0.14); }
+  .chip {
+    flex: none; border: 1px solid var(--hairline); background: rgba(255,255,255,0.5); cursor: pointer;
+    border-radius: 8px; padding: 5px 10px; font-family: var(--font); font-size: 11.5px; color: var(--ink-2);
+    white-space: nowrap; transition: background .14s, color .14s, border-color .14s;
+  }
+  .chip:hover { background: #fff; color: var(--ink); }
+  .chip.on { background: rgba(0,113,227,0.10); border-color: rgba(0,113,227,0.28); color: #0a5bc0; }
+
+  .viewrow {
+    flex: 0 0 46px; display: flex; align-items: center; gap: 8px; padding: 0 12px;
+    border-bottom: 1px solid var(--hairline);
+  }
+  .loc-mini {
+    flex: 0 1 auto; min-width: 0; max-width: 200px; display: flex; align-items: center; gap: 6px;
+    font-family: var(--mono); font-size: 11.5px; color: var(--ink-2);
+  }
+  .loc-dot {
+    width: 7px; height: 7px; border-radius: 50%; background: var(--warm); flex: none;
+    box-shadow: 0 0 0 2px rgba(227,73,72,0.18);
+  }
+  .loc-co { flex: none; font-variant-numeric: tabular-nums; }
+  .loc-nm {
+    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-family: var(--font); font-size: 11.5px; color: var(--muted);
+  }
+  .seg { display: flex; gap: 2px; background: rgba(15,23,42,0.05); border-radius: 9px; padding: 2.5px; flex: none; }
+  .seg button {
+    border: 0; background: transparent; padding: 5px 9px; border-radius: 7px; cursor: pointer;
+    font-family: var(--font); font-size: 11.5px; font-weight: 500; color: var(--ink-2); white-space: nowrap;
+    transition: background .15s, color .15s, box-shadow .15s;
+  }
+  .seg button.on { background: #fff; color: var(--ink); box-shadow: 0 1px 2px rgba(15,23,42,0.16); }
+
+  /* the two ends are typeable: at 86 years on a ~300px track the handles sit a
+     few pixels apart for a short span, which is not a usable way to set a year */
+  .years { flex: 1 1 auto; min-width: 150px; display: flex; align-items: center; gap: 10px; }
+  .yrin {
+    flex: none; width: 46px; height: 26px; padding: 0 4px; text-align: center;
+    font-family: var(--mono); font-size: 12px; font-variant-numeric: tabular-nums;
+    border: 1px solid var(--hairline); border-radius: 7px; background: rgba(255,255,255,0.7);
+    color: var(--ink); outline: none; transition: border-color .15s, box-shadow .15s;
+  }
+  .yrin::-webkit-outer-spin-button, .yrin::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  .yrin:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(0,113,227,0.16); }
+  .yrin.bad { border-color: var(--warm); box-shadow: 0 0 0 3px rgba(227,73,72,0.16); }
+  .years .cap { font-family: var(--mono); font-size: 10.5px; color: var(--muted); flex: none; }
+  /* room for a handle to sit on either endpoint without being clipped */
+  #yearSlider { flex: 1 1 auto; min-width: 90px; margin: 0 9px; }
+
+  .run {
+    flex: none; height: 30px; padding: 0 15px; border: 0; border-radius: 9px; background: var(--accent);
+    color: #fff; font-family: var(--font); font-size: 12.5px; font-weight: 500; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 6px; transition: filter .15s, opacity .15s, box-shadow .2s;
+  }
+  .run:hover { filter: brightness(1.06); }
+  .run:disabled { opacity: .55; cursor: default; }
+  .run svg {
+    width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 2.2;
+    stroke-linecap: round; stroke-linejoin: round; flex: none;
+  }
+  /* fetched: the button stops being an action and becomes the state readout —
+     still clickable while the panel is shut, because opening it is the next step */
+  .run.ready {
+    background: rgba(12,163,12,0.13); color: #0a6b0a;
+    box-shadow: inset 0 0 0 1px rgba(12,163,12,0.30);
+  }
+  .run.ready:hover { filter: none; background: rgba(12,163,12,0.20); }
+  .run.ready.done, .run.ready.done:hover { cursor: default; background: rgba(12,163,12,0.13); }
+  .spin {
+    display: inline-block; width: 12px; height: 12px; border: 2px solid rgba(255,255,255,.4);
+    border-top-color: #fff; border-radius: 50%; animation: sp .7s linear infinite;
+  }
+  @keyframes sp { to { transform: rotate(360deg); } }
+
+  .legendrow {
+    flex: 0 0 30px; display: flex; align-items: center; gap: 12px; padding: 0 12px;
+    overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
+  }
+  .legendrow::-webkit-scrollbar { display: none; }
+  .lg { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--ink-2); white-space: nowrap; flex: none; }
+  .lg .box { width: 14px; height: 9px; border-radius: 2px; flex: none; }
+  .prov { margin-left: auto; font-size: 10.5px; color: var(--muted); white-space: nowrap; flex: none; padding-left: 12px; }
+
+  .yr-chip {
+    display: inline-flex; align-items: center; gap: 6px; flex: none; cursor: pointer; user-select: none;
+    font-size: 11px; font-weight: 500; color: var(--ink-2); border: 1px solid var(--hairline);
+    border-radius: 7px; padding: 3px 8px 3px 5px; background: rgba(255,255,255,0.5);
+    transition: opacity .14s, border-color .14s, background .14s;
+  }
+  .yr-chip:hover { background: #fff; }
+  .yr-chip.off { opacity: .42; }
+  .yr-chip.focus { border-width: 2px; padding: 2px 7px 2px 4px; color: var(--ink); }
+  .yr-chip .swatch { flex: none; padding: 3px 2px; margin: -3px -2px; border-radius: 3px; }
+  .yr-chip .swatch:hover { outline: 1.5px solid var(--baseline); outline-offset: 1px; }
+
+  /* the plot never has anything floating over it except the cursor tooltip:
+     readouts live in the rail beside it, zoom state lives in the bar above */
+  .plot-row { flex: 1 1 auto; min-height: 0; display: flex; }
+  .plot { flex: 1 1 auto; min-width: 0; position: relative; }
+  .plot svg { display: block; }
+  .plot .empty {
+    position: absolute; inset: 0; display: grid; place-items: center; padding: 0 3rem;
+    color: var(--muted); font-size: 13px; text-align: center; line-height: 1.6;
+  }
+  /* errors don't blanket the chart: they dock as a card at the top of the
+     plot, leaving whatever series is already drawn readable underneath */
+  .plot .notice {
+    position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+    max-width: min(92%, 560px); z-index: 5;
+    background: var(--glass-solid); backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--hairline); border-left: 3px solid var(--warm);
+    border-radius: 10px; box-shadow: var(--glass-shadow);
+    padding: 9px 13px; font-size: 12px; line-height: 1.55; color: var(--ink-2);
+  }
+  .plot .notice b { color: var(--ink); font-weight: 500; }
+  .rail {
+    flex: 0 0 150px; border-left: 1px solid var(--hairline); padding: 10px 12px 12px;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+
+  .inspect { pointer-events: none; }
+  .inspect .when { font-size: 11px; font-weight: 500; display: flex; align-items: baseline; gap: 6px; }
+  .inspect .when i { font-style: normal; font-size: 9.5px; color: var(--muted); font-weight: 400; }
+  .inspect .big { font-size: 26px; font-weight: 500; letter-spacing: -0.02em; margin-top: 4px; line-height: 1.1; }
+  .inspect .rows { margin-top: 8px; display: grid; grid-template-columns: auto auto; gap: 3px 10px; }
+  .inspect .rows span { font-size: 10px; color: var(--muted); }
+  .inspect .rows b { font-size: 10.5px; font-weight: 500; font-family: var(--mono); text-align: right; font-variant-numeric: tabular-nums; }
+
+  .tip {
+    position: absolute; display: none; pointer-events: none; z-index: 6; padding: 6px 9px;
+    background: rgba(11,11,11,0.88); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    color: #fff; border-radius: 9px; font-size: 11px; line-height: 1.45; white-space: nowrap;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.24); transform: translate(-50%, -100%);
+  }
+  .tip b { font-family: var(--mono); font-weight: 500; }
+  .tip .sub { color: rgba(255,255,255,0.6); font-size: 10px; }
+
+  .zoomtag {
+    display: none; align-items: center; gap: 6px; flex: none;
+    background: rgba(0,113,227,0.10); border: 1px solid rgba(0,113,227,0.22); border-radius: 20px;
+    padding: 3px 4px 3px 10px; font-family: var(--mono); font-size: 10.5px; color: #0a5bc0;
+  }
+  .zoomtag button {
+    border: 0; background: rgba(0,113,227,0.16); color: #0a5bc0; width: 17px; height: 17px;
+    border-radius: 50%; cursor: pointer; font-size: 11px; line-height: 1; display: grid; place-items: center; padding: 0;
+  }
+  .zoomtag button:hover { background: rgba(0,113,227,0.3); color: #fff; }
+
+  /* ---- chart chrome ---- */
+  .ax text { fill: var(--muted); font-size: 10.5px; font-family: var(--font); }
+  .ax .tick line { stroke: var(--grid); }
+  .ax path { display: none; }
+  .gridline { stroke: var(--grid); stroke-width: 1; }
+  .axis-title { fill: var(--muted); font-size: 10px; }
+  .cx-line { stroke: #9aa0a6; stroke-width: 1; }
+  .zero-line { stroke: var(--baseline); stroke-width: 1; }
+  .mean-line { fill: none; stroke: #3c4043; stroke-width: 2; stroke-linejoin: round; }
+  .end-label { font-family: var(--mono); font-size: 10.5px; font-weight: 500; }
+  .marquee { fill: rgba(0,113,227,0.12); stroke: var(--accent); stroke-width: 1; }
+  .cell-ring { fill: none; stroke: var(--ink); stroke-width: 1.5; }
+  .row-ring { fill: none; stroke: var(--ink); stroke-width: 1.2; opacity: .8; }
+  .note { font-size: 10px; fill: var(--muted); font-family: var(--font); }
+
+  /* ---- noUiSlider, restyled as glass ---- */
+  #yearSlider.noUi-target {
+    height: 4px; background: rgba(15,23,42,0.10); border: 0; border-radius: 2px; box-shadow: none;
+  }
+  #yearSlider .noUi-connect { background: var(--accent); border-radius: 2px; }
+  #yearSlider .noUi-handle {
+    width: 17px; height: 17px; top: -7px; right: -8.5px; border-radius: 50%;
+    background: #fff; border: 2px solid var(--accent); box-shadow: 0 1px 3px rgba(15,23,42,0.28); cursor: grab;
+  }
+  /* a bigger grab target than the visible handle */
+  #yearSlider .noUi-handle::before {
+    display: block; content: ""; position: absolute; inset: -8px; border-radius: 50%;
+  }
+  #yearSlider .noUi-handle:after { display: none; }
+  #yearSlider .noUi-handle:focus { outline: none; box-shadow: 0 1px 3px rgba(15,23,42,0.28), 0 0 0 4px rgba(0,113,227,0.2); }
+  .noUi-tooltip { display: none; }
+
+  /* bottom-left, the conventional corner for map credit. At desktop the dock is
+     right-aligned so this corner is free; the two states where the dock takes the
+     full width are handled below. */
+  .attrib {
+    position: absolute; left: 16px; bottom: 16px; font-size: 9.5px; color: var(--ink-2);
+    letter-spacing: 0.01em; padding: 3px 9px; border-radius: 20px;
+    background: rgba(255,255,255,0.62); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    transition: opacity .22s, visibility .22s;
+  }
+  .attrib a { color: var(--ink-2); text-decoration: underline; text-underline-offset: 2px; }
+  .attrib a:hover { color: var(--ink); }
+
+  /* ---- narrow: the dock spans the width and the tiles wrap under the header ---- */
+  /* ---- narrow: stop hand-placing the overlays and just stack them in normal
+     flow down the left. Only the dock stays pinned to the bottom. ---- */
+  @media (max-width: 900px) {
+    .hud { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 16px; }
+    /* the dock owns the whole bottom edge here, so the credit joins the stack */
+    .topleft, .tiles, .tools, .attrib { position: static; top: auto; right: auto; left: auto; bottom: auto; }
+    .attrib { align-self: flex-start; }
+    .topleft { width: 100%; }
+    .tiles { align-self: stretch; overflow-x: auto; }
+    .tile { padding: 0 10px; }
+    .tile .v { font-size: 16px; }
+    .dock, .dock.wide { width: calc(100vw - 32px); }
+    .dock-bar { flex-wrap: wrap; height: auto; flex: 0 0 auto; padding: 7px 8px 7px 12px; gap: 8px; }
+    .dock.shut { height: auto; }
+    .years { flex-basis: 100%; order: 3; }
+    .run { order: 2; }
+    .viewrow { flex-wrap: wrap; height: auto; flex: 0 0 auto; padding: 7px 12px; }
+  }
+  /* nowhere sensible left to float map tools on a very short viewport */
+  @media (max-height: 430px) { .tools { display: none; } }
+  @media (max-width: 620px) {
+    .views button { padding: 6px 8px; font-size: 11.5px; }
+    .tiles .tile:nth-child(3) { display: none; }
+    .rail { flex-basis: 116px; padding: 8px 9px 10px; }
+    .inspect .big { font-size: 21px; }
+  }
+</style>
+
+<div id="boot">Loading…</div>
+
+<div id="app">
+  <div id="map"></div>
+  <div id="mapMarquee"></div>
+
+  <div class="hud">
+    <div class="topleft">
+      <div class="brand"><span class="dot"></span>Temperature Explorer</div>
+      <div class="glass search">
+        <span class="icon">⌕</span>
+        <input id="q" type="text" placeholder="Search a place…" autocomplete="off" spellcheck="false" />
+        <div id="results" class="results hidden"></div>
+      </div>
+    </div>
+
+    <div class="glass tiles">
+      <div class="tile">
+        <div class="k" id="t1k">Focus year</div>
+        <div class="row"><span class="v" id="t1v">—</span><span class="s" id="t1s">Run to load a series</span></div>
+      </div>
+      <div class="tile">
+        <div class="k">Warmest day</div>
+        <div class="row"><span class="v" id="t2v">—</span><span class="s" id="t2s">—</span></div>
+      </div>
+      <div class="tile">
+        <div class="k">Coldest day</div>
+        <div class="row"><span class="v" id="t3v">—</span><span class="s" id="t3s">—</span></div>
+      </div>
+    </div>
+
+    <div class="glass tools">
+      <button id="zoomIn" title="Zoom in"><svg viewBox="0 0 16 16"><path d="M8 3v10M3 8h10"/></svg></button>
+      <button id="zoomOut" title="Zoom out"><svg viewBox="0 0 16 16"><path d="M3 8h10"/></svg></button>
+      <div class="sep"></div>
+      <button id="boxZoom" title="Drag a box to zoom the map"><svg viewBox="0 0 16 16"><path d="M2 5V2.5h3M14 5V2.5h-3M2 11v2.5h3M14 11v2.5h-3"/><rect x="5.5" y="5.5" width="5" height="5" rx="1" stroke-dasharray="2 1.6"/></svg></button>
+      <button id="resetView" title="Centre on the pin"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="3"/><path d="M8 1v2.5M8 12.5V15M1 8h2.5M12.5 8H15"/></svg></button>
+    </div>
+
+    <div class="attrib">Basemap © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> © <a href="https://carto.com/attributions" target="_blank" rel="noopener">CARTO</a></div>
+
+    <section class="glass dock shut" id="dock">
+      <!-- the bar stays usable on its own: location, year range and Run all live
+           here, so the panel can sit collapsed over the map and still be driven -->
+      <div class="dock-bar">
+        <div class="loc-mini" title="Sampled point">
+          <span class="loc-dot"></span>
+          <span class="loc-co" id="locCo">52.5200, 13.4050</span>
+          <span class="loc-nm" id="locNm"></span>
+        </div>
+        <div class="years">
+          <input class="yrin" id="y0in" type="number" inputmode="numeric" aria-label="First year" />
+          <div id="yearSlider"></div>
+          <input class="yrin" id="y1in" type="number" inputmode="numeric" aria-label="Last year" />
+          <span class="cap" id="yrCap"></span>
+        </div>
+        <button id="run" class="run">Run</button>
+        <div class="spacer"></div>
+        <button class="ghost" id="linkBtn" title="Copy a link to this view"><svg viewBox="0 0 16 16"><path d="M6.4 9.6l3.2-3.2"/><path d="M7.2 4.4l1.3-1.3a2.7 2.7 0 013.8 3.8l-1.3 1.3"/><path d="M8.8 11.6l-1.3 1.3a2.7 2.7 0 01-3.8-3.8l1.3-1.3"/></svg></button>
+        <button class="ghost" id="wideBtn" title="Expand the panel"><svg viewBox="0 0 16 16"><path d="M6.5 2.5H2.5V6.5M9.5 13.5h4V9.5"/><path d="M2.5 2.5l4.5 4.5M13.5 13.5L9 9"/></svg></button>
+        <button class="ghost" id="shutBtn" title="Open the panel"><svg viewBox="0 0 16 16"><path d="M4 6.5L8 10.5 12 6.5"/></svg></button>
+      </div>
+
+      <div class="dock-body">
+        <div class="viewrow">
+          <div class="views" id="views">
+            <button data-view="matrix" class="on">Heat matrix</button>
+            <button data-view="annual">Year over year</button>
+            <button data-view="normal">Normal band</button>
+            <button data-view="lines">Lines</button>
+          </div>
+          <div class="zoomtag" id="zoomtag"><span></span><button aria-label="Reset zoom">×</button></div>
+          <div class="spacer"></div>
+          <button class="chip" id="smoothBtn" title="Average each day with the three days either side">7-day smooth</button>
+          <div class="seg" id="src">
+            <button data-src="open_meteo" class="on">Open-Meteo</button>
+            <button data-src="era5_zarr">ERA5 Zarr</button>
+          </div>
+        </div>
+
+        <div class="legendrow" id="legend"></div>
+
+        <div class="plot-row">
+          <div class="plot" id="plot">
+            <div class="empty" id="emptyMsg">Loading the last 30 years…</div>
+          </div>
+          <aside class="rail" id="rail"></aside>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script>
+(async function () {
+  const boot = document.getElementById("boot");
+  const app = document.getElementById("app");
+  app.style.display = "none";
+  if (typeof fused === "undefined") {
+    boot.innerHTML = 'Open this page inside <b>fused-render</b> — e.g. <code>http://127.0.0.1:1777/view/&lt;path&gt;/examples/temperature_explorer/index.html</code>.';
+    return;
+  }
+  const HTML_PATH = new URLSearchParams(window.location.search).get("path") || "";
+  const BASE = HTML_PATH.slice(0, HTML_PATH.lastIndexOf("/") + 1);
+  const assetUrl = (rel) => fused.rawUrl(BASE + rel);
+  const loadScript = (rel) => new Promise((res, rej) => {
+    const s = document.createElement("script"); s.src = assetUrl(rel);
+    s.onload = res; s.onerror = () => rej(new Error("load " + rel)); document.head.appendChild(s);
+  });
+  const loadCss = (rel) => { const l = document.createElement("link"); l.rel = "stylesheet"; l.href = assetUrl(rel); document.head.appendChild(l); };
+
+  // the font css uses relative url(./x.woff2), which can't resolve against
+  // rawUrl's query-string form — rewrite each src to an absolute asset url
+  async function loadFonts() {
+    const css = await (await fetch(assetUrl("vendor/roboto.css"))).text();
+    const st = document.createElement("style");
+    st.textContent = css.replace(/url\(\.\/([^)]+)\)/g, (_, f) => `url(${assetUrl("vendor/" + f)})`);
+    document.head.appendChild(st);
+  }
+  loadFonts().catch(() => loadCss("vendor/roboto.css"));
+  loadCss("vendor/maplibre-gl.css");
+  loadCss("vendor/nouislider.min.css");
+  try {
+    await loadScript("vendor/d3.min.js");
+    await loadScript("vendor/maplibre-gl.js");
+    await loadScript("vendor/nouislider.min.js");
+  } catch (e) { boot.textContent = "Failed to load libraries: " + e.message; throw e; }
+
+  boot.style.display = "none";
+  app.style.display = "block";
+
+  // ---- palette -------------------------------------------------------------
+  // categorical order and diverging poles are the validated dataviz defaults;
+  // the ramp arms run dark→light into a neutral midpoint so zero reads as "nothing"
+  const SERIES = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948"];
+  const PATTERNS = [
+    { dash: null, dashSm: null, cap: "butt", marker: "circle" },
+    { dash: "7 4", dashSm: "4 2.5", cap: "butt", marker: "cross" },
+    { dash: "0.1 4.5", dashSm: "0.1 3.5", cap: "round", marker: "triangle" },
+    { dash: "8 4.5 0.1 4.5", dashSm: "5 2.5 0.1 2.5", cap: "round", marker: "square" },
+    { dash: "8 4.5 0.1 4.5", dashSm: "5 2.5 0.1 2.5", cap: "round", marker: "circle" },
+    { dash: "0.1 4.5", dashSm: "0.1 3.5", cap: "round", marker: "cross" },
+    { dash: "7 4", dashSm: "4 2.5", cap: "butt", marker: "triangle" },
+    { dash: null, dashSm: null, cap: "butt", marker: "square" },
+  ];
+  const COOL = ["#0d366b", "#184f95", "#256abf", "#2a78d6", "#5598e7", "#86b6ef", "#b7d3f6", "#dfeafa"];
+  const WARM = ["#fceceb", "#f7cecd", "#efa6a5", "#e87473", "#e34948", "#c22f2e", "#9b2322", "#741a19"];
+  const rampOf = (max) => d3.scaleDiverging(d3.interpolateRgbBasis([...COOL, "#f0efec", ...WARM])).domain([-max, 0, max]).clamp(true);
+
+  const MAX_LINES = 8;
+  const MONTH_START = [0, 31, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335]; // leap calendar, 1-indexed doy
+  const MONTH_LABEL = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const MONTH_LEN = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  const THIS_YEAR = new Date().getFullYear();
+  const MIN_YEAR = 1940;
+  const ZARR_MIN_YEAR = 1959, ZARR_MAX_YEAR = 2023; // must match fetch_temps.py
+
+  const state = {
+    lat: 52.52, lon: 13.405, placeName: null, source: "open_meteo",
+    y0: THIS_YEAR - 29, y1: THIS_YEAR,
+    view: "matrix",
+    raw: null, byYear: null, years: [],
+    baseline: null, envelope: null, annual: null, extremes: null, domains: null,
+    focusYear: null, focusDoy: null, hover: null, smooth: false, ready: false,
+    dayRange: [1, 366], yearRange: null,
+    lineYears: [], colorOf: {}, slotOf: {},
+    ramp: null, boxZoom: false,
+  };
+  // declared up here, not beside the url helpers below: setPoint() and the year
+  // slider both call syncUrl() during init, and a `let` in the later block would
+  // still be in its temporal dead zone at that point
+  let urlReady = false, urlTimer = null, pendingUrl = null;
+
+  const todayDoy = () => { const d = new Date(); return MONTH_START[d.getMonth()] + d.getDate(); };
+  const doyToMD = (doy) => { let m = 11; for (let k = 0; k < 12; k++) if (doy <= MONTH_START[k] + MONTH_LEN[k]) { m = k; break; } return { m: m + 1, d: doy - MONTH_START[m] }; };
+  const doyLabel = (doy) => { const { m, d } = doyToMD(doy); return `${MONTH_LABEL[m - 1]} ${d}`; };
+  const fmt = (v, dp = 1) => v == null ? "—" : v.toFixed(dp).replace("-", "−") + "°";
+  const signed = (v, dp = 1) => v == null ? "—" : (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v).toFixed(dp) + "°";
+
+  // ---- map ------------------------------------------------------------------
+  const cartoStyle = {
+    version: 8,
+    sources: { c: { type: "raster", tiles: ["a", "b", "c", "d"].map(s => `https://${s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}@2x.png`), tileSize: 256, attribution: '© OpenStreetMap © CARTO' } },
+    layers: [{ id: "c", type: "raster", source: "c" }],
+  };
+  const mapEl = document.getElementById("map");
+  const map = new maplibregl.Map({
+    container: mapEl, style: cartoStyle, center: [state.lon, state.lat], zoom: 4.4,
+    attributionControl: false, dragRotate: false,
+  });
+  // attribution lives in the place card, not a map corner: the dock owns the
+  // whole bottom edge when expanded and would sit on top of a corner control
+  const pinEl = document.createElement("div");
+  pinEl.className = "pin";
+  pinEl.innerHTML = `<span class="pulse"></span><span class="ring"></span><span class="core"></span>`;
+  const marker = new maplibregl.Marker({ element: pinEl, anchor: "center", draggable: true })
+    .setLngLat([state.lon, state.lat]).addTo(map);
+
+  function setPoint(lng, lat, fly, placeName) {
+    state.lat = +lat.toFixed(4); state.lon = +lng.toFixed(4);
+    state.placeName = placeName || null;
+    marker.setLngLat([state.lon, state.lat]);
+    document.getElementById("locCo").textContent = `${state.lat.toFixed(4)}, ${state.lon.toFixed(4)}`;
+    document.getElementById("locNm").textContent = state.placeName || "";
+    markDirty();
+    syncUrl();
+    if (fly) map.flyTo({ center: [state.lon, state.lat], zoom: Math.max(map.getZoom(), 7), speed: 1.4 });
+  }
+  map.on("click", (e) => { if (!state.boxZoom) setPoint(e.lngLat.lng, e.lngLat.lat, false, null); });
+  marker.on("dragend", () => { const p = marker.getLngLat(); setPoint(p.lng, p.lat, false, null); });
+  document.getElementById("zoomIn").addEventListener("click", () => map.zoomIn());
+  document.getElementById("zoomOut").addEventListener("click", () => map.zoomOut());
+  document.getElementById("resetView").addEventListener("click", () => map.flyTo({ center: [state.lon, state.lat], zoom: 6, speed: 1.5 }));
+
+  // ---- box-zoom on the map: arm the tool, drag a rectangle, fit to it -------
+  const boxBtn = document.getElementById("boxZoom");
+  const mq = document.getElementById("mapMarquee");
+  function armBox(on) {
+    state.boxZoom = on;
+    boxBtn.classList.toggle("on", on);
+    mapEl.classList.toggle("arming", on);
+    if (on) map.dragPan.disable(); else map.dragPan.enable();
+  }
+  boxBtn.addEventListener("click", () => armBox(!state.boxZoom));
+  mapEl.addEventListener("mousedown", (ev) => {
+    if (!state.boxZoom || ev.button !== 0) return;
+    ev.preventDefault(); ev.stopPropagation();
+    const box = mapEl.getBoundingClientRect();
+    const x0 = ev.clientX - box.left, y0 = ev.clientY - box.top;
+    let x1 = x0, y1 = y0;
+    mq.style.display = "block";
+    const move = (e) => {
+      x1 = e.clientX - box.left; y1 = e.clientY - box.top;
+      mq.style.left = Math.min(x0, x1) + "px"; mq.style.top = Math.min(y0, y1) + "px";
+      mq.style.width = Math.abs(x1 - x0) + "px"; mq.style.height = Math.abs(y1 - y0) + "px";
+    };
+    const up = () => {
+      window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up);
+      mq.style.display = "none";
+      if (Math.abs(x1 - x0) > 12 && Math.abs(y1 - y0) > 12) {
+        map.fitBounds([map.unproject([Math.min(x0, x1), Math.min(y0, y1)]), map.unproject([Math.max(x0, x1), Math.max(y0, y1)])], { padding: 40, duration: 600 });
+      }
+      armBox(false);
+    };
+    window.addEventListener("mousemove", move); window.addEventListener("mouseup", up);
+  });
+
+  // ---- search (Nominatim) ---------------------------------------------------
+  const q = document.getElementById("q"), results = document.getElementById("results");
+  let searchTimer = null, activeIdx = -1, curResults = [];
+  async function runSearch(text) {
+    const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=6&q=${encodeURIComponent(text)}`;
+    const r = await fetch(url, { headers: { "Accept-Language": "en" } });
+    curResults = await r.json();
+    if (!curResults.length) { results.innerHTML = '<div style="color:var(--muted);cursor:default">No matches</div>'; results.classList.remove("hidden"); return; }
+    results.innerHTML = curResults.map((m, i) => `<div data-i="${i}">${escapeHtml(m.display_name)}</div>`).join("");
+    results.classList.remove("hidden"); activeIdx = -1;
+    results.querySelectorAll("div").forEach(d => d.addEventListener("click", () => choose(+d.dataset.i)));
+  }
+  function choose(i) {
+    const m = curResults[i]; if (!m) return;
+    q.value = m.display_name.split(",")[0]; results.classList.add("hidden");
+    setPoint(+m.lon, +m.lat, true, m.display_name.split(",").slice(0, 2).join(","));
+    if (!runBusy) run(true);
+  }
+  function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+  q.addEventListener("input", () => {
+    clearTimeout(searchTimer); const t = q.value.trim();
+    if (t.length < 3) { results.classList.add("hidden"); return; }
+    searchTimer = setTimeout(() => runSearch(t).catch(() => {}), 350);
+  });
+  q.addEventListener("keydown", (e) => {
+    if (results.classList.contains("hidden")) return;
+    const items = results.querySelectorAll("div[data-i]");
+    if (e.key === "ArrowDown") { activeIdx = Math.min(activeIdx + 1, items.length - 1); e.preventDefault(); }
+    else if (e.key === "ArrowUp") { activeIdx = Math.max(activeIdx - 1, 0); e.preventDefault(); }
+    else if (e.key === "Enter") { if (activeIdx >= 0) choose(activeIdx); else if (items.length) choose(0); return; }
+    else if (e.key === "Escape") { results.classList.add("hidden"); return; }
+    items.forEach((d, i) => d.classList.toggle("active", i === activeIdx));
+  });
+  document.addEventListener("click", (e) => { if (!e.target.closest(".search")) results.classList.add("hidden"); });
+
+  // ---- controls -------------------------------------------------------------
+  const runBtn = document.getElementById("run"), yrCap = document.getElementById("yrCap");
+  const dock = document.getElementById("dock");
+  const CHECK = '<svg viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-6.5"/></svg>';
+  let runBusy = false;
+
+  // one place decides what the button says: fetching → ready-to-view → ready, and
+  // back to a plain Run the moment any fetch parameter changes
+  function setRunState() {
+    if (runBusy) {
+      runBtn.disabled = true; runBtn.className = "run";
+      runBtn.innerHTML = '<span class="spin"></span>Fetching';
+      runBtn.title = "Fetching the series";
+      return;
+    }
+    runBtn.disabled = false;
+    if (!state.ready) {
+      runBtn.className = "run";
+      runBtn.textContent = "Run";
+      runBtn.title = state.raw ? "Parameters changed — run again" : "Fetch the series";
+      return;
+    }
+    const shut = dock.classList.contains("shut");
+    runBtn.className = "run ready" + (shut ? "" : " done");
+    runBtn.innerHTML = CHECK + (shut ? "View data" : "Data ready");
+    runBtn.title = shut
+      ? "Open the panel to see the series"
+      : `${state.years.length} years fetched in ${state.raw.source.fetch_s}s`;
+  }
+  function markDirty() { state.ready = false; setRunState(); }
+
+  const yearSliderEl = document.getElementById("yearSlider");
+  noUiSlider.create(yearSliderEl, {
+    start: [state.y0, state.y1], connect: true, step: 1,
+    range: { min: MIN_YEAR, max: THIS_YEAR }, behaviour: "drag",
+  });
+  const y0in = document.getElementById("y0in"), y1in = document.getElementById("y1in");
+  for (const el of [y0in, y1in]) { el.min = MIN_YEAR; el.max = THIS_YEAR; el.step = 1; }
+
+  // mirrors fetch_temps.py's _cap(): clamp to the store's coverage FIRST,
+  // then apply the 5-year span cap on the clamped range -- so the preview
+  // text always matches what a Run will actually fetch
+  function updateYearCapLabel() {
+    const span = state.y1 - state.y0 + 1;
+    yrCap.textContent = `${span} yr${span === 1 ? "" : "s"}`;
+    if (state.source !== "era5_zarr") { yrCap.title = `${state.y0}–${state.y1}`; return; }
+    if (state.y1 < ZARR_MIN_YEAR || state.y0 > ZARR_MAX_YEAR) {
+      yrCap.title = `Outside the Zarr store's ${ZARR_MIN_YEAR}-${ZARR_MAX_YEAR} coverage — use Open-Meteo`;
+      return;
+    }
+    let cs = Math.max(state.y0, ZARR_MIN_YEAR), ce = Math.min(state.y1, ZARR_MAX_YEAR);
+    if (ce - cs + 1 > 5) cs = ce - 5 + 1;
+    yrCap.title = (cs === state.y0 && ce === state.y1) ? `${state.y0}–${state.y1}` : `Zarr reads ${cs}–${ce}`;
+  }
+
+  yearSliderEl.noUiSlider.on("update", (values) => {
+    state.y0 = Math.round(+values[0]); state.y1 = Math.round(+values[1]);
+    if (document.activeElement !== y0in) y0in.value = state.y0;
+    if (document.activeElement !== y1in) y1in.value = state.y1;
+    y0in.classList.remove("bad"); y1in.classList.remove("bad");
+    updateYearCapLabel();
+    markDirty();
+    syncUrl();
+  });
+
+  // typing a year drives the slider, which is the single source of truth
+  function commitYears(which) {
+    const el = which === 0 ? y0in : y1in;
+    const raw = parseInt(el.value, 10);
+    if (!Number.isFinite(raw) || raw < MIN_YEAR || raw > THIS_YEAR) {
+      el.classList.add("bad");
+      el.value = which === 0 ? state.y0 : state.y1;
+      setTimeout(() => el.classList.remove("bad"), 900);
+      return;
+    }
+    const next = which === 0 ? [raw, Math.max(raw, state.y1)] : [Math.min(raw, state.y0), raw];
+    yearSliderEl.noUiSlider.set(next);
+  }
+  for (const [i, el] of [y0in, y1in].entries()) {
+    el.addEventListener("change", () => commitYears(i));
+    el.addEventListener("keydown", (e) => { if (e.key === "Enter") { commitYears(i); el.blur(); } });
+    el.addEventListener("blur", () => commitYears(i));
+  }
+
+  document.querySelectorAll("#src button").forEach(b => b.addEventListener("click", () => {
+    document.querySelectorAll("#src button").forEach(x => x.classList.toggle("on", x === b));
+    state.source = b.dataset.src; updateYearCapLabel(); markDirty(); syncUrl();
+  }));
+  document.querySelectorAll("#views button").forEach(b => b.addEventListener("click", () => {
+    document.querySelectorAll("#views button").forEach(x => x.classList.toggle("on", x === b));
+    state.view = b.dataset.view;
+    dock.classList.remove("shut");
+    setRunState();
+    draw();
+  }));
+  runBtn.addEventListener("click", () => {
+    if (state.ready) { openDock(); return; }
+    run(true);
+  });
+  function openDock() {
+    if (!dock.classList.contains("shut")) return;
+    dock.classList.remove("shut");
+    setRunState();
+    draw();
+  }
+  const smoothBtn = document.getElementById("smoothBtn");
+  smoothBtn.addEventListener("click", () => {
+    state.smooth = !state.smooth;
+    smoothBtn.classList.toggle("on", state.smooth);
+    draw();
+  });
+
+  document.getElementById("shutBtn").addEventListener("click", () => {
+    const shut = dock.classList.toggle("shut");
+    document.getElementById("shutBtn").title = shut ? "Open the panel" : "Collapse the panel";
+    setRunState();
+    syncUrl();
+    if (!shut) draw();
+  });
+  document.getElementById("wideBtn").addEventListener("click", () => {
+    const wasShut = dock.classList.contains("shut");
+    dock.classList.remove("shut");
+    dock.classList.toggle("wide");
+    document.getElementById("wideBtn").title = dock.classList.contains("wide") ? "Shrink the panel" : "Expand the panel";
+    if (wasShut) { setRunState(); draw(); }
+  });
+
+  // ---- fetch ----------------------------------------------------------------
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+  async function run(userInitiated) {
+    const req = { lat: state.lat, lon: state.lon, source: state.source, start_year: state.y0, end_year: state.y1 };
+    state.ready = false; runBusy = true; setRunState();
+    showEmpty(state.source === "era5_zarr" ? "Reading ERA5 Zarr from Google Cloud…" : "Fetching from Open-Meteo…");
+    const t0 = Date.now();
+    try {
+      let res = await fused.runPython("./fetch_temps.py", req);
+      let tries = 0;
+      while (res && res.status === "warming") {
+        if (++tries > 22) throw new Error("cloud read timed out — try a shorter range");
+        showEmpty(`Warming the cloud reader — a new point takes ~30–40 s… (${Math.round((Date.now() - t0) / 1000)}s)`);
+        await sleep(4000);
+        res = await fused.runPython("./fetch_temps.py", req);
+      }
+      ingest(res);
+      // the user may have moved the point / years / source while a long Zarr
+      // warm-up polled; the series is still worth showing, but "ready" (and the
+      // button's checkmark) must reflect the CURRENT controls, not the snapshot
+      // this fetch was started from — otherwise markDirty's work is overwritten
+      state.ready = req.lat === state.lat && req.lon === state.lon &&
+        req.source === state.source && req.start_year === state.y0 && req.end_year === state.y1;
+      if (pendingUrl) { applyUrlAfterIngest(pendingUrl); pendingUrl = null; }
+      hideEmpty();
+      // a run the user asked for opens the panel; the one on first load does not,
+      // so the app still starts as a map with the numbers on top
+      if (userInitiated) dock.classList.remove("shut");
+      draw(); updateTiles();
+    } catch (e) {
+      hideEmpty();
+      showError(e.message || String(e));
+    } finally {
+      runBusy = false; setRunState();
+    }
+  }
+  function showEmpty(text) {
+    hideError();
+    let el = document.getElementById("emptyMsg");
+    if (!el) { el = document.createElement("div"); el.id = "emptyMsg"; el.className = "empty"; document.getElementById("plot").appendChild(el); }
+    el.textContent = text; el.style.display = "grid";
+  }
+  function hideEmpty() { const el = document.getElementById("emptyMsg"); if (el) el.style.display = "none"; }
+  function showError(text) {
+    let el = document.getElementById("errNote");
+    if (!el) { el = document.createElement("div"); el.id = "errNote"; el.className = "notice"; document.getElementById("plot").appendChild(el); }
+    el.innerHTML = "<b>Fetch failed.</b> "; el.appendChild(document.createTextNode(text));
+    el.style.display = "block";
+  }
+  function hideError() { const el = document.getElementById("errNote"); if (el) el.style.display = "none"; }
+
+  // ---- ingest: per-year arrays, baseline, envelope, locked domains ----------
+  function ingest(raw) {
+    state.raw = raw;
+    smoothCache.clear();
+    const by = {}, t = raw.time;
+    for (let i = 0; i < t.length; i++) {
+      const s = t[i], y = +s.slice(0, 4), mo = +s.slice(5, 7), da = +s.slice(8, 10);
+      const doy = MONTH_START[mo - 1] + da;
+      if (!by[y]) by[y] = { tmax: new Array(366).fill(null), tmin: new Array(366).fill(null), tmean: new Array(366).fill(null) };
+      by[y].tmax[doy - 1] = raw.tmax[i]; by[y].tmin[doy - 1] = raw.tmin[i]; by[y].tmean[doy - 1] = raw.tmean[i];
+    }
+    state.byYear = by;
+    state.years = Object.keys(by).map(Number).sort((a, b) => a - b);
+    const ys = state.years;
+
+    const baseline = new Array(366).fill(null);
+    const envelope = new Array(366).fill(null);
+    for (let i = 0; i < 366; i++) {
+      const means = [], lows = [], highs = [];
+      for (const y of ys) {
+        const me = by[y].tmean[i], mn = by[y].tmin[i], mx = by[y].tmax[i];
+        if (me != null) means.push(me);
+        if (mn != null) lows.push(mn);
+        if (mx != null) highs.push(mx);
+      }
+      if (means.length) {
+        means.sort(d3.ascending);
+        baseline[i] = d3.mean(means);
+        envelope[i] = {
+          lo: lows.length ? d3.min(lows) : d3.min(means), hi: highs.length ? d3.max(highs) : d3.max(means),
+          q1: d3.quantile(means, 0.25), q3: d3.quantile(means, 0.75),
+        };
+      }
+    }
+    state.baseline = baseline; state.envelope = envelope;
+
+    const overall = d3.mean(baseline.filter(v => v != null));
+    state.annual = ys.map(y => {
+      const vals = [], expectedVals = [];
+      for (let i = 0; i < 366; i++) {
+        const v = by[y].tmean[i];
+        if (v == null) continue;
+        vals.push(v);
+        if (baseline[i] != null) expectedVals.push(baseline[i]);
+      }
+      const mean = vals.length ? d3.mean(vals) : null;
+      // compare against the baseline restricted to the SAME days this year has
+      // data for, not the full-year baseline -- otherwise an in-progress year
+      // (e.g. only Jan-Jul so far) gets compared to a full annual cycle and
+      // its anomaly is systematically biased toward whichever season is missing
+      const expected = expectedVals.length ? d3.mean(expectedVals) : null;
+      return { year: y, n: vals.length, mean, anom: (mean == null || expected == null) ? null : mean - expected };
+    });
+    state.overall = overall;
+
+    let hot = null, cold = null, lo = Infinity, hi = -Infinity, maxAnnual = 0;
+    const spread = [];
+    for (const y of ys) for (let i = 0; i < 366; i++) {
+      const mn = by[y].tmin[i], mx = by[y].tmax[i], me = by[y].tmean[i];
+      if (mn != null && mn < lo) lo = mn;
+      if (mx != null && mx > hi) hi = mx;
+      if (mx != null && (!hot || mx > hot.v)) hot = { v: mx, y, doy: i + 1 };
+      if (mn != null && (!cold || mn < cold.v)) cold = { v: mn, y, doy: i + 1 };
+      if (me != null && baseline[i] != null) spread.push(Math.abs(me - baseline[i]));
+    }
+    for (const a of state.annual) if (a.anom != null) maxAnnual = Math.max(maxAnnual, Math.abs(a.anom));
+    if (lo === Infinity) { lo = -10; hi = 30; }
+    const pad = (hi - lo) * 0.05 || 2;
+    state.extremes = { hot, cold };
+    // the ramp is capped at a high quantile, not the maximum: a handful of extreme
+    // winter days would otherwise flatten every ordinary day to the midpoint
+    spread.sort(d3.ascending);
+    state.domains = {
+      temp: [lo - pad, hi + pad],
+      daily: (d3.quantile(spread, 0.98) || 5),
+      annual: (maxAnnual * 1.15) || 1,
+    };
+    state.ramp = rampOf(state.domains.daily);
+
+    state.focusYear = ys[ys.length - 1];
+    // land on the latest day the focus year actually has, not today: the archive
+    // trails real time by about a week, so today's cell is empty
+    const fy = by[state.focusYear].tmean;
+    let last = Math.min(366, todayDoy());
+    while (last > 1 && fy[last - 1] == null) last--;
+    state.focusDoy = last;
+    state.dayRange = [1, 366];
+    state.yearRange = [ys[0], ys[ys.length - 1]];
+
+    state.colorOf = {}; state.slotOf = {};
+    // open on earliest vs latest — a readable two-line comparison, not eight
+    state.lineYears = [...new Set([ys[0], ys[ys.length - 1]])];
+    state.lineYears.forEach(assignSlot);
+  }
+
+  function assignSlot(yr) {
+    const used = new Set(state.lineYears.filter(y => y !== yr).map(y => state.slotOf[y]).filter(v => v != null));
+    if (state.slotOf[yr] != null && !used.has(state.slotOf[yr])) return;
+    let idx = 0; while (used.has(idx)) idx++;
+    state.slotOf[yr] = idx % SERIES.length; state.colorOf[yr] = SERIES[state.slotOf[yr]];
+  }
+
+  // smoothing is memoised per series: a redraw touches every year, and a 7-day
+  // rolling mean over 30 of them on each mousemove would be wasteful
+  const smoothCache = new Map();
+  function smooth7(arr) {
+    const out = new Array(366).fill(null);
+    for (let i = 0; i < 366; i++) {
+      let sum = 0, n = 0;
+      for (let d = -3; d <= 3; d++) { const j = i + d; if (j >= 0 && j < 366 && arr[j] != null) { sum += arr[j]; n++; } }
+      out[i] = n ? sum / n : null;
+    }
+    return out;
+  }
+  function sm(key, arr) {
+    if (!state.smooth) return arr;
+    if (!smoothCache.has(key)) smoothCache.set(key, smooth7(arr));
+    return smoothCache.get(key);
+  }
+  const seriesOf = (year, metric) => sm(year + metric, state.byYear[year][metric]);
+  const baseSeries = () => sm("base", state.baseline);
+  const anomalyOf = (year) => {
+    const me = seriesOf(year, "tmean"), b = baseSeries();
+    return me.map((v, i) => (v == null || b[i] == null) ? null : v - b[i]);
+  };
+
+  // ---- headline numbers -----------------------------------------------------
+  function updateTiles() {
+    const a = state.annual.find(d => d.year === state.focusYear);
+    document.getElementById("t1k").textContent = `${state.focusYear} annual mean`;
+    document.getElementById("t1v").textContent = a ? fmt(a.mean) : "—";
+    const col = a && a.anom != null ? (a.anom >= 0 ? "var(--warm)" : "var(--cool)") : "var(--ink-2)";
+    document.getElementById("t1s").innerHTML = a && a.anom != null
+      ? `<b style="color:${col}">${signed(a.anom)}</b> vs ${state.years.length}-yr mean`
+      : "—";
+    const { hot, cold } = state.extremes;
+    document.getElementById("t2v").textContent = hot ? fmt(hot.v) : "—";
+    document.getElementById("t2s").innerHTML = hot ? `${doyLabel(hot.doy)}, <b>${hot.y}</b>` : "—";
+    document.getElementById("t3v").textContent = cold ? fmt(cold.v) : "—";
+    document.getElementById("t3s").innerHTML = cold ? `${doyLabel(cold.doy)}, <b>${cold.y}</b>` : "—";
+  }
+
+  // ---- legend ---------------------------------------------------------------
+  function drawLegend() {
+    const el = document.getElementById("legend");
+    if (!state.byYear) { el.innerHTML = ""; return; }
+    const s = state.raw.source;
+    const prov = `<span class="prov">${escapeHtml(s.label)} · cell ${s.grid_lat.toFixed(2)}, ${s.grid_lon.toFixed(2)} · ${state.raw.start.slice(0, 4)}–${state.raw.end.slice(0, 4)} · ${s.fetch_s}s</span>`;
+    let items = "";
+    if (state.view === "matrix") {
+      const max = state.domains.daily;
+      const stops = d3.range(0, 21).map(i => state.ramp(-max + (2 * max * i) / 20));
+      items =
+        `<span class="lg" style="gap:7px">Cooler than usual` +
+        `<svg width="132" height="9" style="border-radius:2px;overflow:hidden">` +
+        stops.map((c, i) => `<rect x="${i * 6.6}" y="0" width="6.7" height="9" fill="${c}"/>`).join("") +
+        `</svg>Warmer</span>` +
+        `<span class="lg" style="color:var(--muted)">±${max.toFixed(1)}° or more vs the same day's ${state.years.length}-year mean</span>`;
+    } else if (state.view === "annual") {
+      items =
+        `<span class="lg"><span class="box" style="background:var(--warm)"></span>Warmer year</span>` +
+        `<span class="lg"><span class="box" style="background:var(--cool)"></span>Cooler year</span>` +
+        `<span class="lg" style="color:var(--muted)">against the ${state.years[0]}–${state.years[state.years.length - 1]} mean of ${state.overall.toFixed(1)}°</span>`;
+    } else if (state.view === "normal") {
+      items =
+        `<span class="lg"><span class="box" style="background:#e9e8e2"></span>Record min–max</span>` +
+        `<span class="lg"><span class="box" style="background:#d3d2c9"></span>Typical range</span>` +
+        `<span class="lg"><svg width="14" height="9"><line x1="0" y1="5" x2="14" y2="5" stroke="#3c4043" stroke-width="2"/></svg>Average</span>` +
+        `<span class="lg"><svg width="14" height="9"><line x1="0" y1="5" x2="14" y2="5" stroke="var(--ink)" stroke-width="1.6"/></svg>${state.focusYear}</span>` +
+        `<span class="lg"><span class="box" style="background:var(--warm);opacity:.5"></span>Above</span>` +
+        `<span class="lg"><span class="box" style="background:var(--cool);opacity:.5"></span>Below normal</span>`;
+    } else {
+      items = `<span class="lg" style="color:var(--muted)">Click a year to compare · every other year sits behind in grey</span>` +
+        state.years.map(yr => {
+        const on = state.lineYears.includes(yr);
+        const col = on ? state.colorOf[yr] : "var(--baseline)";
+        const cls = `yr-chip${on ? "" : " off"}${yr === state.focusYear ? " focus" : ""}`;
+        return `<span class="${cls}" data-y="${yr}" style="border-color:${on ? col : "var(--hairline)"}">${lineSwatch(state.slotOf[yr], col)}${yr}</span>`;
+      }).join("");
+    }
+    el.innerHTML = items + prov;
+    el.querySelectorAll(".yr-chip").forEach(c => {
+      c.addEventListener("click", () => toggleLineYear(+c.dataset.y));
+      c.querySelector(".swatch").addEventListener("click", (e) => {
+        e.stopPropagation();
+        state.focusYear = +c.dataset.y; draw(); updateTiles();
+      });
+    });
+    const focused = el.querySelector(".yr-chip.focus");
+    if (focused) focused.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }
+
+  function lineSwatch(slotIdx, color) {
+    const pat = PATTERNS[slotIdx ?? 0];
+    const dash = pat.dashSm ? ` stroke-dasharray="${pat.dashSm}"` : "";
+    const cap = pat.cap === "round" ? ` stroke-linecap="round"` : "";
+    const cx = 10, cy = 5, r = 2.2;
+    let marker;
+    if (pat.marker === "circle") marker = `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${color}" stroke="#fff" stroke-width="1"/>`;
+    else if (pat.marker === "square") marker = `<rect x="${cx - r}" y="${cy - r}" width="${r * 2}" height="${r * 2}" fill="${color}" stroke="#fff" stroke-width="1"/>`;
+    else if (pat.marker === "triangle") marker = `<path d="M${cx} ${cy - r * 1.1} L${cx + r} ${cy + r * 0.7} L${cx - r} ${cy + r * 0.7} Z" fill="${color}" stroke="#fff" stroke-width="0.8"/>`;
+    else marker = `<path d="M${cx - r} ${cy} H${cx + r} M${cx} ${cy - r} V${cy + r}" fill="none" stroke="${color}" stroke-width="1.3" stroke-linecap="round"/>`;
+    return `<svg class="swatch" width="20" height="10" viewBox="0 0 20 10"><line x1="1" y1="5" x2="19" y2="5" stroke="${color}" stroke-width="2"${dash}${cap}/>${marker}</svg>`;
+  }
+
+  function toggleLineYear(yr) {
+    const i = state.lineYears.indexOf(yr);
+    if (i >= 0) { if (state.lineYears.length > 1) state.lineYears.splice(i, 1); }
+    else {
+      if (state.lineYears.length >= MAX_LINES) return;
+      state.lineYears.push(yr); assignSlot(yr);
+    }
+    draw();
+  }
+
+  // ---- the inspector: exact numbers for whatever is focused or hovered ------
+  function drawInspector() {
+    const rail = document.getElementById("rail");
+    let el = rail.querySelector(".inspect");
+    if (!el) { el = document.createElement("div"); el.className = "inspect"; rail.appendChild(el); }
+    const h = state.hover;
+    if (state.view === "annual") {
+      const yr = h && h.year != null ? h.year : state.focusYear;
+      const a = state.annual.find(d => d.year === yr);
+      const rank = [...state.annual].filter(d => d.anom != null).sort((x, y) => y.anom - x.anom).findIndex(d => d.year === yr) + 1;
+      el.innerHTML =
+        `<div class="when">${yr}<i>${h ? "hover" : "focus"}</i></div>` +
+        `<div class="big" style="color:${a && a.anom > 0 ? "var(--warm)" : "var(--cool)"}">${a ? signed(a.anom) : "—"}</div>` +
+        `<div class="rows"><span>Mean</span><b>${a ? fmt(a.mean) : "—"}</b>` +
+        `<span>Rank</span><b>${rank || "—"} of ${state.annual.length}</b>` +
+        `<span>Days</span><b>${a ? a.n : "—"}</b></div>`;
+      return;
+    }
+    const doy = h && h.doy != null ? h.doy : state.focusDoy;
+    const yr = h && h.year != null ? h.year : state.focusYear;
+    const i = doy - 1;
+    const me = state.byYear[yr] ? seriesOf(yr, "tmean")[i] : null;
+    const base = baseSeries()[i];
+    const anom = me != null && base != null ? me - base : null;
+    el.innerHTML =
+      `<div class="when">${doyLabel(doy)}, ${yr}<i>${h ? "hover" : "focus"}</i></div>` +
+      `<div class="big" style="color:${anom == null ? "var(--ink)" : anom > 0 ? "var(--warm)" : "var(--cool)"}">${signed(anom)}</div>` +
+      `<div class="rows"><span>Mean</span><b>${fmt(me)}</b>` +
+      `<span>Normal</span><b>${fmt(base)}</b>` +
+      `<span>Range</span><b>${state.byYear[yr] ? fmt(seriesOf(yr, "tmin")[i], 0) + "–" + fmt(seriesOf(yr, "tmax")[i], 0) : "—"}</b></div>`;
+  }
+
+  // ---- tooltip --------------------------------------------------------------
+  function tipEl(host) {
+    let el = host.querySelector(".tip");
+    if (!el) { el = document.createElement("div"); el.className = "tip"; host.appendChild(el); }
+    return el;
+  }
+  function showTip(host, x, y, html) {
+    const el = tipEl(host);
+    el.innerHTML = html; el.style.display = "block";
+    el.style.left = Math.max(60, Math.min(host.clientWidth - 60, x)) + "px";
+    el.style.top = Math.max(28, y - 10) + "px";
+  }
+  function hideTip(host) { const el = host.querySelector(".tip"); if (el) el.style.display = "none"; }
+
+  // ---- zoom tag -------------------------------------------------------------
+  function resetZoom() {
+    if (state.view === "annual") state.yearRange = [state.years[0], state.years[state.years.length - 1]];
+    else state.dayRange = [1, 366];
+    draw();
+  }
+  document.querySelector("#zoomtag button").addEventListener("click", resetZoom);
+  function drawZoomTag() {
+    const el = document.getElementById("zoomtag");
+    const zoomed = state.view === "annual"
+      ? (state.yearRange[0] > state.years[0] || state.yearRange[1] < state.years[state.years.length - 1])
+      : (state.dayRange[0] > 1 || state.dayRange[1] < 366);
+    el.style.display = zoomed ? "flex" : "none";
+    el.querySelector("span").textContent = state.view === "annual"
+      ? `${state.yearRange[0]}–${state.yearRange[1]}`
+      : `${doyLabel(state.dayRange[0])} – ${doyLabel(state.dayRange[1])}`;
+  }
+
+  // ---- drag-to-zoom on the plot: a marquee in x, exactly like a plot library
+  // box zoom. A drag under 8px is treated as a click instead.
+  let lastClickAt = 0;
+  function attachDragZoom(svg, x, m, iw, ih, onClick, isYear) {
+    const rect = svg.append("rect")
+      .attr("x", m.l).attr("y", m.t).attr("width", iw).attr("height", ih)
+      .attr("fill", "transparent").style("cursor", "crosshair");
+    const band = svg.append("rect").attr("class", "marquee").attr("y", m.t).attr("height", ih).attr("width", 0).style("display", "none");
+    rect.on("mousedown", (ev) => {
+      if (ev.button !== 0) return;
+      ev.preventDefault();
+      // preventDefault() above cancels the browser's default "focus nearest
+      // focusable ancestor" behavior, so the keyboard day/year stepper below
+      // would never get focus after a plot click — focus it explicitly.
+      svg.node().closest(".plot")?.focus();
+      const [px0, py0] = d3.pointer(ev, svg.node());
+      let px1 = px0;
+      const move = (e) => {
+        px1 = Math.max(m.l, Math.min(m.l + iw, d3.pointer(e, svg.node())[0]));
+        band.style("display", null).attr("x", Math.min(px0, px1)).attr("width", Math.abs(px1 - px0));
+      };
+      const up = (e) => {
+        window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up);
+        band.style("display", "none");
+        // a click redraws and replaces the svg, so the browser never sees two
+        // clicks on one node and never fires dblclick — time them here instead
+        if (Math.abs(px1 - px0) < 8) {
+          const now = Date.now();
+          if (now - lastClickAt < 320) { lastClickAt = 0; resetZoom(); return; }
+          lastClickAt = now;
+          onClick(x.invert(px0 - m.l), py0);
+          return;
+        }
+        let a = x.invert(Math.min(px0, px1) - m.l), b = x.invert(Math.max(px0, px1) - m.l);
+        if (isYear) {
+          a = Math.max(state.years[0], Math.round(a)); b = Math.min(state.years[state.years.length - 1], Math.round(b));
+          if (b - a < 1) b = a + 1;
+          state.yearRange = [a, b];
+        } else {
+          a = Math.max(1, Math.round(a)); b = Math.min(366, Math.round(b));
+          if (b - a < 4) b = Math.min(366, a + 4);
+          state.dayRange = [a, b];
+        }
+        draw();
+      };
+      window.addEventListener("mousemove", move); window.addEventListener("mouseup", up);
+    });
+    return rect;
+  }
+
+  // ---- axes -----------------------------------------------------------------
+  const MONTH_OF_START = new Map(MONTH_START.map((m, i) => [m + 1, MONTH_LABEL[i]]));
+  function monthAxis(g, x, ih) {
+    const [lo, hi] = state.dayRange;
+    const span = hi - lo;
+    let ticks = MONTH_START.map(m => m + 1).filter(t => t >= lo && t <= hi);
+    let fmtTick = (d) => MONTH_OF_START.get(d);
+    if (span < 70) { ticks = d3.range(lo, hi + 1).filter(d => doyToMD(d).d === 1 || doyToMD(d).d === 15); fmtTick = doyLabel; }
+    g.append("g").attr("class", "ax").attr("transform", `translate(0,${ih})`)
+      .call(d3.axisBottom(x).tickValues(ticks).tickFormat(fmtTick).tickSize(4));
+  }
+  function yAxis(g, y, iw, sign) {
+    g.append("g").selectAll("line").data(y.ticks(6)).join("line")
+      .attr("class", "gridline").attr("x1", 0).attr("x2", iw).attr("y1", y).attr("y2", y);
+    g.append("g").attr("class", "ax")
+      .call(d3.axisLeft(y).ticks(6).tickSize(0).tickPadding(6).tickFormat(sign ? (d => (d > 0 ? "+" : "") + d) : null));
+  }
+
+  // ---- draw dispatcher ------------------------------------------------------
+  function draw() {
+    drawLegend();
+    // annual means have nothing to smooth — hide rather than offer a dead control
+    smoothBtn.style.visibility = state.view === "annual" ? "hidden" : "visible";
+    const host = document.getElementById("plot");
+    d3.select(host).selectAll("svg").remove();
+    if (!state.byYear) return;
+    const W = Math.max(220, host.clientWidth), H = Math.max(120, host.clientHeight);
+    if (H < 60) return;
+    const svg = d3.select(host).append("svg").attr("width", W).attr("height", H)
+      .attr("viewBox", `0 0 ${W} ${H}`).attr("preserveAspectRatio", "none");
+    const view = { matrix: drawMatrix, annual: drawAnnual, normal: drawNormal, lines: drawLines }[state.view];
+    view(svg, W, H, host);
+    drawInspector();
+    drawZoomTag();
+    syncUrl();
+  }
+
+  // ---- view 1: heat matrix (day of year × year, colour = anomaly) -----------
+  function drawMatrix(svg, W, H, host) {
+    const m = { t: 8, r: 150, b: 22, l: 44 };
+    const iw = Math.max(50, W - m.l - m.r), ih = Math.max(40, H - m.t - m.b);
+    const g = svg.append("g").attr("transform", `translate(${m.l},${m.t})`);
+    const [lo, hi] = state.dayRange;
+    const x = d3.scaleLinear().domain([lo, hi + 1]).range([0, iw]);
+    const yr = d3.scaleBand().domain(state.years.slice().reverse()).range([0, ih]).paddingInner(state.years.length > 40 ? 0 : 0.08);
+    const cw = iw / (hi - lo + 1), rh = yr.bandwidth();
+
+    const gd = g.append("g").attr("clip-path", "url(#mclip)");
+    svg.append("clipPath").attr("id", "mclip").append("rect").attr("width", iw).attr("height", ih);
+
+    const cells = [];
+    for (const y of state.years) {
+      const an = anomalyOf(y);
+      for (let d = lo; d <= hi; d++) if (an[d - 1] != null) cells.push({ y, d, v: an[d - 1] });
+    }
+    gd.selectAll("rect.cell").data(cells).join("rect").attr("class", "cell")
+      .attr("x", d => x(d.d)).attr("y", d => yr(d.y))
+      .attr("width", Math.max(0.6, cw + 0.4)).attr("height", rh)
+      .attr("fill", d => state.ramp(d.v)).style("shape-rendering", "crispEdges");
+
+    g.append("g").attr("class", "ax").call(d3.axisLeft(yr).tickSize(0).tickPadding(5)
+      .tickValues(state.years.filter((_, i, a) => a.length <= 14 || i % Math.ceil(a.length / 14) === 0)));
+    monthAxis(g, x, ih);
+
+    if (yr(state.focusYear) != null) {
+      // stop the ring at the focus year's last day with data, so a part-finished
+      // year doesn't get a box drawn around the empty rest of the calendar
+      const fy = state.byYear[state.focusYear].tmean;
+      let end = hi; while (end > lo && fy[end - 1] == null) end--;
+      g.append("rect").attr("class", "row-ring").attr("x", -1).attr("y", yr(state.focusYear) - 0.5)
+        .attr("width", Math.max(2, x(end + 1) + 1)).attr("height", rh + 1).attr("rx", 2);
+      g.append("text").attr("class", "end-label").attr("x", iw + 8).attr("y", yr(state.focusYear) + rh / 2 + 3.5)
+        .attr("fill", "var(--ink)").text(state.focusYear);
+    }
+    if (state.focusDoy >= lo && state.focusDoy <= hi) {
+      g.append("line").attr("x1", x(state.focusDoy) + cw / 2).attr("x2", x(state.focusDoy) + cw / 2)
+        .attr("y1", -2).attr("y2", ih).attr("stroke", "var(--ink)").attr("stroke-width", 1).attr("stroke-dasharray", "2 3").attr("opacity", .55);
+    }
+
+    // a strip chart of the focus year's daily anomaly, right of the matrix:
+    // the same rows, but read as a magnitude instead of a colour
+    drawSpark(g, iw + 44, ih, rh, yr);
+
+    const rowAt = (py) => {
+      const rows = state.years.slice().reverse();
+      const idx = Math.floor((py - m.t) / (ih / rows.length));
+      return rows[Math.max(0, Math.min(rows.length - 1, idx))];
+    };
+    const hit = attachDragZoom(svg, x, m, iw, ih, (dv, py) => {
+      // floor, not round: the matrix x scale is half-open ([lo, hi+1], each
+      // cell spans [d, d+1)), so rounding would pin the NEXT day when the
+      // click lands on the right half of a cell. Same math as hover below.
+      state.focusDoy = Math.max(lo, Math.min(hi, Math.floor(dv)));
+      if (py != null) state.focusYear = rowAt(py);
+      draw(); updateTiles();
+    }, false);
+    hit.on("mousemove", (ev) => {
+      const [px, py] = d3.pointer(ev, svg.node());
+      const d = Math.max(lo, Math.min(hi, Math.floor(x.invert(px - m.l))));
+      const y = rowAt(py);
+      state.hover = { doy: d, year: y };
+      const i = d - 1, me = seriesOf(y, "tmean")[i], base = baseSeries()[i];
+      showTip(host, m.l + x(d) + cw / 2, m.t + yr(y),
+        `<b>${signed(me != null && base != null ? me - base : null)}</b> vs normal<div class="sub">${doyLabel(d)}, ${y} · ${fmt(me)} (normal ${fmt(base)})</div>`);
+      drawInspector();
+    }).on("mouseleave", () => { state.hover = null; hideTip(host); drawInspector(); });
+  }
+
+  function drawSpark(g, x0, ih, rh, yr) {
+    const vals = state.annual.filter(a => a.anom != null);
+    if (!vals.length) return;
+    const max = d3.max(vals, a => Math.abs(a.anom)) || 1;
+    const w = 74;
+    const sx = d3.scaleLinear().domain([-max, max]).range([0, w]);
+    const grp = g.append("g").attr("transform", `translate(${x0},0)`);
+    grp.append("line").attr("x1", sx(0)).attr("x2", sx(0)).attr("y1", 0).attr("y2", ih).attr("class", "zero-line");
+    grp.selectAll("rect").data(vals).join("rect")
+      .attr("x", a => Math.min(sx(0), sx(a.anom))).attr("y", a => yr(a.year) + rh * 0.15)
+      .attr("width", a => Math.max(0.8, Math.abs(sx(a.anom) - sx(0)))).attr("height", Math.max(1, rh * 0.7))
+      .attr("fill", a => a.anom >= 0 ? "var(--warm)" : "var(--cool)")
+      .attr("opacity", a => a.year === state.focusYear ? 1 : 0.55);
+    grp.append("text").attr("class", "note").attr("x", 0).attr("y", -1).text("year vs mean");
+  }
+
+  // ---- view 2: year over year (annual anomaly bars) -------------------------
+  function drawAnnual(svg, W, H, host) {
+    const m = { t: 16, r: 22, b: 24, l: 46 };
+    const iw = Math.max(50, W - m.l - m.r), ih = Math.max(40, H - m.t - m.b);
+    const g = svg.append("g").attr("transform", `translate(${m.l},${m.t})`);
+    const [ya, yb] = state.yearRange;
+    const shown = state.annual.filter(a => a.year >= ya && a.year <= yb && a.anom != null);
+    const x = d3.scaleLinear().domain([ya - 0.5, yb + 0.5]).range([0, iw]);
+    const max = state.domains.annual;
+    const y = d3.scaleLinear().domain([-max, max]).range([ih, 0]);
+    const bw = Math.max(1.5, (iw / (yb - ya + 1)) * 0.72);
+
+    yAxis(g, y, iw, true);
+    g.append("text").attr("class", "axis-title").attr("x", -m.l + 2).attr("y", -5).text("°C vs mean");
+    g.append("g").attr("class", "ax").attr("transform", `translate(0,${ih})`)
+      .call(d3.axisBottom(x).ticks(Math.min(12, yb - ya + 1)).tickFormat(d3.format("d")).tickSize(4));
+    g.append("line").attr("class", "zero-line").attr("x1", 0).attr("x2", iw).attr("y1", y(0)).attr("y2", y(0));
+
+    g.selectAll("rect.bar").data(shown).join("rect").attr("class", "bar")
+      .attr("x", a => x(a.year) - bw / 2).attr("y", a => Math.min(y(a.anom), y(0)))
+      .attr("width", bw).attr("height", a => Math.abs(y(a.anom) - y(0)))
+      .attr("rx", Math.min(2, bw / 2))
+      .attr("fill", a => a.anom >= 0 ? "var(--warm)" : "var(--cool)")
+      .attr("opacity", a => a.year === state.focusYear ? 1 : 0.78);
+
+    const focus = shown.find(a => a.year === state.focusYear);
+    if (focus) {
+      g.append("rect").attr("class", "cell-ring").attr("x", x(focus.year) - bw / 2 - 2)
+        .attr("y", Math.min(y(focus.anom), y(0)) - 2).attr("width", bw + 4)
+        .attr("height", Math.abs(y(focus.anom) - y(0)) + 4).attr("rx", 3);
+    }
+    const hottest = d3.greatest(shown, a => a.anom), coldest = d3.least(shown, a => a.anom);
+    for (const a of [hottest, coldest]) {
+      if (!a) continue;
+      const up = a.anom >= 0;
+      g.append("text").attr("class", "end-label").attr("x", x(a.year)).attr("text-anchor", "middle")
+        .attr("y", up ? y(a.anom) - 6 : y(a.anom) + 14)
+        .attr("fill", up ? "var(--warm)" : "var(--cool)").text(`${a.year} ${signed(a.anom)}`);
+    }
+
+    const hit = attachDragZoom(svg, x, m, iw, ih, (v) => {
+      const yy = Math.round(v);
+      if (yy >= state.years[0] && yy <= state.years[state.years.length - 1]) { state.focusYear = yy; draw(); updateTiles(); }
+    }, true);
+    hit.on("mousemove", (ev) => {
+      const px = d3.pointer(ev, svg.node())[0];
+      const yy = Math.max(ya, Math.min(yb, Math.round(x.invert(px - m.l))));
+      const a = shown.find(d => d.year === yy);
+      state.hover = { year: yy };
+      if (a) showTip(host, m.l + x(yy), m.t + Math.min(y(a.anom), y(0)),
+        `<b>${signed(a.anom)}</b> vs mean<div class="sub">${yy} · annual mean ${fmt(a.mean)}</div>`);
+      drawInspector();
+    }).on("mouseleave", () => { state.hover = null; hideTip(host); drawInspector(); });
+  }
+
+  // ---- view 3: normal band (climatology envelope + the focus year) ----------
+  function drawNormal(svg, W, H, host) {
+    const m = { t: 12, r: 56, b: 22, l: 44 };
+    const iw = Math.max(50, W - m.l - m.r), ih = Math.max(40, H - m.t - m.b);
+    const g = svg.append("g").attr("transform", `translate(${m.l},${m.t})`);
+    const [lo, hi] = state.dayRange;
+    const x = d3.scaleLinear().domain([lo, hi]).range([0, iw]);
+    const y = d3.scaleLinear().domain(state.domains.temp).range([ih, 0]);
+
+    yAxis(g, y, iw, false);
+    g.append("text").attr("class", "axis-title").attr("x", -m.l + 2).attr("y", -3).text("°C");
+    monthAxis(g, x, ih);
+
+    svg.append("clipPath").attr("id", "nclip").append("rect").attr("width", iw).attr("height", ih);
+    const gd = g.append("g").attr("clip-path", "url(#nclip)");
+
+    const data = d3.range(0, 366).map(i => ({
+      d: i + 1, env: state.envelope[i], base: baseSeries()[i],
+      v: state.byYear[state.focusYear] ? seriesOf(state.focusYear, "tmean")[i] : null,
+    })).filter(d => d.env != null);
+
+    gd.append("path").datum(data).attr("fill", "#e9e8e2")
+      .attr("d", d3.area().x(d => x(d.d)).y0(d => y(d.env.lo)).y1(d => y(d.env.hi)));
+    gd.append("path").datum(data).attr("fill", "#d3d2c9")
+      .attr("d", d3.area().x(d => x(d.d)).y0(d => y(d.env.q1)).y1(d => y(d.env.q3)));
+
+    const pts = data.filter(d => d.v != null && d.base != null);
+    gd.append("path").datum(pts).attr("fill", "var(--warm)").attr("opacity", 0.5)
+      .attr("d", d3.area().x(d => x(d.d)).y0(d => y(d.base)).y1(d => y(Math.max(d.v, d.base))));
+    gd.append("path").datum(pts).attr("fill", "var(--cool)").attr("opacity", 0.5)
+      .attr("d", d3.area().x(d => x(d.d)).y0(d => y(d.base)).y1(d => y(Math.min(d.v, d.base))));
+
+    gd.append("path").datum(data.filter(d => d.base != null)).attr("class", "mean-line")
+      .attr("d", d3.line().x(d => x(d.d)).y(d => y(d.base)));
+    gd.append("path").datum(pts).attr("fill", "none").attr("stroke", "var(--ink)").attr("stroke-width", 1.4)
+      .attr("stroke-linejoin", "round").attr("d", d3.line().x(d => x(d.d)).y(d => y(d.v)));
+
+    const last = pts.filter(d => d.d <= hi).pop();
+    if (last) {
+      g.append("text").attr("class", "end-label").attr("x", x(last.d) + 7).attr("y", y(last.v) + 3.5)
+        .attr("fill", "var(--ink)").text(state.focusYear);
+    }
+    if (state.focusDoy >= lo && state.focusDoy <= hi) {
+      g.append("line").attr("x1", x(state.focusDoy)).attr("x2", x(state.focusDoy)).attr("y1", 0).attr("y2", ih)
+        .attr("stroke", "var(--baseline)").attr("stroke-width", 1).attr("stroke-dasharray", "3 3");
+    }
+
+    calendarHover(svg, g, x, y, m, iw, ih, host, (d) => {
+      const i = d - 1, me = seriesOf(state.focusYear, "tmean")[i], base = baseSeries()[i], env = state.envelope[i];
+      return {
+        marks: me == null ? [] : [{ y: y(me), color: "var(--ink)" }, { y: y(base), color: "#3c4043" }],
+        html: `<b>${fmt(me)}</b> in ${state.focusYear}<div class="sub">${doyLabel(d)} · normal ${fmt(base)} · record ${env ? fmt(env.lo, 0) + " to " + fmt(env.hi, 0) : "—"}</div>`,
+        anchorY: me == null ? ih / 2 : y(me),
+      };
+    });
+  }
+
+  // ---- view 4: lines (a handful of years overlaid) --------------------------
+  function drawLines(svg, W, H, host) {
+    const m = { t: 12, r: 52, b: 22, l: 44 };
+    const iw = Math.max(50, W - m.l - m.r), ih = Math.max(40, H - m.t - m.b);
+    const g = svg.append("g").attr("transform", `translate(${m.l},${m.t})`);
+    const [lo, hi] = state.dayRange;
+    const x = d3.scaleLinear().domain([lo, hi]).range([0, iw]);
+    const y = d3.scaleLinear().domain(state.domains.temp).range([ih, 0]);
+
+    yAxis(g, y, iw, false);
+    g.append("text").attr("class", "axis-title").attr("x", -m.l + 2).attr("y", -3).text("°C");
+    monthAxis(g, x, ih);
+
+    svg.append("clipPath").attr("id", "lclip").append("rect").attr("width", iw).attr("height", ih);
+    const gd = g.append("g").attr("clip-path", "url(#lclip)");
+
+    const shown = state.lineYears.slice().sort(d3.ascending);
+    const line = d3.line().defined(d => d.v != null).x(d => x(d.d)).y(d => y(d.v));
+    const thin = shown.length > 4;
+    const labels = [];
+
+    // every other year is drawn as faint context first: the spread of history is
+    // the useful backdrop, and colour is spent only on the years you picked
+    for (const yrN of state.years) {
+      if (shown.includes(yrN)) continue;
+      gd.append("path").datum(seriesOf(yrN, "tmean").map((v, i) => ({ d: i + 1, v })))
+        .attr("fill", "none").attr("stroke", "#8a8a86").attr("stroke-width", 0.7)
+        .attr("opacity", 0.16).attr("d", line);
+    }
+    gd.append("path").datum(d3.range(366).map(i => ({ d: i + 1, v: baseSeries()[i] })).filter(d => d.v != null))
+      .attr("class", "mean-line").attr("opacity", 0.55).attr("d", line);
+
+    for (const yrN of shown) {
+      const pat = PATTERNS[state.slotOf[yrN] ?? 0];
+      const isFocus = yrN === state.focusYear;
+      const data = seriesOf(yrN, "tmean").map((v, i) => ({ d: i + 1, v }));
+      gd.append("path").datum(data).attr("fill", "none").attr("stroke", state.colorOf[yrN])
+        .attr("stroke-width", isFocus ? 2.4 : thin ? 1.4 : 1.6)
+        .attr("opacity", isFocus ? 1 : thin ? 0.72 : 0.9)
+        .attr("stroke-dasharray", pat.dash).attr("stroke-linecap", pat.cap)
+        .attr("stroke-linejoin", "round").attr("d", line);
+      for (let i = Math.min(365, hi - 1); i >= 0; i--) {
+        if (data[i].v != null) { labels.push({ d: data[i].d, v: data[i].v, text: String(yrN), color: state.colorOf[yrN], pat, isFocus }); break; }
+      }
+    }
+    drawEndLabels(g, x, y, ih, labels);
+
+    if (state.focusDoy >= lo && state.focusDoy <= hi) {
+      g.append("line").attr("x1", x(state.focusDoy)).attr("x2", x(state.focusDoy)).attr("y1", 0).attr("y2", ih)
+        .attr("stroke", "var(--baseline)").attr("stroke-width", 1).attr("stroke-dasharray", "3 3");
+    }
+
+    calendarHover(svg, g, x, y, m, iw, ih, host, (d) => {
+      const i = d - 1;
+      const rows = shown.map(yrN => ({ yr: yrN, v: seriesOf(yrN, "tmean")[i] })).filter(r => r.v != null);
+      const marks = rows.map(r => ({ y: y(r.v), color: state.colorOf[r.yr] }));
+      marks.push({ y: y(baseSeries()[i]), color: "#3c4043" });
+      const body = rows.sort((a, b) => b.v - a.v).map(r =>
+        `<span style="color:${r.color}">■</span> ${r.yr} <b>${fmt(r.v)}</b>`).join("<br>");
+      return { marks, html: `<div class="sub">${doyLabel(d)} · normal ${fmt(baseSeries()[i])}</div>${body}`, anchorY: 0 };
+    });
+  }
+
+  function drawEndLabels(g, x, y, ih, entries) {
+    const items = entries.map(e => ({ ...e, py: y(e.v) })).sort((a, b) => a.py - b.py);
+    const minGap = 13;
+    for (let i = 1; i < items.length; i++) if (items[i].py - items[i - 1].py < minGap) items[i].py = items[i - 1].py + minGap;
+    if (items.length) {
+      const overflow = items[items.length - 1].py - ih;
+      if (overflow > 0) for (const it of items) it.py -= overflow;
+      const minPy = Math.min(...items.map(it => it.py));
+      if (minPy < 0) for (const it of items) it.py -= minPy;
+    }
+    for (const it of items) {
+      drawMarker(g, x(it.d), it.py, it.pat.marker, 6.5, it.color, 1);
+      g.append("text").attr("class", "end-label").attr("x", x(it.d) + 9).attr("y", it.py + 3.5)
+        .attr("fill", it.color).attr("font-weight", it.isFocus ? 700 : 500).text(it.text);
+    }
+  }
+
+  function drawMarker(sel, cx, cy, type, size, color, opacity) {
+    const r = size / 2;
+    let el;
+    if (type === "circle") el = sel.append("circle").attr("cx", cx).attr("cy", cy).attr("r", r).attr("fill", color).attr("stroke", "#fff").attr("stroke-width", 1.2);
+    else if (type === "square") el = sel.append("rect").attr("x", cx - r).attr("y", cy - r).attr("width", size).attr("height", size).attr("fill", color).attr("stroke", "#fff").attr("stroke-width", 1.2);
+    else if (type === "triangle") {
+      const h = size * 0.95;
+      el = sel.append("path").attr("d", `M${cx} ${cy - h * 0.6} L${cx + h * 0.58} ${cy + h * 0.4} L${cx - h * 0.58} ${cy + h * 0.4} Z`)
+        .attr("fill", color).attr("stroke", "#fff").attr("stroke-width", 1.1);
+    } else {
+      el = sel.append("path").attr("d", `M${cx - r} ${cy} H${cx + r} M${cx} ${cy - r} V${cy + r}`)
+        .attr("fill", "none").attr("stroke", color).attr("stroke-width", Math.max(1.4, size * 0.32)).attr("stroke-linecap", "round");
+    }
+    return el.attr("opacity", opacity).style("pointer-events", "none");
+  }
+
+  // shared crosshair for the two calendar line views
+  function calendarHover(svg, g, x, y, m, iw, ih, host, probe) {
+    const cx = g.append("g").style("display", "none").style("pointer-events", "none");
+    const vline = cx.append("line").attr("class", "cx-line").attr("y1", 0).attr("y2", ih);
+    const dots = cx.append("g");
+    const hit = attachDragZoom(svg, x, m, iw, ih, (dv) => {
+      state.focusDoy = Math.max(1, Math.min(366, Math.round(dv))); draw(); updateTiles();
+    }, false);
+    hit.on("mousemove", (ev) => {
+      const px = d3.pointer(ev, svg.node())[0];
+      const d = Math.max(state.dayRange[0], Math.min(state.dayRange[1], Math.round(x.invert(px - m.l))));
+      state.hover = { doy: d };
+      const r = probe(d);
+      cx.style("display", null);
+      vline.attr("x1", x(d)).attr("x2", x(d));
+      dots.selectAll("*").remove();
+      for (const mk of r.marks) dots.append("circle").attr("cx", x(d)).attr("cy", mk.y).attr("r", 3.4)
+        .attr("fill", mk.color).attr("stroke", "#fff").attr("stroke-width", 1.4);
+      showTip(host, m.l + x(d), m.t + (r.anchorY || 0), r.html);
+      drawInspector();
+    }).on("mouseleave", () => { state.hover = null; cx.style("display", "none"); hideTip(host); drawInspector(); });
+  }
+
+  // ---- URL state ------------------------------------------------------------
+  // Everything that defines a view goes in the query string, so a reload restores
+  // it and the link can be shared. It has to be THIS page's own URL: the shell
+  // mounts the page in an iframe at /render?path=…, and the outer /view/… URL
+  // does not forward its query string into that iframe.
+  const VIEWS = ["matrix", "annual", "normal", "lines"];
+
+  function readUrlState() {
+    const p = new URLSearchParams(window.location.search);
+    const num = (k) => { const v = p.get(k); const n = v == null ? NaN : +v; return Number.isFinite(n) ? n : null; };
+    return {
+      lat: num("lat"), lon: num("lon"), place: p.get("place"),
+      y0: num("y0"), y1: num("y1"), src: p.get("src"), view: p.get("view"),
+      fy: num("fy"), fd: num("fd"), sm: p.get("sm") === "1",
+      d0: num("d0"), d1: num("d1"), a0: num("a0"), a1: num("a1"),
+      open: p.get("open") === "1",
+    };
+  }
+
+  function buildUrl() {
+    const p = new URLSearchParams();
+    if (HTML_PATH) p.set("path", HTML_PATH);
+    p.set("lat", state.lat); p.set("lon", state.lon);
+    if (state.placeName) p.set("place", state.placeName);
+    p.set("y0", state.y0); p.set("y1", state.y1);
+    if (state.source !== "open_meteo") p.set("src", state.source);
+    if (state.view !== "matrix") p.set("view", state.view);
+    if (state.focusYear != null) p.set("fy", state.focusYear);
+    if (state.focusDoy != null) p.set("fd", state.focusDoy);
+    if (state.smooth) p.set("sm", "1");
+    if (state.dayRange[0] > 1 || state.dayRange[1] < 366) {
+      p.set("d0", state.dayRange[0]); p.set("d1", state.dayRange[1]);
+    }
+    if (state.yearRange && state.years.length &&
+        (state.yearRange[0] > state.years[0] || state.yearRange[1] < state.years[state.years.length - 1])) {
+      p.set("a0", state.yearRange[0]); p.set("a1", state.yearRange[1]);
+    }
+    if (!dock.classList.contains("shut")) p.set("open", "1");
+    return window.location.pathname + "?" + p.toString();
+  }
+  function syncUrlNow() { if (urlReady) history.replaceState(null, "", buildUrl()); }
+  function syncUrl() {
+    if (!urlReady) return;
+    clearTimeout(urlTimer);
+    urlTimer = setTimeout(syncUrlNow, 160);
+  }
+
+  // location / source / years apply before the fetch; focus and zoom depend on
+  // which years actually came back, so they wait until after ingest
+  function applyUrlBeforeRun(st) {
+    if (st.lat != null && st.lon != null && Math.abs(st.lat) <= 90 && Math.abs(st.lon) <= 180) {
+      setPoint(st.lon, st.lat, false, st.place || null);
+      map.jumpTo({ center: [state.lon, state.lat], zoom: 6 });
+    }
+    if (st.y0 != null && st.y1 != null) {
+      const a = Math.max(MIN_YEAR, Math.min(THIS_YEAR, Math.round(st.y0)));
+      yearSliderEl.noUiSlider.set([a, Math.max(a, Math.min(THIS_YEAR, Math.round(st.y1)))]);
+    }
+    if (st.src === "era5_zarr" || st.src === "open_meteo") {
+      state.source = st.src;
+      document.querySelectorAll("#src button").forEach(x => x.classList.toggle("on", x.dataset.src === st.src));
+      updateYearCapLabel();
+    }
+    if (VIEWS.includes(st.view)) {
+      state.view = st.view;
+      document.querySelectorAll("#views button").forEach(x => x.classList.toggle("on", x.dataset.view === st.view));
+    }
+    if (st.sm) { state.smooth = true; smoothBtn.classList.add("on"); }
+    if (st.open) dock.classList.remove("shut");
+  }
+  function applyUrlAfterIngest(st) {
+    if (st.fy != null && state.years.includes(Math.round(st.fy))) state.focusYear = Math.round(st.fy);
+    if (st.fd != null && st.fd >= 1 && st.fd <= 366) state.focusDoy = Math.round(st.fd);
+    if (st.d0 != null && st.d1 != null && st.d1 > st.d0) {
+      state.dayRange = [Math.max(1, Math.round(st.d0)), Math.min(366, Math.round(st.d1))];
+    }
+    if (st.a0 != null && st.a1 != null && st.a1 > st.a0) {
+      state.yearRange = [Math.round(st.a0), Math.round(st.a1)];
+    }
+  }
+
+  const linkBtn = document.getElementById("linkBtn");
+  linkBtn.addEventListener("click", async () => {
+    syncUrlNow();
+    const url = window.location.href;
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      const t = document.createElement("textarea");
+      t.value = url; t.style.position = "fixed"; t.style.opacity = "0";
+      document.body.appendChild(t); t.select();
+      document.execCommand("copy"); t.remove();
+    }
+    linkBtn.classList.add("ok"); linkBtn.title = "Link copied";
+    setTimeout(() => { linkBtn.classList.remove("ok"); linkBtn.title = "Copy a link to this view"; }, 1500);
+  });
+
+  // ---- keyboard: step the focus day / year ---------------------------------
+  const plotEl = document.getElementById("plot");
+  plotEl.tabIndex = 0;
+  plotEl.addEventListener("keydown", (e) => {
+    if (!state.byYear) return;
+    const step = e.shiftKey ? 7 : 1;
+    if (state.view === "annual") {
+      const i = state.years.indexOf(state.focusYear);
+      if (e.key === "ArrowLeft") state.focusYear = state.years[Math.max(0, i - 1)];
+      else if (e.key === "ArrowRight") state.focusYear = state.years[Math.min(state.years.length - 1, i + 1)];
+      else return;
+    } else {
+      if (e.key === "ArrowLeft") state.focusDoy = Math.max(1, state.focusDoy - step);
+      else if (e.key === "ArrowRight") state.focusDoy = Math.min(366, state.focusDoy + step);
+      else if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+        const i = state.years.indexOf(state.focusYear);
+        state.focusYear = state.years[Math.max(0, Math.min(state.years.length - 1, i + (e.key === "ArrowUp" ? 1 : -1)))];
+      } else return;
+    }
+    e.preventDefault(); draw(); updateTiles();
+  });
+
+  new ResizeObserver(() => draw()).observe(plotEl);
+  window.addEventListener("resize", () => map.resize());
+  map.on("load", () => map.resize());
+
+  const urlState = readUrlState();
+  applyUrlBeforeRun(urlState);
+  pendingUrl = urlState;
+  urlReady = true;
+  syncUrlNow();
+  setRunState();
+  run(false);
+})();
+</script>
