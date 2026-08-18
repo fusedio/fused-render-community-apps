@@ -144,10 +144,13 @@ Both suites drive the demo mailbox only, so they never touch real mail:
 
 ```
 bunx playwright install chromium
-rm -f ~/.fused-mail/demo_state.json
+rm -f ~/.fused-mail/demo_state.json && rm -rf ~/.fused-mail/cache/demo
 PORT=8865 node tests/e2e-mailbox.js
-PORT=8865 node tests/e2e-ai.js      # makes real model calls; takes minutes
+PORT=8865 node tests/e2e-ai.js      # STALE — see the note at the top of the file
 ```
+
+`e2e-mailbox.js` passes 22/22. `e2e-ai.js` is stale: its AI-off assertions pass,
+then it aborts on a briefing control this version of the app doesn't have.
 
 `PLAYWRIGHT_MODULE`, `CHROMIUM_PATH`, and `APP_PATH` override module, browser
 binary, and app location if the defaults don't suit your setup.

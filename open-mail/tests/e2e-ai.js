@@ -1,5 +1,14 @@
 // AI feature suite — demo account only; needs the `claude` CLI installed.
-//   rm -f ~/.fused-mail/demo_state.json && node tests/e2e-ai.js
+//
+// STATUS: STALE — does not pass against this version of the app. The first five
+// (AI-off) assertions pass, then it aborts on `#digestbtn`, an app-bar briefing
+// toggle this app does not have; `#digest` exists only as a landing-view panel.
+// Three assertions depend on that control (the two later ones click it to get
+// back to the briefing), so fixing it means deciding how the briefing is meant
+// to be re-opened — not a mechanical edit. e2e-mailbox.js is the suite that
+// currently passes end to end (22/22).
+//   rm -f ~/.fused-mail/demo_state.json && rm -rf ~/.fused-mail/cache/demo
+//   node tests/e2e-ai.js
 //
 // Needs `bunx playwright install chromium` once. Playwright resolves its own
 // browser; PLAYWRIGHT_MODULE / CHROMIUM_PATH / APP_PATH override the defaults.

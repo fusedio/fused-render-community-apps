@@ -5,7 +5,9 @@
 //   node tests/e2e-mailbox.js               (server on :8865)
 //   PORT=9000 node tests/e2e-mailbox.js
 //
-// Reset the demo inbox first: rm -f ~/.fused-mail/demo_state.json
+// Reset the demo inbox first — BOTH the state file and the thread cache, or the
+// row-count and unread assertions fail against stale cached lists:
+//   rm -f ~/.fused-mail/demo_state.json && rm -rf ~/.fused-mail/cache/demo
 //
 // Playwright resolves its own bundled browser; override only if you must:
 //   PLAYWRIGHT_MODULE=/path/to/playwright  CHROMIUM_PATH=/path/to/chrome
@@ -96,7 +98,11 @@ async function appFrame(page) {
   ok("html body iframe", (await f.$$("iframe[data-html-idx]")).length === 1);
 
   await f.click("#composebtn");
-  await f.fill("#c-to", "test@example.com");
+  // chipify() hides #c-to and inserts a .chipfield next to it, so type into the
+  // chip entry and press Enter to commit the address (Enter/comma/Tab/blur all
+  // commit). The hidden input is what #c-send reads, kept in sync by the widget.
+  await f.fill("#c-to + .chipfield .chip-entry", "test@example.com");
+  await f.press("#c-to + .chipfield .chip-entry", "Enter");
   await f.fill("#c-subj", "Hello from fused mail");
   await f.fill("#c-body", "This is a test send from the demo account.");
   await f.click("#c-send");
