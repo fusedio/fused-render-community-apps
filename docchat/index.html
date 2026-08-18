@@ -447,16 +447,17 @@ function loadWord(stage){ return stage === "downloading" ? "Downloading" : "Load
 async function onModelPick(){
   const m = modelSel.value;
   if(m === state.model){ setModelStatus("ready"); return; }
+  if(!srv.token) await serveEnsure();       // /cached is authed; get the token before asking
   serveSeq++;                               // cancel any in-flight load so it can't overwrite this pick
   const c = await sfetchSafe("/cached?model=" + encodeURIComponent(m));
-  if(c && c.ok && !c.cached){               // needs downloading — ask first; the prompt carries the choice
+  if(!(c && c.ok && c.cached)){             // not confirmed on disk — ask first; the prompt carries the choice
     modelSel.value = state.model;           // don't leave the picker showing a model that isn't loaded
     const size = MODEL_SIZES[m] ? " (" + MODEL_SIZES[m] + ")" : "";
     setModelStatus("download", shortModel(m) + " isn't downloaded" + size, m);
     return;
   }
   setModelStatus("ready");
-  fused.params.set("model", m);             // cached (or unknown) -> switch now (terminates the old load)
+  fused.params.set("model", m);             // confirmed cached -> switch now (terminates the old load)
 }
 async function serveEnsure(){
   const seq = ++serveSeq;                     // a newer pick/call supersedes this one
@@ -525,6 +526,7 @@ function cacheFlash(text, cls){
 async function changeCache(raw){
   const next = (raw || "").trim();
   cacheFlash("Moving cache…", "busy");
+  if(!srv.token) await serveEnsure();      // /movecache is authed; get the token first
   const res = await spost("/movecache", { old: state.cachePathFull || "", new: next });
   if(!res || !res.ok){ cacheFlash((res && res.error) || "Couldn't move cache", "err"); return; }
   const n = res.moved || 0;
