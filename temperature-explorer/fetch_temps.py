@@ -141,7 +141,11 @@ def _zarr_async(lat, lon, start_year, end_year):
         err.unlink(missing_ok=True)
         lock.unlink(missing_ok=True)
         raise RuntimeError(msg)
-    if not (lock.exists() and time.time() - lock.stat().st_mtime < LOCK_STALE_S):
+    try:
+        fresh = lock.exists() and time.time() - lock.stat().st_mtime < LOCK_STALE_S
+    except FileNotFoundError:
+        fresh = False
+    if not fresh:
         lock.write_text(str(time.time()), encoding="utf-8")
         _spawn_worker(key, lat, lon, start_year, end_year, note)
     return {"status": "warming", "key": key}
@@ -203,7 +207,10 @@ def _from_era5_zarr(lat, lon, start_year, end_year, note):
 
     t0 = time.time()
     ds = xr.open_zarr(ERA5_ZARR, storage_options={"token": "anon"}, chunks=None, decode_timedelta=True)
-    point = ds["2m_temperature"].sel(latitude=lat, longitude=lon % 360, method="nearest")
+    lons = ds["longitude"].values
+    tgt = lon % 360
+    nearest_lon = float(lons[np.abs((lons - tgt + 180.0) % 360.0 - 180.0).argmin()])
+    point = ds["2m_temperature"].sel(latitude=lat, longitude=nearest_lon, method="nearest")
     point = point.sel(time=slice(f"{start_year}-01-01", f"{end_year}-12-31")).load()
 
     celsius = point - 273.15
