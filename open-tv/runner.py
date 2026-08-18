@@ -2,8 +2,8 @@
 
 The HTML calls main(action="start") which spawns a DETACHED worker process and
 returns immediately, then polls main(action="status", run_id=..., since=N).
-The worker appends one JSON line per event to $TMPDIR/opentv-viewer/runs/<run_id>/events.jsonl —
-the log is the source of truth.
+The worker appends one JSON line per event to
+<paths.RUNS_DIR>/<run_id>/events.jsonl — the log is the source of truth.
 """
 
 # The detached _worker (spawned via sys.executable = this entry's venv) imports
@@ -13,9 +13,10 @@ import json
 import os
 import subprocess
 import sys
-import tempfile
 import time
 from datetime import datetime, timezone
+
+import paths
 
 # The fused-render runner (app >= Jul 2026) exec()s the entry file without
 # __file__; its preamble puts the script's directory at sys.path[0].
@@ -23,7 +24,7 @@ _HERE = (os.path.dirname(os.path.abspath(__file__)) if "__file__" in globals()
          else os.path.abspath(sys.path[0]))
 
 DIR = _HERE
-RUNS_DIR = os.path.join(tempfile.gettempdir(), "opentv-viewer", "runs")
+RUNS_DIR = paths.RUNS_DIR
 
 
 def _now():
@@ -170,6 +171,13 @@ def _worker(run_dir: str):
     else:
         chans = channels.main(category)["channels"]
     if job_type == "thumbs":
+        # fail loudly rather than reporting every grab as a dead stream
+        try:
+            thumbnails._ffmpeg()
+        except RuntimeError as e:
+            emit("run_end", status="failed", msg={"error": str(e)})
+            log_f.close()
+            return
         # skip channels that have never responded in any health check
         recs = healthcheck._load_records()
         chans = sorted(

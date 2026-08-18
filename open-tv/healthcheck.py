@@ -1,4 +1,4 @@
-"""Concurrent health check for all channels in sports.m3u.
+"""Concurrent health check for every channel in a category playlist.
 
 Probes every stream URL concurrently and keeps a running record in
 health.parquet — ONLY for channels that have failed at least once.
@@ -17,7 +17,6 @@ import pyarrow.parquet as pq
 import channels
 import paths
 
-DIR = os.path.dirname(os.path.abspath(__file__))
 CACHE_DIR = paths.CACHE_DIR
 PARQUET_PATH = os.path.join(CACHE_DIR, "health.parquet")
 
