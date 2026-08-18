@@ -46,7 +46,7 @@ _MODEL = None
 _MODEL_LOCK = threading.Lock()
 _DB_LOCK = threading.Lock()
 _CONS = {}                 # db_path -> duckdb connection (warm)
-_BUILDS = {}              # folder -> {"state","done","total","docs","error"}
+_BUILDS = {}              # (folder, cache_dir) -> {"state","done","total","docs","error"}
 _BUILD_LOCK = threading.Lock()
 
 READY = False
@@ -164,6 +164,13 @@ def _has_hnsw(con):
 
 def _source_name(folder):
     return os.path.basename(folder.rstrip("/\\")) or folder
+
+
+def _build_key(folder, cache_dir=None):
+    """The _BUILDS tracking key, matching the actual index identity used by
+    rc.db_path_for (folder, provider, cache_dir) rather than folder alone —
+    a build under one cache_dir must not be mistaken for one under another."""
+    return (os.path.abspath(folder), rc.normalize_path(cache_dir) or rc.INDEX_DIR)
 
 
 # --------------------------------------------------------------------------- #
@@ -339,7 +346,7 @@ def index_status(folder, cache_dir=None):
     if os.path.isdir(folder):
         out["ignored"] = rc.top_level_ignored(folder)
     with _BUILD_LOCK:
-        b = _BUILDS.get(folder)
+        b = _BUILDS.get(_build_key(folder, cache_dir))
     if b and b.get("state") == "building":
         out.update(state="indexing", done=b["done"], total=b["total"])
         return out
@@ -498,25 +505,26 @@ def move_cache(old_dir, new_dir):
 def start_build(folder, rebuild=False, cache_dir=None):
     """Kick a build off in a background thread; /status polls the progress."""
     folder = rc.normalize_path(folder) or rc.DEFAULT_DOCS
+    key = _build_key(folder, cache_dir)
     with _BUILD_LOCK:
-        b = _BUILDS.get(folder)
+        b = _BUILDS.get(key)
         if b and b.get("state") == "building":
             return {"ok": True, "already": True}
-        _BUILDS[folder] = {"state": "building", "done": 0, "total": 0, "docs": 0}
+        _BUILDS[key] = {"state": "building", "done": 0, "total": 0, "docs": 0}
 
     def _run():
         def prog(done, total):
             with _BUILD_LOCK:
-                _BUILDS[folder].update(done=done, total=total)
+                _BUILDS[key].update(done=done, total=total)
         try:
             res = build_index(folder, rebuild=rebuild, progress=prog, cache_dir=cache_dir)
             with _BUILD_LOCK:
-                _BUILDS[folder] = {"state": "done" if res.get("ok") else "error",
+                _BUILDS[key] = {"state": "done" if res.get("ok") else "error",
                                    "done": res.get("chunks", 0), "total": res.get("chunks", 0),
                                    "docs": res.get("docs", 0), "error": res.get("error", "")}
         except Exception as e:
             with _BUILD_LOCK:
-                _BUILDS[folder] = {"state": "error", "done": 0, "total": 0, "error": str(e)}
+                _BUILDS[key] = {"state": "error", "done": 0, "total": 0, "error": str(e)}
 
     threading.Thread(target=_run, daemon=True).start()
     return {"ok": True, "started": True}

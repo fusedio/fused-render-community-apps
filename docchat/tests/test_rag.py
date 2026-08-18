@@ -262,6 +262,47 @@ def test_index_files_and_preview(tmp_path):
     assert ragserver.index_files(str(tmp_path / "nope"))["error"] == "not_indexed"
 
 
+class _FakeThread:
+    """Stand-in for threading.Thread that never actually runs the build, so a
+    test can inspect _BUILDS mid-"build" deterministically without waiting on
+    or mocking real embedding work."""
+    def __init__(self, target=None, daemon=None):
+        pass
+
+    def start(self):
+        pass
+
+
+def test_start_build_keys_by_folder_and_cache_dir(tmp_path, monkeypatch):
+    docs = tmp_path / "docs"; docs.mkdir()
+    (docs / "a.md").write_text("hi", encoding="utf-8")
+    a = str(tmp_path / "cacheA")
+    b = str(tmp_path / "cacheB")
+
+    monkeypatch.setattr(ragserver.threading, "Thread", _FakeThread)
+
+    key_a = ragserver._build_key(str(docs), a)
+    key_b = ragserver._build_key(str(docs), b)
+    try:
+        r1 = ragserver.start_build(str(docs), cache_dir=a)
+        assert r1["ok"] is True and r1.get("started") is True
+
+        # A build "in progress" under cache_dir A must not block one under cache_dir
+        # B for the SAME folder -- they're different index identities.
+        r2 = ragserver.start_build(str(docs), cache_dir=b)
+        assert r2["ok"] is True
+        assert r2.get("already") is not True
+
+        assert ragserver.index_status(str(docs), cache_dir=a)["state"] == "indexing"
+        assert ragserver.index_status(str(docs), cache_dir=b)["state"] == "indexing"
+    finally:
+        # The fake thread never runs _run(), so these entries would otherwise
+        # sit "building" forever in the shared, process-wide _BUILDS dict and
+        # trip move_cache's "is anything building?" guard in later tests.
+        ragserver._BUILDS.pop(key_a, None)
+        ragserver._BUILDS.pop(key_b, None)
+
+
 def test_move_cache_preserves_index(tmp_path):
     docs = tmp_path / "docs"; docs.mkdir()
     (docs / "grind.md").write_text("Dial the grinder finer to slow the shot down.", encoding="utf-8")
