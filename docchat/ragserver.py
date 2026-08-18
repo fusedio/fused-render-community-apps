@@ -422,10 +422,15 @@ def file_preview(folder, source, cache_dir=None, max_chars=200000):
     else:
         # `source` is a folder-relative path from the index; contain it so an
         # absolute or ../ source can't be joined into an arbitrary file read.
+        # Checked on the REALPATH (symlinks/junctions resolved), not just the
+        # lexical join — a symlink inside `folder` whose target resolves
+        # elsewhere would otherwise pass a purely lexical containment check.
         root = os.path.normpath(folder)
         path = os.path.normpath(os.path.join(root, source))
+        real_root = os.path.realpath(root)
+        real_path = os.path.realpath(path)
         try:
-            contained = os.path.commonpath([root, path]) == root
+            contained = os.path.commonpath([real_root, real_path]) == real_root
         except ValueError:
             contained = False              # different drive (Windows) -> outside
         if not contained:

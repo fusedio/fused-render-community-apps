@@ -215,6 +215,35 @@ def test_hnsw_restored_when_meta_still_says_ready(tmp_path):
     assert ragserver._has_hnsw(con)                        # fast path must not trust stale meta
 
 
+def _make_dir_link(link, target):
+    """Create a directory symlink/junction without needing admin/Developer Mode
+    (a Windows junction needs neither; a POSIX symlink needs no privilege at
+    all). Returns True on success, False if this machine can't make one."""
+    if os.name == "nt":
+        import subprocess
+        r = subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(target)],
+                            capture_output=True, text=True)
+        return r.returncode == 0
+    try:
+        os.symlink(str(target), str(link))
+        return True
+    except OSError:
+        return False
+
+
+def test_file_preview_rejects_symlink_escape(tmp_path):
+    outside = tmp_path / "outside"; outside.mkdir()
+    (outside / "secret.txt").write_text("SECRET outside content", encoding="utf-8")
+
+    docs = tmp_path / "docs"; docs.mkdir()
+    link = docs / "linked"
+    if not _make_dir_link(link, outside):
+        pytest.skip("could not create a directory symlink/junction on this machine")
+
+    r = ragserver.file_preview(str(docs), "linked/secret.txt")
+    assert r["ok"] is False
+
+
 def test_index_files_and_preview(tmp_path):
     (tmp_path / "a.md").write_text("Alpha document about grinders and burrs.", encoding="utf-8")
     (tmp_path / "b.md").write_text("Beta document about milk steaming and microfoam.", encoding="utf-8")
