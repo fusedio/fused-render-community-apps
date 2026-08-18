@@ -3,31 +3,27 @@
 ![Search a place, pick a year range, and slice the daily temperature history on a D3 chart](preview.png)
 
 A sleek, single-screen explorer for the historical daily temperature of any
-one point on Earth, read live from free, no-login sources. Search a place
-(or click the map) to drop a point, pick a year range and a source, press
-Run, and get a D3 chart you can slice by year, date, and week.
+one point on Earth, read live from a free, no-login source. Search a place
+(or click the map) to drop a point, pick a year range, press Run, and get a D3
+chart you can slice by year, date, and week.
 
 ## What it demonstrates
 
-Two data sources behind one normalized shape: a synchronous free REST API
-(Open-Meteo) and a cloud-native Zarr store read straight from a public GCS
-bucket with `xarray` — the latter wired as an async detached-worker + on-disk
-cache, since a cold Zarr read runs past `runPython`'s 30 s cap.
+A whole interactive climate view — map, geocode, four chart modes, URL-synced
+state — driven by a single stdlib-only `runPython` call against a free REST API,
+with no dependencies to install.
 
 ## What it does
 
 - **Pick a point** — search (OpenStreetMap Nominatim, no key) or click/drag
   the marker on the map.
-- **Two switchable sources, with visible provenance:**
-  - **Open-Meteo · ERA5** — point-optimized REST, ~0.25°/9 km, 1940→present,
-    returns in ~1–2 s. The default.
-  - **ERA5 · Zarr on GCS** — ERA5 read straight from WeatherBench2's public
-    Zarr store on Google Cloud, anonymously. Coarse (~5.6°) grid, span capped
-    to 5 years. A "Data details" card always shows which source resolved,
-    the exact grid cell, elevation, coverage dates, and fetch time.
-- **One chart, two y-encodings** — "Compare years" (every selected year on
-  the same Jan→Dec axis, plus an opt-in Average line) or "Vs. average" (each
-  year's deviation from that average).
+- **Deep history, instantly** — daily max/min/mean from
+  [Open-Meteo](https://open-meteo.com/)'s ERA5 archive (point-optimized,
+  ~0.25°/9 km, 1940→present), back in ~1–2 s. A provenance line shows the exact
+  grid cell, coverage dates, and fetch time.
+- **Four chart modes** — a heat matrix of daily anomalies, "Compare years"
+  (every selected year on the same Jan→Dec axis), a "Normal band" of each
+  year's deviation from the mean, and overlaid "Lines".
 - **The year rail** below the chart doubles as legend, year selector (up to
   8 at once), and a live min/mean/max readout for whichever day is under the
   cursor.
@@ -41,32 +37,19 @@ cache, since a cold Zarr read runs past `runPython`'s 30 s cap.
 
 ## How the Python is wired
 
-The page calls `fused.runPython("./fetch_temps.py", {lat, lon, source,
-start_year, end_year})`. Both sources return the same normalized shape
-(`{source, start, end, time[], tmax[], tmin[], tmean[]}`).
-
-- **Open-Meteo** is synchronous — one REST call, back in ~1–2 s.
-- **ERA5 Zarr** is async: the first call spawns a detached worker that reads
-  outside `runPython`'s 30 s window and writes the result to
-  `data/zarr_cache/<key>.json`; `runPython` returns `{"status": "warming"}`
-  immediately and the page polls every 4 s until the cache lands (~15–40 s the
-  first time). Repeat queries for the same point/range are served straight
-  from the cache.
+The page calls `fused.runPython("./fetch_temps.py", {lat, lon, start_year,
+end_year})`. `main()` makes one Open-Meteo REST call and returns a normalized
+shape (`{source, start, end, time[], tmax[], tmin[], tmean[]}`) in ~1–2 s.
 
 ## Dependencies
 
-The Zarr source needs `numpy`, `xarray`, `zarr`, and `gcsfs`. They're declared
-in this folder's `pyproject.toml`, so fused-render builds the environment up
-front on first render (a one-time `uv sync` you wait through) — no manual
-install step. The Open-Meteo source is stdlib-only.
+None — `fetch_temps.py` is standard-library only (`urllib`), so it runs on
+fused-render's bundled Python with no install step.
 
 ## Notes & limits
 
-- The two sources will not agree exactly: Open-Meteo is ~9 km, the Zarr grid
-  is ~625 km, so a Zarr cell can sit far from your point (the provenance line
-  shows where).
-- Zarr daily max/min/mean come from 6-hourly samples (4/day); Open-Meteo's
-  are true daily statistics.
+- Open-Meteo's archive lags real time by ~5 days, so the current year is
+  partial.
 - Nominatim search follows OSM's usage policy (debounced, ≤1 req/keystroke-pause).
 - The map tiles (CARTO) and geocoding (Nominatim) are fetched from the network
-  at runtime; the temperature data comes from Open-Meteo or Google Cloud.
+  at runtime; the temperature data comes from Open-Meteo.

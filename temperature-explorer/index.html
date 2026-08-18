@@ -493,10 +493,6 @@
           <div class="zoomtag" id="zoomtag"><span></span><button aria-label="Reset zoom">×</button></div>
           <div class="spacer"></div>
           <button class="chip" id="smoothBtn" title="Average each day with the three days either side">7-day smooth</button>
-          <div class="seg" id="src">
-            <button data-src="open_meteo" class="on">Open-Meteo</button>
-            <button data-src="era5_zarr">ERA5 Zarr</button>
-          </div>
         </div>
 
         <div class="legendrow" id="legend"></div>
@@ -574,10 +570,9 @@
   const MONTH_LEN = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
   const THIS_YEAR = new Date().getFullYear();
   const MIN_YEAR = 1940;
-  const ZARR_MIN_YEAR = 1959, ZARR_MAX_YEAR = 2023; // must match fetch_temps.py
 
   const state = {
-    lat: 52.52, lon: 13.405, placeName: null, source: "open_meteo",
+    lat: 52.52, lon: 13.405, placeName: null,
     y0: THIS_YEAR - 29, y1: THIS_YEAR,
     view: "matrix",
     raw: null, byYear: null, years: [],
@@ -740,20 +735,10 @@
   const y0in = document.getElementById("y0in"), y1in = document.getElementById("y1in");
   for (const el of [y0in, y1in]) { el.min = MIN_YEAR; el.max = THIS_YEAR; el.step = 1; }
 
-  // mirrors fetch_temps.py's _cap(): clamp to the store's coverage FIRST,
-  // then apply the 5-year span cap on the clamped range -- so the preview
-  // text always matches what a Run will actually fetch
   function updateYearCapLabel() {
     const span = state.y1 - state.y0 + 1;
     yrCap.textContent = `${span} yr${span === 1 ? "" : "s"}`;
-    if (state.source !== "era5_zarr") { yrCap.title = `${state.y0}–${state.y1}`; return; }
-    if (state.y1 < ZARR_MIN_YEAR || state.y0 > ZARR_MAX_YEAR) {
-      yrCap.title = `Outside the Zarr store's ${ZARR_MIN_YEAR}-${ZARR_MAX_YEAR} coverage — use Open-Meteo`;
-      return;
-    }
-    let cs = Math.max(state.y0, ZARR_MIN_YEAR), ce = Math.min(state.y1, ZARR_MAX_YEAR);
-    if (ce - cs + 1 > 5) cs = ce - 5 + 1;
-    yrCap.title = (cs === state.y0 && ce === state.y1) ? `${state.y0}–${state.y1}` : `Zarr reads ${cs}–${ce}`;
+    yrCap.title = `${state.y0}–${state.y1}`;
   }
 
   yearSliderEl.noUiSlider.on("update", (values) => {
@@ -785,10 +770,6 @@
     el.addEventListener("blur", () => commitYears(i));
   }
 
-  document.querySelectorAll("#src button").forEach(b => b.addEventListener("click", () => {
-    document.querySelectorAll("#src button").forEach(x => x.classList.toggle("on", x === b));
-    state.source = b.dataset.src; updateYearCapLabel(); markDirty(); syncUrl();
-  }));
   document.querySelectorAll("#views button").forEach(b => b.addEventListener("click", () => {
     document.querySelectorAll("#views button").forEach(x => x.classList.toggle("on", x === b));
     state.view = b.dataset.view;
@@ -829,28 +810,18 @@
   });
 
   // ---- fetch ----------------------------------------------------------------
-  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   async function run(userInitiated) {
-    const req = { lat: state.lat, lon: state.lon, source: state.source, start_year: state.y0, end_year: state.y1 };
+    const req = { lat: state.lat, lon: state.lon, start_year: state.y0, end_year: state.y1 };
     state.ready = false; runBusy = true; setRunState();
-    showEmpty(state.source === "era5_zarr" ? "Reading ERA5 Zarr from Google Cloud…" : "Fetching from Open-Meteo…");
-    const t0 = Date.now();
+    showEmpty("Fetching from Open-Meteo…");
     try {
-      let res = await fused.runPython("./fetch_temps.py", req);
-      let tries = 0;
-      while (res && res.status === "warming") {
-        if (++tries > 22) throw new Error("cloud read timed out — try a shorter range");
-        showEmpty(`Warming the cloud reader — a new point takes ~30–40 s… (${Math.round((Date.now() - t0) / 1000)}s)`);
-        await sleep(4000);
-        res = await fused.runPython("./fetch_temps.py", req);
-      }
+      const res = await fused.runPython("./fetch_temps.py", req);
       ingest(res);
-      // the user may have moved the point / years / source while a long Zarr
-      // warm-up polled; the series is still worth showing, but "ready" (and the
-      // button's checkmark) must reflect the CURRENT controls, not the snapshot
-      // this fetch was started from — otherwise markDirty's work is overwritten
+      // the user may have moved the point / years while the fetch was in flight;
+      // "ready" (and the button's checkmark) must reflect the CURRENT controls,
+      // not the snapshot this fetch started from — else markDirty's work is lost
       state.ready = req.lat === state.lat && req.lon === state.lon &&
-        req.source === state.source && req.start_year === state.y0 && req.end_year === state.y1;
+        req.start_year === state.y0 && req.end_year === state.y1;
       if (pendingUrl) { applyUrlAfterIngest(pendingUrl); pendingUrl = null; }
       hideEmpty();
       // a run the user asked for opens the panel; the one on first load does not,
@@ -1575,7 +1546,7 @@
     const num = (k) => { const v = p.get(k); const n = v == null ? NaN : +v; return Number.isFinite(n) ? n : null; };
     return {
       lat: num("lat"), lon: num("lon"), place: p.get("place"),
-      y0: num("y0"), y1: num("y1"), src: p.get("src"), view: p.get("view"),
+      y0: num("y0"), y1: num("y1"), view: p.get("view"),
       fy: num("fy"), fd: num("fd"), sm: p.get("sm") === "1",
       d0: num("d0"), d1: num("d1"), a0: num("a0"), a1: num("a1"),
       open: p.get("open") === "1",
@@ -1588,7 +1559,6 @@
     p.set("lat", state.lat); p.set("lon", state.lon);
     if (state.placeName) p.set("place", state.placeName);
     p.set("y0", state.y0); p.set("y1", state.y1);
-    if (state.source !== "open_meteo") p.set("src", state.source);
     if (state.view !== "matrix") p.set("view", state.view);
     if (state.focusYear != null) p.set("fy", state.focusYear);
     if (state.focusDoy != null) p.set("fd", state.focusDoy);
@@ -1620,11 +1590,6 @@
     if (st.y0 != null && st.y1 != null) {
       const a = Math.max(MIN_YEAR, Math.min(THIS_YEAR, Math.round(st.y0)));
       yearSliderEl.noUiSlider.set([a, Math.max(a, Math.min(THIS_YEAR, Math.round(st.y1)))]);
-    }
-    if (st.src === "era5_zarr" || st.src === "open_meteo") {
-      state.source = st.src;
-      document.querySelectorAll("#src button").forEach(x => x.classList.toggle("on", x.dataset.src === st.src));
-      updateYearCapLabel();
     }
     if (VIEWS.includes(st.view)) {
       state.view = st.view;

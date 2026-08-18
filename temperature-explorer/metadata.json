@@ -1,9 +1,9 @@
 {
   "schema": 1,
   "name": "Temperature Explorer",
-  "description": "Historical daily temperature for any point on Earth from free, no-login sources: search or click a spot, pick a year range, and slice the record on a D3 chart.",
+  "description": "Historical daily temperature for any point on Earth from Open-Meteo's free ERA5 archive: search or click a spot, pick a year range, and slice the record on a D3 chart.",
   "author": { "name": "Aman Bagrecha", "github": "amanbagrecha" },
-  "tags": ["geospatial", "maps", "climate", "zarr", "d3"],
+  "tags": ["geospatial", "maps", "climate", "weather", "d3"],
   "category": "geospatial",
   "version": "1.0.0",
   "requires_python": true
