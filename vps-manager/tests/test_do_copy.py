@@ -345,7 +345,32 @@ def s11():
     check("S11 temp cleaned up", temps(d) == [], f"orphan {temps(d)}")
 
 
-for fn in (s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11):
+# --- S12: a non-conflict rename failure (dst free) must NOT become a 409 -----
+def s12():
+    d = fresh()
+    src, dst = f"{d}/a.txt", f"{d}/b.txt"
+    open(src, "w").write("data")
+
+    class DeniedSFTP(FakeSFTP):
+        # rename fails though dst does not exist (e.g. permission denied / quota
+        # / dropped channel). Must surface as the real error, not "already
+        # exists".
+        def rename(self, a, b):
+            raise OSError(13, "Permission denied")
+
+    conn = {"lock": threading.Lock(), "sftp": DeniedSFTP()}
+    wire(conn)
+    try:
+        do_copy("m", src, dst)
+        check("S12 non-conflict error surfaced", False, "no exception")
+    except Http as e:
+        check("S12 non-conflict error surfaced", False, f"mislabeled as Http {e.code}")
+    except OSError as e:
+        check("S12 non-conflict error surfaced", "Permission denied" in str(e), str(e))
+    check("S12 temp cleaned up", temps(d) == [], f"orphan {temps(d)}")
+
+
+for fn in (s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, s12):
     fn()
 
 print("=" * 60)

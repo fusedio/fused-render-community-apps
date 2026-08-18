@@ -1278,9 +1278,17 @@ def _serve():
             try:
                 sftp_of(c).rename(src, dst)
                 return
-            except OSError:
+            except OSError as e:
                 if not shell_fallback:
-                    raise Http(409, f"{posixpath.basename(dst)} already exists")
+                    # rename can fail for reasons other than a conflict
+                    # (permissions, quota, a vanished src, a dropped channel);
+                    # only call it a 409 if dst is in fact what's in the way,
+                    # otherwise surface the real error.
+                    try:
+                        sftp_of(c).lstat(dst)
+                    except OSError:
+                        raise e from None
+                    raise Http(409, f"{posixpath.basename(dst)} already exists") from None
         # mv -n exits 0 whether it moved anything or not, so the lstat afterward
         # is what tells a real move from a skipped one: src gone means it landed.
         with Busy():
