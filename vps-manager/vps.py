@@ -54,6 +54,7 @@ rented for an afternoon can be picked up again. Idle shutdown after 30 min with
 no requests and no open terminals. The state file embeds a hash of this module,
 so editing it respawns a fresh daemon on the next ensure().
 """
+import contextlib
 import glob
 import hashlib
 import json
@@ -1263,27 +1264,25 @@ def _serve():
                 return
         raise Http(409, f"{posixpath.basename(dst)} already exists")
 
-    def _claim(c, src, dst, sftp_first):
+    def _claim(c, src, dst, shell_fallback):
         # Move src onto dst without ever overwriting it. The caller has already
         # rejected a dst that existed at check time; this closes the check→move
-        # race portably. `mv -n` never overwrites on any host, whereas SFTP
-        # rename's overwrite behavior is undefined by the protocol (OpenSSH
-        # refuses, but a POSIX-rename server would clobber) — so it is the claim
-        # to trust when correctness must not depend on the server. mv -n exits 0
-        # whether it moved anything or not, so the lstat afterward is what tells
-        # a real move from a skipped one: src gone means it landed.
-        #
-        # sftp_first is for rename, whose src and dst can straddle filesystems:
-        # SFTP's own rename is the atomic fast path and its lone OSError is the
-        # cross-device signal worth a shell fallback. A copy stages into a temp
-        # sibling of dst, so its move is always same-directory and skips it.
-        if sftp_first:
-            with c["lock"]:
-                try:
-                    sftp_of(c).rename(src, dst)
-                    return
-                except OSError:
-                    pass
+        # race. sftp.rename refuses an existing dst outright — no overwrite, no
+        # nesting into a directory — atomically, which is exactly the claim we
+        # want, and it needs no shell (BusyBox mv has no -n flag). The one
+        # thing it cannot do is move across filesystems, so rename (whose src
+        # and dst may straddle them) allows a shell fallback for that case; a
+        # copy stages a temp sibling of dst, always same-filesystem, and never
+        # does.
+        with c["lock"]:
+            try:
+                sftp_of(c).rename(src, dst)
+                return
+            except OSError:
+                if not shell_fallback:
+                    raise Http(409, f"{posixpath.basename(dst)} already exists")
+        # mv -n exits 0 whether it moved anything or not, so the lstat afterward
+        # is what tells a real move from a skipped one: src gone means it landed.
         with Busy():
             sh(c, f"mv -n -- {shlex.quote(src)} {shlex.quote(dst)}", timeout=None)
         with c["lock"]:
@@ -1293,33 +1292,36 @@ def _serve():
                 return
         raise Http(409, f"{posixpath.basename(dst)} already exists")
 
+    def _rm_quiet(c, path):
+        # Best-effort remove — never raises. Used to tidy a staged temp (which
+        # may be a tree, hence rm -rf) so a partial copy can't linger on the
+        # remote; the error that got us here is the one worth surfacing.
+        try:
+            with Busy():
+                sh(c, f"rm -rf -- {shlex.quote(path)}", timeout=None)
+        except Exception:
+            pass
+
     def do_rename(mid, src, dst):
         c = get_conn(mid)
         _reject_if_exists(c, dst)
-        _claim(c, src, dst, sftp_first=True)
+        _claim(c, src, dst, shell_fallback=True)
         return {"ok": True}
 
     def do_copy(mid, src, dst):
         c = get_conn(mid)
         # cp has no atomic "fail if dst exists" (cp -n skips silently, exit 0),
-        # so copy to a temp sibling and claim dst from there — _claim's mv -n
-        # gives copy the same portable no-overwrite guarantee as rename.
+        # so copy to a temp sibling and claim dst from there with the same SFTP
+        # rename do_rename trusts. The ExitStack drops the temp if anything
+        # before the claim raises; pop_all() cancels that once dst is claimed.
         _reject_if_exists(c, dst)
         tmp = f"{dst}.fused-copy-{os.urandom(6).hex()}"
-        try:
+        with contextlib.ExitStack() as stack:
+            stack.callback(_rm_quiet, c, tmp)
             with Busy():
                 sh(c, f"cp -a -- {shlex.quote(src)} {shlex.quote(tmp)}", timeout=None)
-            _claim(c, tmp, dst, sftp_first=False)
-        except Exception:
-            # cp failed partway, the claim lost the race, or the channel dropped
-            # mid-op — never leave the staged temp behind. Best-effort (rm -rf
-            # since the temp may be a tree); the original error wins.
-            try:
-                with Busy():
-                    sh(c, f"rm -rf -- {shlex.quote(tmp)}", timeout=None)
-            except Exception:
-                pass
-            raise
+            _claim(c, tmp, dst, shell_fallback=False)
+            stack.pop_all()
         return {"ok": True}
 
     def do_delete(mid, path):
