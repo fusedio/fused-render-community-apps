@@ -524,7 +524,12 @@ async function refreshRuntime() {
   }
   try {
     const rt = await fused.ai.models.list();
-    runner = (rt.runners || []).find((r) => r.capability === T2I) || null;
+    // One row per *runner*, not per capability, in registry order — and the MLX row
+    // is deliberately first even on machines it can never serve. So prefer the row
+    // that is running, then one that could run, and only fall back to first-match
+    // (whose `reason` is then the honest answer) when nothing here can serve T2I.
+    const rows = (rt.runners || []).filter((r) => r.capability === T2I);
+    runner = rows.find((r) => r.active) || rows.find((r) => r.available) || rows[0] || null;
     resident = (rt.loaded || []).find((m) => m.capability === T2I) || null;
   } catch (err) {
     runner = null; resident = null;
