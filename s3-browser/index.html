@@ -1,0 +1,1387 @@
+<!DOCTYPE html>
+<html data-fused-theme="shell">
+<head>
+  <meta name="fused-app">
+<meta charset="utf-8" />
+<title>S3 Browser</title>
+<style>
+  :root {
+    color-scheme: light;
+    --paper: #f4f1ea; --panel: #faf8f3; --card: #fffefb; --raised: #ffffff;
+    --ink: #2b2822; --muted: #736d62; --faint: #a49d8f;
+    --line: #e2ddd1; --line-soft: #ece8dd;
+    --accent: #3d6187; --accent-ink: #2f4d6e; --tint: #eaf0f6;
+    --danger: #9c4128; --ok: #4a7c59; --warn: #b07514;
+    --shadow: 0 1px 2px rgba(43,40,34,0.04), 0 6px 20px rgba(43,40,34,0.06);
+    --serif: Georgia, "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", serif;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", "Cascadia Mono", Consolas, monospace;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --paper: #191712; --panel: #201e19; --card: #26241e; --raised: #2b2822;
+    --ink: #e9e4d8; --muted: #a49c8c; --faint: #6f685a;
+    --line: #332f27; --line-soft: #2a2721;
+    --accent: #7ba3cf; --accent-ink: #9cbde0; --tint: #232f3e;
+    --danger: #cf7a5f; --ok: #8fb996; --warn: #d9a441;
+    --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 6px 20px rgba(0,0,0,0.35);
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; font-family: var(--sans); color: var(--ink); background: var(--paper); font-size: 13px; overflow: hidden; }
+  button, input, select { font-family: inherit; color: inherit; }
+  ::selection { background: var(--tint); }
+
+  .scroll::-webkit-scrollbar { width: 10px; height: 10px; }
+  .scroll::-webkit-scrollbar-track { background: transparent; }
+  .scroll::-webkit-scrollbar-thumb { background: var(--line); border-radius: 6px; border: 2px solid transparent; background-clip: padding-box; }
+  .scroll::-webkit-scrollbar-thumb:hover { background: var(--faint); background-clip: padding-box; }
+
+  .lbl { font-family: var(--sans); font-size: 10px; font-weight: 600; letter-spacing: 0.9px; text-transform: uppercase; color: var(--faint); }
+  .mono { font-family: var(--mono); }
+
+  /* ---- top bar ---- */
+  .top { display: flex; align-items: center; gap: 12px; height: 48px; padding: 0 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
+  .wordmark { font-family: var(--serif); font-size: 17px; font-weight: 600; letter-spacing: 0.2px; display: flex; align-items: center; gap: 9px; }
+  .wordmark .dot { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid var(--accent); }
+  .top .active { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 7px; }
+  .top .active b { color: var(--ink); font-weight: 600; }
+  .top .active .badge { font-family: var(--mono); font-size: 10px; padding: 1px 7px; border: 1px solid var(--line); border-radius: 20px; color: var(--muted); }
+  .spacer { flex: 1; }
+  .iconbtn { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 8px; border: 1px solid transparent; background: transparent; color: var(--muted); cursor: pointer; }
+  .iconbtn:hover { background: var(--card); border-color: var(--line); color: var(--ink); }
+  .iconbtn svg { width: 15px; height: 15px; }
+
+  /* ---- layout ---- */
+  .app { height: calc(100% - 48px - 26px); display: grid; grid-template-columns: 244px minmax(0,1fr); }
+  .side { border-right: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; min-height: 0; }
+  .main { display: grid; grid-template-rows: auto minmax(0,1fr) auto; grid-template-columns: minmax(0,1fr); min-width: 0; min-height: 0; }
+
+  /* ---- sidebar ---- */
+  .sidehead { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px 8px; }
+  .addbtn { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; color: var(--accent); background: none; border: none; cursor: pointer; padding: 2px 4px; border-radius: 6px; }
+  .addbtn:hover { color: var(--accent-ink); }
+  .addbtn svg { width: 13px; height: 13px; }
+  .connlist { padding: 0 8px; overflow-y: auto; max-height: 46%; }
+  .conn { padding: 8px 9px; border-radius: 9px; cursor: pointer; border: 1px solid transparent; margin-bottom: 2px; position: relative; }
+  .conn:hover { background: var(--card); }
+  .conn.on { background: var(--card); border-color: var(--line); box-shadow: var(--shadow); }
+  .conn .cname { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 18px; }
+  .conn .csub { font-family: var(--mono); font-size: 10px; color: var(--faint); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .conn .edit { position: absolute; top: 7px; right: 7px; opacity: 0; color: var(--faint); cursor: pointer; padding: 2px; border-radius: 5px; }
+  .conn:hover .edit { opacity: 1; }
+  .conn .edit:hover { color: var(--ink); background: var(--panel); }
+  .conn .edit svg { width: 13px; height: 13px; display: block; }
+
+  .sidesplit { border-top: 1px solid var(--line-soft); margin-top: 6px; padding-top: 4px; flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  .bktfilter { margin: 6px 12px 4px; }
+  .bktfilter input { width: 100%; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 6px 9px; font-size: 12px; }
+  .bktfilter input:focus { outline: none; border-color: var(--accent); }
+  .bktlist { flex: 1; overflow-y: auto; padding: 2px 8px 10px; }
+  .bkt { display: flex; align-items: center; gap: 8px; padding: 6px 9px; border-radius: 8px; cursor: pointer; }
+  .bkt:hover { background: var(--card); }
+  .bkt.on { background: var(--tint); }
+  .bkt svg { width: 14px; height: 14px; color: var(--accent); flex: none; }
+  .bkt .bn { font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sidehint { padding: 10px 14px; font-size: 11.5px; color: var(--faint); line-height: 1.55; }
+
+  /* ---- transfers panel ---- */
+  #transfers { flex: none; display: none; flex-direction: column; min-height: 0; border-top: 1px solid var(--line); background: var(--panel); }
+  #transfers.show { display: flex; }
+  .trhead { display: flex; align-items: center; justify-content: space-between; padding: 9px 14px 4px; }
+  .trhead .clr { font-size: 11px; font-weight: 600; color: var(--accent); background: none; border: none; cursor: pointer; padding: 2px 4px; }
+  .trhead .clr:hover { color: var(--accent-ink); }
+  .trlist { overflow-y: auto; max-height: 34vh; padding: 2px 8px 8px; }
+  .tr { padding: 7px 9px; }
+  .tr .trtop { display: flex; align-items: center; gap: 7px; }
+  .tricon { width: 12px; height: 12px; flex: none; color: var(--accent); }
+  .tr .trname { flex: 1; min-width: 0; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .trretry { flex: none; font-size: 10px; font-weight: 600; color: var(--accent); background: none; border: 1px solid var(--line); border-radius: 4px; cursor: pointer; padding: 1px 6px; }
+  .trretry:hover { color: var(--accent-ink); border-color: var(--accent); }
+  .trbar { height: 4px; margin: 5px 0 4px; background: var(--line); border-radius: 3px; overflow: hidden; }
+  .trfill { height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+  .trdetail { font-family: var(--mono); font-size: 10px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tr.done .trfill { background: var(--ok); }
+  .tr.done .tricon { color: var(--ok); }
+  .tr.error .trfill { background: var(--danger); }
+  .tr.error .trdetail { color: var(--danger); }
+  .tr.cancelled .trfill { background: var(--faint); }
+  .tr.indet .trfill { animation: indet 1.1s ease-in-out infinite; }
+  @keyframes indet { 0% { margin-left: -40%; } 100% { margin-left: 100%; } }
+
+  /* ---- path + toolbar ---- */
+  .pathbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 9px 14px; border-bottom: 1px solid var(--line); background: var(--panel); }
+  .crumbs { display: flex; align-items: center; gap: 4px; flex: 1; min-width: 0; overflow: hidden; font-family: var(--mono); font-size: 12px; white-space: nowrap; }
+  .crumb { color: var(--accent); cursor: pointer; overflow: hidden; text-overflow: ellipsis; }
+  .crumb:hover { text-decoration: underline; }
+  .crumb.cur { color: var(--ink); cursor: default; }
+  .crumb.cur:hover { text-decoration: none; }
+  .csep { color: var(--faint); }
+  .tools { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+  .tbtn { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; color: var(--ink); background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 6px 11px; cursor: pointer; white-space: nowrap; }
+  .tbtn:hover { border-color: var(--faint); }
+  .tbtn:disabled { opacity: 0.45; cursor: default; }
+  .tbtn svg { width: 13px; height: 13px; }
+  .tbtn.danger { color: var(--danger); }
+  .tbtn.danger:hover:not(:disabled) { border-color: var(--danger); }
+
+  /* ---- file list ---- */
+  .listwrap { overflow: auto; }
+  table { width: 100%; border-collapse: collapse; }
+  thead th { position: sticky; top: 0; z-index: 1; background: var(--panel); text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line); font-size: 10px; font-weight: 600; letter-spacing: 0.7px; text-transform: uppercase; color: var(--faint); white-space: nowrap; }
+  thead th.num { text-align: right; }
+  tbody tr { border-bottom: 1px solid var(--line-soft); cursor: pointer; }
+  tbody tr:hover { background: var(--card); }
+  tbody tr.active { background: var(--tint); }
+  tbody td { padding: 7px 12px; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  th.nm, td.nm { width: 100%; max-width: 0; }   /* the flexible column; inner .cell truncates */
+  td.nm .cell { display: flex; align-items: center; gap: 9px; min-width: 0; }
+  td.nm .txt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  td.num { text-align: right; font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
+  td.cls { font-family: var(--mono); font-size: 10px; color: var(--faint); }
+  .ic { width: 15px; height: 15px; flex: none; }
+  .ic.folder { color: var(--accent); }
+  .ic.file { color: var(--faint); }
+  .colcheck { width: 34px; text-align: center; }
+  input[type=checkbox] { accent-color: var(--accent); width: 14px; height: 14px; cursor: pointer; }
+
+  .empty { padding: 48px 24px; text-align: center; color: var(--faint); }
+  .empty .big { font-family: var(--serif); font-size: 16px; color: var(--muted); margin-bottom: 6px; }
+  .errbox { margin: 14px; padding: 12px 14px; border: 1px solid var(--danger); border-radius: 10px; background: color-mix(in srgb, var(--danger) 7%, transparent); color: var(--danger); font-size: 12.5px; line-height: 1.5; }
+  .errbox .c { font-family: var(--mono); font-weight: 600; }
+
+  /* ---- dock ---- */
+  .dock { position: relative; border-top: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; height: 232px; transition: height 0.16s ease; }
+  .dock.collapsed { height: 37px !important; }
+  .dock.dragging { transition: none; user-select: none; }
+  .dockresize { position: absolute; top: -3px; left: 0; right: 0; height: 7px; cursor: ns-resize; z-index: 3; }
+  .dockresize:hover, .dock.dragging .dockresize { background: color-mix(in srgb, var(--accent) 35%, transparent); }
+  .dock.collapsed .dockresize { display: none; }
+  .docktabs { display: flex; align-items: center; height: 37px; padding: 0 8px; gap: 2px; flex: none; min-width: 0; overflow-x: auto; overflow-y: hidden; }
+  .docktabs::-webkit-scrollbar { height: 0; }
+  .dtab { flex: none; font-size: 11.5px; font-weight: 600; color: var(--muted); background: none; border: none; border-bottom: 2px solid transparent; padding: 9px 11px; cursor: pointer; }
+  .dtab:hover { color: var(--ink); }
+  .dtab.on { color: var(--ink); border-bottom-color: var(--accent); }
+  .dockspacer { flex: 1; }
+  .dockname { font-family: var(--mono); font-size: 11px; color: var(--faint); margin-right: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 40%; }
+  .dockbody { flex: 1; overflow: auto; padding: 4px 14px 14px; }
+  .dock.collapsed .dockbody { display: none; }
+
+  .props { display: grid; grid-template-columns: max-content 1fr; gap: 5px 18px; align-items: baseline; }
+  .props dt { font-size: 10px; letter-spacing: 0.6px; text-transform: uppercase; color: var(--faint); }
+  .props dd { margin: 0; font-family: var(--mono); font-size: 12px; word-break: break-all; }
+  .scedit { display: inline-flex; align-items: center; gap: 6px; }
+  .scedit select { background: var(--raised); border: 1px solid var(--line); border-radius: 7px; padding: 4px 7px; font-family: var(--mono); font-size: 11.5px; }
+  .scedit .tbtn { padding: 4px 10px; }
+  .bad { color: var(--danger); font-family: var(--mono); font-size: 11px; }
+  .scanverdict { font-weight: 600; font-size: 12.5px; padding: 8px 11px; border-radius: 8px; margin: 4px 0 10px; }
+  .scanverdict.ok { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); }
+  .scanverdict.pub { background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger); }
+  .finding { display: flex; align-items: baseline; gap: 8px; padding: 4px 0; font-size: 12px; }
+  .finding .fdot { width: 7px; height: 7px; border-radius: 50%; flex: none; transform: translateY(1px); }
+  .finding.ok .fdot { background: var(--ok); }
+  .finding.warn .fdot { background: var(--warn); }
+  .finding.high .fdot { background: var(--danger); }
+  .finding.unknown .fdot { background: var(--faint); }
+  .finding.high { font-weight: 600; }
+  .bitabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); margin: 8px 0 14px; }
+  .bitab { background: none; border: none; border-bottom: 2px solid transparent; color: var(--muted); font-size: 12px; font-weight: 600; padding: 7px 11px; cursor: pointer; }
+  .bitab:hover { color: var(--ink); }
+  .bitab.on { color: var(--ink); border-bottom-color: var(--accent); }
+  .cfgtext { width: 100%; min-height: 220px; resize: vertical; font-family: var(--mono); font-size: 11.5px; line-height: 1.5; background: var(--raised); border: 1px solid var(--line); border-radius: 8px; padding: 10px; color: var(--ink); }
+  .cfgtext:focus { outline: none; border-color: var(--accent); }
+  .dockactions { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 12px; }
+
+  .ptable { border-collapse: collapse; font-family: var(--mono); font-size: 11px; }
+  .ptable th, .ptable td { border: 1px solid var(--line); padding: 3px 8px; text-align: left; white-space: nowrap; max-width: 240px; overflow: hidden; text-overflow: ellipsis; }
+  .ptable th { background: var(--card); color: var(--muted); position: sticky; top: 0; }
+  .vact { white-space: nowrap; }
+  .vlink { color: var(--accent); cursor: pointer; margin-right: 10px; font-size: 10.5px; }
+  .vlink:hover { text-decoration: underline; }
+  pre.ptext { margin: 0; font-family: var(--mono); font-size: 11.5px; line-height: 1.5; white-space: pre; color: var(--ink); }
+  .pimg { max-width: 100%; max-height: 180px; border: 1px solid var(--line); border-radius: 6px; }
+  .note { font-size: 11px; color: var(--faint); margin-bottom: 8px; }
+  .pwrap { display: flex; flex-direction: column; height: 100%; margin: -4px -14px -14px; }
+  .ptoolbar { display: flex; align-items: center; gap: 6px; padding: 6px 14px; border-bottom: 1px solid var(--line); }
+  .ptoolbar .pname { font-size: 11px; color: var(--muted); margin-right: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pframe { flex: 1; border: 0; width: 100%; }
+
+  /* tags/versions editors */
+  .tagrow { display: flex; gap: 6px; margin-bottom: 6px; align-items: center; }
+  .tagrow input { background: var(--card); border: 1px solid var(--line); border-radius: 7px; padding: 5px 8px; font-family: var(--mono); font-size: 11.5px; }
+  .tagrow input.k { width: 170px; } .tagrow input.v { flex: 1; min-width: 0; }
+  .tagrow .rm { color: var(--faint); cursor: pointer; padding: 3px; }
+  .tagrow .rm:hover { color: var(--danger); }
+
+  /* ---- status bar ---- */
+  .status { height: 26px; display: flex; align-items: center; gap: 14px; padding: 0 16px; border-top: 1px solid var(--line); background: var(--panel); font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .status .more { color: var(--accent); cursor: pointer; }
+  .status .more:hover { text-decoration: underline; }
+
+  /* ---- modal ---- */
+  .scrim { position: fixed; inset: 0; background: rgba(30,27,22,0.34); display: none; align-items: center; justify-content: center; z-index: 40; }
+  .scrim.open { display: flex; }
+  .modal { width: 460px; max-width: 92vw; max-height: 88vh; overflow-y: auto; background: var(--card); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); padding: 20px 22px; }
+  .modal h2 { font-family: var(--serif); font-size: 18px; font-weight: 600; margin: 0 0 4px; }
+  .modal .sub { font-size: 12px; color: var(--muted); margin-bottom: 16px; }
+  .field { margin-bottom: 13px; }
+  .field label { display: block; font-size: 11px; font-weight: 600; color: var(--muted); margin-bottom: 5px; }
+  .field input, .field select { width: 100%; background: var(--raised); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font-size: 12.5px; }
+  .field input:focus, .field select:focus { outline: none; border-color: var(--accent); }
+  .field .fh { font-size: 10.5px; color: var(--faint); margin-top: 4px; }
+  .seg { display: flex; gap: 0; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
+  .seg button { flex: 1; background: var(--raised); border: none; padding: 8px; font-size: 12px; font-weight: 500; color: var(--muted); cursor: pointer; border-right: 1px solid var(--line); }
+  .seg button:last-child { border-right: none; }
+  .seg button.on { background: var(--tint); color: var(--accent-ink); font-weight: 600; }
+  .modalfoot { display: flex; align-items: center; gap: 8px; margin-top: 18px; }
+  .btn { font-size: 12.5px; font-weight: 600; border-radius: 9px; padding: 8px 16px; cursor: pointer; border: 1px solid var(--line); background: var(--raised); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.primary:hover { background: var(--accent-ink); }
+  .btn.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+  .btn.danger:hover { background: color-mix(in srgb, var(--danger) 88%, #000); }
+  .btn.linkdanger { border: none; background: none; color: var(--danger); margin-right: auto; padding: 8px 4px; }
+
+  .toast { position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--paper); border-radius: 9px; padding: 9px 15px; font-size: 12.5px; z-index: 60; display: none; box-shadow: var(--shadow); max-width: 70%; }
+  .toast.err { background: var(--danger); color: #fff; }
+  .spin { width: 12px; height: 12px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: sp 0.7s linear infinite; display: inline-block; vertical-align: -1px; }
+  .iconbtn.busy svg { animation: sp 0.9s linear infinite; }
+  @keyframes sp { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+  <div class="top">
+    <div class="wordmark"><span class="dot"></span>S3 Browser</div>
+    <div class="active" id="activeConn"></div>
+    <div class="spacer"></div>
+    <button class="iconbtn" id="refreshBtn" title="Refresh"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><polyline points="21 3 21 9 15 9"/></svg></button>
+  </div>
+
+  <div class="app">
+    <!-- sidebar -->
+    <div class="side">
+      <div class="sidehead">
+        <span class="lbl">Connections</span>
+        <button class="addbtn" id="addConn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add</button>
+      </div>
+      <div class="connlist scroll" id="connList"></div>
+
+      <div class="sidesplit">
+        <div class="sidehead" style="padding-bottom:2px;"><span class="lbl">Buckets</span></div>
+        <div class="bktfilter"><input id="bktFilter" placeholder="Filter buckets…" spellcheck="false" /></div>
+        <div class="bktlist scroll" id="bktList"></div>
+      </div>
+
+      <div id="transfers">
+        <div class="trhead"><span class="lbl">Transfers</span><button class="clr" id="trClear">Clear</button></div>
+        <div class="trlist scroll" id="trList"></div>
+      </div>
+    </div>
+
+    <!-- main -->
+    <div class="main">
+      <div class="pathbar">
+        <div class="crumbs" id="crumbs"></div>
+        <div class="tools">
+          <button class="tbtn" id="bucketInfoBtn" title="Bucket properties"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><circle cx="12" cy="7.5" r="0.6" fill="currentColor"/></svg>Bucket</button>
+          <button class="tbtn" id="upBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v13"/><polyline points="7 8 12 3 17 8"/><path d="M5 21h14"/></svg>Upload</button>
+          <button class="tbtn" id="mkdirBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="9.5" y1="13.5" x2="14.5" y2="13.5"/></svg>Folder</button>
+          <button class="tbtn" id="dlBtn" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v13"/><polyline points="7 12 12 17 17 12"/><path d="M5 21h14"/></svg><span id="dlCount">Download</span></button>
+          <button class="tbtn danger" id="delBtn" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg><span id="delCount">Delete</span></button>
+        </div>
+      </div>
+      <div class="listwrap scroll" id="listwrap"></div>
+      <div class="dock" id="dock">
+        <div class="dockresize" id="dockResize" title="Drag to resize"></div>
+        <div class="docktabs">
+          <button class="dtab on" data-tab="props">Properties</button>
+          <button class="dtab" data-tab="preview">Preview</button>
+          <button class="dtab" data-tab="tags">Tags</button>
+          <button class="dtab" data-tab="versions">Versions</button>
+          <div class="dockspacer"></div>
+          <span class="dockname mono" id="dockName"></span>
+          <button class="iconbtn" id="dockToggle" title="Collapse"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></button>
+        </div>
+        <div class="dockbody scroll" id="dockBody"><div class="sidehint">Select an object to inspect it.</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="status" id="status"></div>
+
+  <!-- add/edit connection modal -->
+  <div class="scrim" id="scrim">
+    <div class="modal" id="modal">
+      <h2 id="mTitle">Add connection</h2>
+      <div class="sub">Saved locally on this machine. Access keys are stored in a git-ignored file and never sent through the app log.</div>
+      <div class="field"><label>Name</label><input id="mName" placeholder="e.g. Production data" /></div>
+      <div class="field"><label>Authentication</label>
+        <div class="seg" id="mAuth">
+          <button data-auth="anonymous" class="on">Public</button>
+          <button data-auth="profile">AWS profile</button>
+          <button data-auth="keys">Access keys</button>
+        </div>
+      </div>
+      <div class="field" id="fProfile" style="display:none;"><label>Profile</label>
+        <select id="mProfile"></select>
+        <div class="fh">Named profiles from your ~/.aws configuration.</div>
+      </div>
+      <div id="fKeys" style="display:none;">
+        <div class="field"><label>Access Key ID</label><input id="mAccessKey" autocomplete="off" spellcheck="false" /></div>
+        <div class="field"><label>Secret Access Key</label><input id="mSecretKey" type="password" autocomplete="off" placeholder="" /></div>
+        <div class="field"><label>Session token <span style="font-weight:400;color:var(--faint)">(optional)</span></label><input id="mToken" type="password" autocomplete="off" /></div>
+      </div>
+      <div class="field"><label>Region <span style="font-weight:400;color:var(--faint)">(optional)</span></label><input id="mRegion" class="mono" placeholder="auto-detected" spellcheck="false" /></div>
+      <div class="field"><label>Bucket <span style="font-weight:400;color:var(--faint)">(optional — pin this connection to one bucket)</span></label><input id="mBucket" class="mono" placeholder="leave blank to list all buckets" spellcheck="false" /></div>
+      <div class="field"><label>Endpoint URL <span style="font-weight:400;color:var(--faint)">(optional)</span></label><input id="mEndpoint" class="mono" placeholder="for S3-compatible: Wasabi, MinIO, R2…" spellcheck="false" /></div>
+      <div class="modalfoot">
+        <button class="btn linkdanger" id="mDelete" style="display:none;">Delete</button>
+        <button class="btn" id="mCancel">Cancel</button>
+        <button class="btn primary" id="mSave">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- share (presigned URL) modal -->
+  <div class="scrim" id="shareScrim">
+    <div class="modal" id="shareModal" style="width:520px;">
+      <h2>Share link</h2>
+      <div class="sub" id="shareObj"></div>
+      <div class="field"><label>Link expires in</label>
+        <select id="shareExpiry">
+          <option value="3600">1 hour</option>
+          <option value="21600">6 hours</option>
+          <option value="86400" selected>1 day</option>
+          <option value="604800">7 days (maximum)</option>
+        </select>
+        <div class="fh" id="shareNote"></div>
+      </div>
+      <div class="field"><label>URL</label>
+        <textarea id="shareUrl" readonly rows="4" style="width:100%; resize:vertical; font-family:var(--mono); font-size:11px; background:var(--raised); border:1px solid var(--line); border-radius:8px; padding:8px 10px; word-break:break-all;"></textarea>
+      </div>
+      <div class="modalfoot">
+        <button class="btn" id="shareCancel">Close</button>
+        <button class="btn" id="shareOpen">Open</button>
+        <button class="btn primary" id="shareCopy">Copy link</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- download modal -->
+  <div class="scrim" id="dlScrim">
+    <div class="modal" style="width:540px;">
+      <h2>Download</h2>
+      <div class="sub" id="dlSummary"></div>
+      <div class="field"><label>Save to folder</label>
+        <input id="dlDest" class="mono" spellcheck="false" placeholder="C:\Users\you\Downloads\bucket" />
+        <div class="fh">Files are written here, preserving their folder paths. Large folders download in the background.</div>
+      </div>
+      <div class="modalfoot">
+        <button class="btn" id="dlClose">Close</button>
+        <button class="btn primary" id="dlStart">Download</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- bucket properties modal -->
+  <div class="scrim" id="biScrim">
+    <div class="modal" style="width:580px;">
+      <h2>Bucket</h2>
+      <div class="sub mono" id="biName"></div>
+      <div class="bitabs">
+        <button class="bitab on" data-bt="overview">Overview</button>
+        <button class="bitab" data-bt="policy">Policy</button>
+        <button class="bitab" data-bt="cors">CORS</button>
+        <button class="bitab" data-bt="lifecycle">Lifecycle</button>
+      </div>
+      <div id="biBody"></div>
+      <div class="modalfoot"><button class="btn" id="biClose">Close</button></div>
+    </div>
+  </div>
+
+  <!-- prompt / confirm dialog -->
+  <div class="scrim" id="dlgScrim">
+    <div class="modal" style="width:420px;">
+      <h2 id="dlgTitle"></h2>
+      <div class="sub" id="dlgMsg" style="display:none;"></div>
+      <div class="field" id="dlgField" style="display:none;"><label id="dlgLabel"></label><input id="dlgInput" spellcheck="false" /></div>
+      <div class="modalfoot">
+        <button class="btn" id="dlgCancel">Cancel</button>
+        <button class="btn primary" id="dlgOk">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+  <input type="file" id="fileInput" multiple style="display:none" />
+
+<script>
+const $ = (id) => document.getElementById(id);
+// Connections persist in fused-render's per-app cache (not next to the page), so
+// they survive across worktrees. The backend hands back the absolute path;
+// readFile/writeFile need an absolute path.
+let ACCOUNTS_FILE = null;
+let ACCOUNTS = [];       // saved connections
+let BUCKETS = [];        // buckets for the active connection
+let SEL = new Map();     // id ("file:key"/"folder:prefix") -> {type, key|prefix, name, size}
+let LAST = null;         // last list_objects result
+let NEXT = null;         // continuation token
+let ACTIVE_KEY = null;   // object shown in the dock
+// Every backend call spawns a Python subprocess, so results are cached here and
+// pages render instantly from cache; the refresh button forces a refetch.
+const LIST_CACHE = new Map();    // "acct|bucket|prefix" -> list_objects result
+const BUCKET_CACHE = new Map();  // acct id -> bucket names
+const REGION_CACHE = new Map();  // "acct|bucket" -> region
+const DOCK_CACHE = new Map();    // "acct|bucket|key|tab" -> fetched dock result
+const STORAGE_CLASSES = ["STANDARD", "STANDARD_IA", "ONEZONE_IA", "INTELLIGENT_TIERING", "GLACIER_IR", "GLACIER", "DEEP_ARCHIVE", "REDUCED_REDUNDANCY"];
+
+// ---- helpers ----
+function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+function fmtSize(n) { if (n == null) return ""; const u = ["B","KB","MB","GB","TB","PB"]; let i = 0, v = n; while (v >= 1024 && i < u.length-1) { v /= 1024; i++; } return (i === 0 ? v : v.toFixed(v < 10 ? 2 : 1)) + " " + u[i]; }
+function fmtDate(iso) { if (!iso) return ""; return new Date(iso).toLocaleString(undefined, { year:"2-digit", month:"short", day:"2-digit", hour:"2-digit", minute:"2-digit" }); }
+function toast(msg, isErr) { const t = $("toast"); t.textContent = msg; t.className = "toast" + (isErr ? " err" : ""); t.style.display = "block"; clearTimeout(toast._t); toast._t = setTimeout(() => t.style.display = "none", isErr ? 6000 : 2600); }
+const selFiles = () => [...SEL.values()].filter((x) => x.type === "file");
+const selFolders = () => [...SEL.values()].filter((x) => x.type === "folder");
+
+const FOLDER_SVG = '<svg class="ic folder" viewBox="0 0 24 24" fill="currentColor"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>';
+const FILE_SVG = '<svg class="ic file" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>';
+const BKT_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 7h14l-1.2 12.1a2 2 0 0 1-2 1.9H8.2a2 2 0 0 1-2-1.9z"/><path d="M4 7h16M9 7V5a3 3 0 0 1 6 0v2"/></svg>';
+
+// ---- state (params) ----
+const acctId = () => fused.params.get("acct") || "";
+const bucket = () => fused.params.get("bucket") || "";
+const prefix = () => fused.params.get("prefix") || "";
+const region = () => fused.params.get("region") || "";
+function activeAccount() { return ACCOUNTS.find((a) => a.id === acctId()) || null; }
+
+function connParams() {
+  const a = activeAccount();
+  const p = { account_id: a ? a.id : "" };
+  if (region()) p.region = region();
+  return p;
+}
+async function call(action, extra = {}, conn = connParams(), opts) { return fused.runPython("./s3.py", { action, ...conn, ...extra }, opts); }
+async function callPreview(extra = {}) { return fused.runPython("./preview.py", { ...connParams(), ...extra }); }
+function embedUrl(localPath) {
+  return window.location.origin + "/explorer/embed/" +
+    localPath.replace(/^[/\\]+/, "").split(/[/\\]/).filter(Boolean).map(encodeURIComponent).join("/");
+}
+
+// ---- persistence ----
+async function loadAccounts() {
+  try {
+    const text = await fused.readFile(ACCOUNTS_FILE);
+    ACCOUNTS = JSON.parse(text).accounts || [];
+  } catch { ACCOUNTS = []; }
+  if (!ACCOUNTS.length) {
+    ACCOUNTS = [
+      { id: uid(), label: "Overture Maps (public)", auth: "anonymous", region: "us-west-2", bucket: "overturemaps-us-west-2", endpoint_url: "", profile: "" },
+      { id: uid(), label: "NOAA GOES-16 (public)", auth: "anonymous", region: "us-east-1", bucket: "noaa-goes16", endpoint_url: "", profile: "" },
+    ];
+    await saveAccounts();
+  }
+}
+async function saveAccounts() {
+  await fused.writeFile(ACCOUNTS_FILE, JSON.stringify({ accounts: ACCOUNTS }, null, 2));
+}
+
+// ---- connections sidebar ----
+function connSub(a) {
+  if (a.auth === "anonymous") return "public" + (a.region ? " · " + a.region : "");
+  if (a.auth === "keys") return (a.endpoint_url ? "keys · custom" : "keys") + (a.region ? " · " + a.region : "");
+  return "profile: " + (a.profile || "default") + (a.region ? " · " + a.region : "");
+}
+function renderConns() {
+  const w = $("connList"); w.innerHTML = "";
+  ACCOUNTS.forEach((a) => {
+    const el = document.createElement("div");
+    el.className = "conn" + (a.id === acctId() ? " on" : "");
+    el.innerHTML = `<div class="cname">${esc(a.label)}</div><div class="csub">${esc(connSub(a))}</div>
+      <span class="edit" title="Edit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></span>`;
+    el.onclick = (e) => { if (e.target.closest(".edit")) { openModal(a); } else selectConn(a); };
+    w.appendChild(el);
+  });
+}
+function selectConn(a) {
+  SEL.clear(); NEXT = null; ACTIVE_KEY = null; BUCKETS = [];
+  fused.params.set("acct", a.id);
+  fused.params.set("region", a.region || "");
+  fused.params.set("bucket", a.bucket || "");
+  fused.params.set("prefix", "");
+}
+
+// ---- buckets sidebar ----
+async function loadBuckets(force = false) {
+  const a = activeAccount();
+  const w = $("bktList");
+  if (!a) { w.innerHTML = ""; return; }
+  if (a.bucket) { BUCKETS = [a.bucket]; renderBuckets(); return; }  // pinned bucket
+  if (a.auth === "anonymous") { w.innerHTML = `<div class="sidehint">Anonymous connections can't list buckets. Pin a bucket in the connection settings.</div>`; return; }
+  const cached = BUCKET_CACHE.get(a.id);
+  if (cached && !force) { BUCKETS = cached; renderBuckets(); return; }
+  if (cached) BUCKETS = cached; else w.innerHTML = `<div class="sidehint"><span class="spin"></span> listing…</div>`;
+  const res = await call("list_buckets");
+  if (a.id !== acctId()) return;
+  if (res.error) { w.innerHTML = `<div class="sidehint">${esc(res.error.code)}: ${esc(res.error.message || "")}</div>`; return; }
+  BUCKETS = res.buckets.map((b) => b.name);
+  BUCKET_CACHE.set(a.id, BUCKETS);
+  renderBuckets();
+}
+function renderBuckets() {
+  const w = $("bktList");
+  document.querySelector(".bktfilter").style.display = BUCKETS.length > 6 ? "block" : "none";
+  const filter = ($("bktFilter").value || "").toLowerCase();
+  const items = BUCKETS.filter((b) => b.toLowerCase().includes(filter));
+  if (!items.length) { w.innerHTML = `<div class="sidehint">${BUCKETS.length ? "No match." : "No buckets."}</div>`; return; }
+  w.innerHTML = "";
+  items.forEach((b) => {
+    const el = document.createElement("div");
+    el.className = "bkt" + (b === bucket() ? " on" : "");
+    el.innerHTML = `${BKT_SVG}<span class="bn">${esc(b)}</span>`;
+    el.onclick = () => openBucket(b);
+    w.appendChild(el);
+  });
+}
+function openBucket(name) {
+  SEL.clear(); NEXT = null; ACTIVE_KEY = null;
+  fused.params.set("region", "");   // clear so render() auto-detects THIS bucket's region (buckets may span regions)
+  fused.params.set("bucket", name);
+  fused.params.set("prefix", "");
+}
+
+// ---- breadcrumbs ----
+function renderCrumbs() {
+  const c = $("crumbs"); c.innerHTML = ""; const bkt = bucket();
+  if (!bkt) return;
+  const mk = (label, pfx, cur) => { const el = document.createElement("span"); el.className = "crumb" + (cur ? " cur" : ""); el.textContent = label; if (!cur) el.onclick = () => navigate(pfx); return el; };
+  const parts = prefix().split("/").filter(Boolean);
+  c.appendChild(mk(bkt, "", parts.length === 0));
+  let acc = "";
+  parts.forEach((p, i) => { const s = document.createElement("span"); s.className = "csep"; s.textContent = "/"; c.appendChild(s); acc += p + "/"; c.appendChild(mk(p, acc, i === parts.length - 1)); });
+}
+function navigate(pfx) { SEL.clear(); NEXT = null; ACTIVE_KEY = null; fused.params.set("prefix", pfx); }
+
+// ---- file list ----
+function renderList(res) {
+  const w = $("listwrap");
+  if (res.error) { w.innerHTML = `<div class="errbox"><span class="c">${esc(res.error.code || "Error")}</span> — ${esc(res.error.message || "")}</div>`; $("status").textContent = ""; return; }
+  LAST = res;
+  const folders = res.folders || [], files = res.files || [];
+  if (!folders.length && !files.length) { w.innerHTML = `<div class="empty"><div class="big">Empty folder</div>Nothing here yet.</div>`; }
+  else {
+    const rows = [];
+    for (const f of folders) rows.push(`<tr data-folder="${esc(f.prefix)}"><td class="colcheck"><input type="checkbox" class="rowcb" data-type="folder" data-path="${esc(f.prefix)}" data-name="${esc(f.name)}" ${SEL.has("folder:" + f.prefix) ? "checked" : ""}/></td><td class="nm"><span class="cell">${FOLDER_SVG}<span class="txt">${esc(f.name)}/</span></span></td><td class="num"></td><td class="num"></td><td class="cls"></td></tr>`);
+    for (const f of files) rows.push(`<tr data-key="${esc(f.key)}" class="${f.key === ACTIVE_KEY ? "active" : ""}"><td class="colcheck"><input type="checkbox" class="rowcb" data-type="file" data-path="${esc(f.key)}" data-name="${esc(f.name)}" data-size="${f.size}" ${SEL.has("file:" + f.key) ? "checked" : ""}/></td><td class="nm"><span class="cell">${FILE_SVG}<span class="txt">${esc(f.name)}</span></span></td><td class="num">${fmtSize(f.size)}</td><td class="num">${fmtDate(f.last_modified)}</td><td class="cls">${f.storage_class === "STANDARD" ? "" : esc(f.storage_class)}</td></tr>`);
+    w.innerHTML = `<table><thead><tr><th class="colcheck"><input type="checkbox" id="selAll"/></th><th class="nm">Name</th><th class="num">Size</th><th class="num">Modified</th><th>Class</th></tr></thead><tbody>${rows.join("")}</tbody></table>`;
+  }
+  wireRows();
+  const st = $("status"); st.innerHTML = `${folders.length} folder${folders.length===1?"":"s"} · ${files.length} object${files.length===1?"":"s"}`;
+  if (res.is_truncated && res.next_token) { NEXT = res.next_token; const m = document.createElement("span"); m.className = "more"; m.textContent = "load more…"; m.onclick = loadMore; st.appendChild(document.createTextNode("  ")); st.appendChild(m); } else NEXT = null;
+  updateBars();
+}
+function wireRows() {
+  document.querySelectorAll("#listwrap tbody tr").forEach((tr) => {
+    const folder = tr.getAttribute("data-folder"), key = tr.getAttribute("data-key");
+    const cb = tr.querySelector(".rowcb");
+    if (cb) cb.onclick = (e) => {
+      e.stopPropagation();
+      const t = cb.dataset.type, id = t + ":" + cb.dataset.path;
+      const it = t === "folder"
+        ? { type: "folder", prefix: cb.dataset.path, name: cb.dataset.name }
+        : { type: "file", key: cb.dataset.path, name: cb.dataset.name, size: cb.dataset.size ? +cb.dataset.size : null };
+      cb.checked ? SEL.set(id, it) : SEL.delete(id);
+      updateBars();
+    };
+    if (folder != null) tr.onclick = (e) => { if (!e.target.classList.contains("rowcb")) navigate(folder); };
+    else if (key != null) tr.onclick = (e) => { if (!e.target.classList.contains("rowcb")) selectObject(key); };
+  });
+  const all = $("selAll"); if (all) all.onclick = () => {
+    const on = all.checked;
+    (LAST.folders || []).forEach((f) => { const id = "folder:" + f.prefix; on ? SEL.set(id, { type: "folder", prefix: f.prefix, name: f.name }) : SEL.delete(id); });
+    (LAST.files || []).forEach((f) => { const id = "file:" + f.key; on ? SEL.set(id, { type: "file", key: f.key, name: f.name, size: f.size }) : SEL.delete(id); });
+    renderList(LAST);
+  };
+}
+function updateBars() {
+  const n = SEL.size;
+  $("delBtn").disabled = n === 0; $("dlBtn").disabled = n === 0;
+  $("delCount").textContent = n ? `Delete (${n})` : "Delete";
+  $("dlCount").textContent = n ? `Download (${n})` : "Download";
+}
+async function loadMore() {
+  if (!NEXT) return;
+  const res = await call("list_objects", { bucket: bucket(), prefix: prefix(), token: NEXT });
+  if (res.error) { toast(res.error.message, true); return; }
+  LAST.files = (LAST.files||[]).concat(res.files||[]); LAST.folders = (LAST.folders||[]).concat(res.folders||[]);
+  LAST.is_truncated = res.is_truncated; LAST.next_token = res.next_token; renderList(LAST);
+}
+
+// ---- dock ----
+function selectObject(key) {
+  ACTIVE_KEY = key;
+  document.querySelectorAll("#listwrap tbody tr").forEach((tr) => tr.classList.toggle("active", tr.getAttribute("data-key") === key));
+  $("dockName").textContent = key.split("/").pop();
+  if ($("dock").classList.contains("collapsed")) $("dock").classList.remove("collapsed");
+  renderDock();
+}
+function currentTab() { return document.querySelector(".dtab.on")?.getAttribute("data-tab") || "props"; }
+function dockInvalidate(acct, bkt, key) {
+  for (const k of [...DOCK_CACHE.keys()]) if (k.startsWith(acct + "|" + bkt + "|" + key + "|")) DOCK_CACHE.delete(k);
+}
+// While head_object runs, show what the listing already knows about the object.
+function quickProps(key) {
+  const f = (LAST && LAST.files || []).find((x) => x.key === key);
+  if (!f) return false;
+  $("dockBody").innerHTML = `<dl class="props">
+      <dt>Key</dt><dd>${esc(key)}</dd>
+      <dt>Size</dt><dd>${fmtSize(f.size)} · ${f.size} bytes</dd>
+      <dt>Modified</dt><dd>${fmtDate(f.last_modified)}</dd>
+      <dt>Storage class</dt><dd>${esc(f.storage_class || "STANDARD")}</dd>
+    </dl><div class="sidehint"><span class="spin"></span> loading details…</div>`;
+  return true;
+}
+async function renderDock(force = false) {
+  const b = $("dockBody"), key = ACTIVE_KEY;
+  if (!key) { b.innerHTML = `<div class="sidehint">Select an object to inspect it.</div>`; return; }
+  const tab = currentTab(), bkt = bucket(), acct = acctId();
+  const ck = acct + "|" + bkt + "|" + key + "|" + tab;
+  let res = force ? null : DOCK_CACHE.get(ck);
+  if (!res) {
+    if (!(tab === "props" && quickProps(key))) b.innerHTML = `<div class="sidehint"><span class="spin"></span> loading…</div>`;
+    try {
+      if (tab === "props") res = await call("head_object", { bucket: bkt, key });
+      else if (tab === "preview") res = await callPreview({ bucket: bkt, key, max_bytes: "52428800" });
+      else if (tab === "tags") res = await call("get_tags", { bucket: bkt, key });
+      else res = await call("list_versions", { bucket: bkt, key, max_keys: "200" });
+    } catch (err) {
+      if (ACTIVE_KEY === key && currentTab() === tab) b.innerHTML = `<div class="errbox">${esc(err.message || String(err))}</div>`;
+      return;
+    }
+    if (!res.error) DOCK_CACHE.set(ck, res);
+    if (ACTIVE_KEY !== key || currentTab() !== tab) return;   // user moved on
+  }
+  if (tab === "props") renderProps(res, key);
+  else if (tab === "preview") renderPreview(res, key);
+  else if (tab === "tags") renderTags(res, key);
+  else renderVersions(res, key);
+}
+function dockErr(res) { return res.error ? `<div class="errbox"><span class="c">${esc(res.error.code)}</span> — ${esc(res.error.message || "")}</div>` : null; }
+
+function renderProps(res, key) {
+  const b = $("dockBody"); const e = dockErr(res); if (e) { b.innerHTML = e; return; }
+  const uri = `s3://${bucket()}/${key}`;
+  const meta = res.metadata || {};
+  const metaRows = Object.entries(meta).map(([k, v]) => `<dt>x-amz-meta-${esc(k)}</dt><dd>${esc(v)}</dd>`).join("");
+  const cur = res.storage_class || "STANDARD";
+  const anon = activeAccount()?.auth === "anonymous";
+  const scControl = anon
+    ? esc(cur)
+    : `<span class="scedit"><select id="scSelect">${STORAGE_CLASSES.map((c) => `<option ${c === cur ? "selected" : ""}>${c}</option>`).join("")}</select><button class="tbtn" id="scApply" disabled>Apply</button></span>`;
+  b.innerHTML = `<div class="dockactions">
+      <button class="tbtn" id="dDownload"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v13"/><polyline points="7 12 12 17 17 12"/><path d="M5 21h14"/></svg>Download</button>
+      <button class="tbtn" id="dShare"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>Share link</button>
+      ${anon ? "" : `<button class="tbtn" id="dRename"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>Rename</button>`}
+      <button class="tbtn" id="dUri">Copy s3:// URI</button>
+      <button class="tbtn" id="dKey">Copy key</button>
+    </div>
+    <dl class="props">
+      <dt>Key</dt><dd>${esc(key)}</dd>
+      <dt>Size</dt><dd>${fmtSize(res.size)} · ${res.size} bytes</dd>
+      <dt>Type</dt><dd>${esc(res.content_type || "—")}</dd>
+      <dt>Modified</dt><dd>${fmtDate(res.last_modified)}</dd>
+      <dt>Storage class</dt><dd>${scControl}</dd>
+      <dt>ETag</dt><dd>${esc(res.etag || "—")}</dd>
+      ${res.sse ? `<dt>Encryption</dt><dd>${esc(res.sse)}</dd>` : ""}
+      ${metaRows}
+    </dl>`;
+  $("dUri").onclick = () => { navigator.clipboard.writeText(uri); toast("Copied " + uri); };
+  $("dKey").onclick = () => { navigator.clipboard.writeText(key); toast("Copied key"); };
+  $("dDownload").onclick = () => downloadKey(key);
+  $("dShare").onclick = () => openShare(key);
+  if (!anon) $("dRename").onclick = () => doRename(key);
+  if (!anon) {
+    const sel = $("scSelect"), apply = $("scApply");
+    sel.onchange = () => { apply.disabled = sel.value === cur; };
+    apply.onclick = () => changeStorageClass(key, sel.value);
+  }
+}
+async function changeStorageClass(key, storageClass) {
+  const res = await call("change_storage_class", { bucket: bucket(), key, storage_class: storageClass });
+  if (res.error) { toast(res.error.message, true); return; }
+  toast(`Storage class → ${storageClass}`);
+  dockInvalidate(acctId(), bucket(), key);
+  renderDock();
+}
+
+// ---- presigned URL (share) ----
+let shareKey = null;
+function openShare(key) {
+  shareKey = key;
+  const anon = activeAccount()?.auth === "anonymous";
+  $("shareObj").textContent = `s3://${bucket()}/${key}`;
+  $("shareExpiry").disabled = anon;
+  $("shareNote").textContent = anon
+    ? "Public object — this is a permanent direct link (no expiry)."
+    : "A signed link anyone can use until it expires. Max 7 days for SigV4.";
+  $("shareUrl").value = "";
+  $("shareScrim").classList.add("open");
+  genShare();
+}
+async function genShare() {
+  if (!shareKey) return;
+  const expires = $("shareExpiry").value;
+  $("shareUrl").value = "Generating…";
+  const res = await call("presign", { bucket: bucket(), key: shareKey, method: "get", expires });
+  $("shareUrl").value = res.error ? `${res.error.code}: ${res.error.message || ""}` : res.url;
+}
+async function downloadKey(key) {
+  const res = await call("presign", { bucket: bucket(), key, method: "get", disposition: `attachment; filename="${key.split("/").pop()}"` });
+  if (res.error) { toast(res.error.message, true); return; }
+  window.open(res.url, "_blank");
+}
+function renderPreview(res, key) {
+  const b = $("dockBody"); const e = dockErr(res); if (e) { b.innerHTML = e; return; }
+  if (res.too_large) {
+    b.innerHTML = `<div class="sidehint">${esc(res.filename)} is ${fmtSize(res.size)} — <span class="vlink" id="pLoad">Load preview</span> · <span class="vlink" id="pOpen">Open in new tab</span></div>`;
+    $("pLoad").onclick = async () => {
+      const acct = acctId(), bkt = bucket();
+      b.innerHTML = `<div class="sidehint"><span class="spin"></span> Localizing…</div>`;
+      const full = await callPreview({ bucket: bkt, key, max_bytes: "52428800", force: "true" });
+      if (!full.error) DOCK_CACHE.set(acct + "|" + bkt + "|" + key + "|preview", full);
+      if (ACTIVE_KEY !== key || currentTab() !== "preview") return;
+      renderPreview(full, key);
+    };
+    $("pOpen").onclick = () => downloadKey(key);
+    return;
+  }
+  const url = embedUrl(res.local_path);
+  b.innerHTML = `<div class="pwrap">
+      <div class="ptoolbar">
+        <span class="pname" title="${esc(res.filename)}">${esc(res.filename)}</span>
+        <button class="tbtn" id="pTab">Open in new tab</button>
+        <button class="tbtn" id="pDl">Download</button>
+      </div>
+      <iframe class="pframe" src="${url}"></iframe>
+    </div>`;
+  $("pTab").onclick = () => window.open(url, "_blank");
+  $("pDl").onclick = () => downloadKey(key);
+}
+function renderTags(res, key) {
+  const b = $("dockBody"); const e = dockErr(res); if (e) { b.innerHTML = e; return; }
+  const anon = activeAccount()?.auth === "anonymous";
+  const rows = (res.tags || []).map((t) => tagRowHtml(t.key, t.value));
+  b.innerHTML = `<div id="tagRows">${rows.join("") || ""}</div>
+    <div class="dockactions">
+      <button class="tbtn" id="tAdd">+ Add tag</button>
+      <button class="tbtn" id="tSave" ${anon ? "disabled title='Read-only (anonymous)'" : ""}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 13l4 4L19 7"/></svg>Save tags</button>
+    </div>
+    ${res.tags.length ? "" : `<div class="note">No tags on this object.</div>`}`;
+  $("tAdd").onclick = () => { $("tagRows").insertAdjacentHTML("beforeend", tagRowHtml("", "")); wireTagRows(); };
+  $("tSave").onclick = () => saveTags(key);
+  wireTagRows();
+}
+function tagRowHtml(k, v) { return `<div class="tagrow"><input class="k" placeholder="key" value="${esc(k)}"/><input class="v" placeholder="value" value="${esc(v)}"/><span class="rm" title="Remove"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span></div>`; }
+function wireTagRows() { document.querySelectorAll("#tagRows .rm").forEach((el) => el.onclick = () => el.closest(".tagrow").remove()); }
+async function saveTags(key) {
+  const tags = [...document.querySelectorAll("#tagRows .tagrow")].map((r) => ({ key: r.querySelector(".k").value.trim(), value: r.querySelector(".v").value })).filter((t) => t.key);
+  const res = await call("put_tags", { bucket: bucket(), key, tags: JSON.stringify(tags) });
+  if (res.error) { toast(res.error.message, true); return; }
+  dockInvalidate(acctId(), bucket(), key);
+  toast(`Saved ${res.count} tag(s)`);
+}
+function renderVersions(res, key) {
+  const b = $("dockBody"); const e = dockErr(res); if (e) { b.innerHTML = e; return; }
+  const vs = res.versions || [];
+  if (!vs.length && !(res.delete_markers||[]).length) { b.innerHTML = `<div class="sidehint">No versions — this bucket may not have versioning enabled.</div>`; return; }
+  const anon = activeAccount()?.auth === "anonymous";
+  const rows = vs.map((v) => `<tr><td>${v.is_latest ? "● latest" : "○"}</td><td title="${esc(v.version_id)}">${esc((v.version_id||"").slice(0,16))}</td><td>${fmtSize(v.size)}</td><td>${fmtDate(v.last_modified)}</td><td>${esc(v.storage_class)}</td><td class="vact"><span class="vlink" data-dl="${esc(v.version_id)}">download</span>${(!anon && !v.is_latest) ? `<span class="vlink" data-restore="${esc(v.version_id)}">make current</span>` : ""}</td></tr>`).join("");
+  b.innerHTML = `<table class="ptable"><thead><tr><th></th><th>Version ID</th><th>Size</th><th>Modified</th><th>Class</th><th></th></tr></thead><tbody>${rows}</tbody></table>` + ((res.delete_markers||[]).length ? `<div class="note">${res.delete_markers.length} delete marker(s).</div>` : "");
+  b.querySelectorAll(".vlink[data-dl]").forEach((el) => el.onclick = () => downloadVersion(key, el.getAttribute("data-dl")));
+  b.querySelectorAll(".vlink[data-restore]").forEach((el) => el.onclick = () => restoreVersion(key, el.getAttribute("data-restore")));
+}
+async function downloadVersion(key, versionId) {
+  const res = await call("presign", { bucket: bucket(), key, method: "get", version_id: versionId, disposition: `attachment; filename="${key.split("/").pop()}"` });
+  if (res.error) { toast(res.error.message, true); return; }
+  window.open(res.url, "_blank");
+}
+async function restoreVersion(key, versionId) {
+  if (!await confirmModal({ title: "Restore version", message: "Make this version the current one? Older versions are kept.", okText: "Make current" })) return;
+  const res = await call("restore_version", { bucket: bucket(), key, version_id: versionId });
+  if (res.error) { toast(res.error.message, true); return; }
+  dockInvalidate(acctId(), bucket(), key);
+  toast("Restored version as current"); renderDock();
+}
+
+// ---- mutations ----
+async function doDelete() {
+  if (!SEL.size) return;
+  let keys = selFiles().map((x) => x.key), note = "";
+  for (const f of selFolders()) {          // expand each selected folder recursively
+    const r = await call("list_keys", { bucket: bucket(), prefix: f.prefix });
+    if (r.error) { toast(r.error.message, true); return; }
+    keys = keys.concat(r.keys);
+    if (r.truncated) note = " (some folders exceeded 5000 objects — delete again to continue)";
+  }
+  keys = [...new Set(keys)];
+  if (!keys.length) return;
+  if (!await confirmModal({ title: "Delete objects", message: `Delete ${keys.length} object(s)?${note} This cannot be undone.`, okText: "Delete", danger: true })) return;
+  const folderPrefixes = new Set(selFolders().map((x) => x.prefix));
+  let deleted = 0, failed = 0;
+  for (let i = 0; i < keys.length; i += 1000) {
+    const res = await call("delete_objects", { bucket: bucket(), keys: JSON.stringify(keys.slice(i, i + 1000)) });
+    if (res.error) { toast(res.error.message, true); return; }
+    deleted += res.deleted.length; failed += res.errors.length;
+  }
+  toast(`Deleted ${deleted}` + (failed ? `, ${failed} failed` : ""), failed > 0);
+  SEL.clear();
+  // Drop the deleted rows from the cached listing so the table updates
+  // instantly, then reconcile against S3 in the background.
+  const entry = LIST_CACHE.get(listKey());
+  if (entry && !entry.error) {
+    const gone = new Set(keys);
+    entry.files = (entry.files || []).filter((f) => !gone.has(f.key));
+    entry.folders = (entry.folders || []).filter((f) => !folderPrefixes.has(f.prefix));
+    if (ACTIVE_KEY && gone.has(ACTIVE_KEY)) { ACTIVE_KEY = null; $("dockName").textContent = ""; $("dockBody").innerHTML = `<div class="sidehint">Select an object to inspect it.</div>`; }
+    renderList(entry);
+  }
+  loadListing(true);
+}
+
+// ---- transfers panel (background uploads + downloads) ----
+const TRANSFERS = new Map();   // id -> { id, name, kind, done, total, status, detail, error }
+const TR_UP_SVG = '<svg class="tricon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v13"/><polyline points="7 8 12 3 17 8"/><path d="M5 21h14"/></svg>';
+const TR_DOWN_SVG = '<svg class="tricon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v13"/><polyline points="7 12 12 17 17 12"/><path d="M5 21h14"/></svg>';
+function addTransfer({ name, kind, total }) {
+  const id = uid();
+  TRANSFERS.set(id, { id, name, kind, done: 0, total: total || 0, status: "running", detail: "", error: "" });
+  renderTransfers();
+  return id;
+}
+function updateTransfer(id, patch) { const t = TRANSFERS.get(id); if (!t) return; Object.assign(t, patch); renderTransfers(); }
+function setRetry(id, fn) { const t = TRANSFERS.get(id); if (t) t.retry = fn; }
+function restartTransfer(id, total) { const t = TRANSFERS.get(id); if (!t) return; Object.assign(t, { done: 0, total: total || t.total, status: "running", detail: "", error: "" }); renderTransfers(); }
+function retryTransfer(id) { const t = TRANSFERS.get(id); if (t && t.retry) t.retry(); }
+function finishTransfer(id, status, msg) {
+  const t = TRANSFERS.get(id); if (!t) return;
+  t.status = status;
+  if (status === "done" && t.total) t.done = t.total;
+  if (msg) { if (status === "error") t.error = msg; else t.detail = msg; }
+  renderTransfers();
+}
+function transferDetail(t) {
+  if (t.status === "error") return t.error || "Failed";
+  if (t.status === "cancelled") return "Cancelled";
+  const size = t.total ? `${fmtSize(t.done)} / ${fmtSize(t.total)}` : fmtSize(t.done);
+  if (t.status === "done") return t.detail ? `${t.detail} · ${size}` : "Done";
+  return t.detail ? `${t.detail} · ${size}` : size;
+}
+function renderTransfers() {
+  const items = [...TRANSFERS.values()];
+  $("transfers").classList.toggle("show", items.length > 0);
+  $("trList").innerHTML = items.map((t) => {
+    const indet = t.status === "running" && !t.total;
+    const pct = indet ? 40 : (t.total ? Math.min(100, Math.round(t.done / t.total * 100)) : 100);
+    const canRetry = t.retry && (t.status === "error" || t.status === "cancelled");
+    return `<div class="tr ${t.status}${indet ? " indet" : ""}">
+      <div class="trtop">${t.kind === "upload" ? TR_UP_SVG : TR_DOWN_SVG}<span class="trname" title="${esc(t.name)}">${esc(t.name)}</span>${canRetry ? `<button class="trretry" data-retry="${t.id}" title="Retry">Retry</button>` : ""}</div>
+      <div class="trbar"><div class="trfill" style="width:${pct}%"></div></div>
+      <div class="trdetail">${esc(transferDetail(t))}</div>
+    </div>`;
+  }).join("");
+}
+function clearTransfers() {
+  [...TRANSFERS.values()].forEach((t) => { if (t.status !== "running") TRANSFERS.delete(t.id); });
+  renderTransfers();
+}
+
+// ---- download (recursive, chunked, to a local folder) ----
+// key:null opts out of runPython's per-file stale-cancellation: a download must
+// finish, never be aborted by another download.py call landing on the same channel.
+async function callDl(action, extra = {}) { return fused.runPython("./download.py", { action, ...connParams(), ...extra }, { key: null }); }
+async function openDownload() {
+  if (!SEL.size) return;
+  const files = selFiles(), folders = selFolders();
+  $("dlSummary").textContent = `${files.length} file${files.length === 1 ? "" : "s"}` + (folders.length ? ` + ${folders.length} folder${folders.length === 1 ? "" : "s"} (downloaded recursively)` : "");
+  if (!$("dlDest").value) { const d = await callDl("default_dir"); $("dlDest").value = (d.dir ? d.dir + "/" + bucket() : ""); }
+  $("dlStart").disabled = false;
+  $("dlScrim").classList.add("open");
+}
+async function startDownload() {
+  const dest = $("dlDest").value.trim();
+  if (!dest) { toast("Enter a destination folder", true); return; }
+  const sel = selFiles();
+  const files = sel.map((x) => x.key), sizes = sel.map((x) => x.size), folders = selFolders().map((x) => x.prefix);
+  $("dlStart").disabled = true;
+  let plan;
+  try {
+    plan = await callDl("plan", { bucket: bucket(), keys: JSON.stringify(files), sizes: JSON.stringify(sizes), prefixes: JSON.stringify(folders), dest_dir: dest });
+  } catch (e) {
+    toast(e.message || String(e), true); return;
+  } finally {
+    $("dlStart").disabled = false;
+  }
+  if (plan.error) { toast(plan.error.message, true); return; }
+  $("dlScrim").classList.remove("open");
+  runDownload(plan.job, dest);
+}
+async function runDownload(job, dest, tid) {
+  const isRetry = !!tid;
+  if (isRetry) restartTransfer(tid, 0); else tid = addTransfer({ name: dest.split(/[\\/]/).filter(Boolean).pop() || dest, kind: "download", total: 0 });
+  setRetry(tid, () => runDownload(job, dest, tid));
+  const handle = fused.trackJob({ id: "s3dl:" + job, title: "Download to " + dest.split(/[\\/]/).pop(), kind: "download", unit: "bytes", cancellable: true });
+  try {
+    // On retry, re-queue the failed/unattempted files rather than resuming past them.
+    if (isRetry) {
+      const r = await callDl("retry", { job });
+      if (r.error) { handle.fail(r.error.message); finishTransfer(tid, "error", r.error.message); return; }
+    }
+    while (true) {
+      const s = await callDl("step", { job });
+      if (s.error) { handle.fail(s.error.message); finishTransfer(tid, "error", s.error.message); return; }
+      updateTransfer(tid, { done: s.done_bytes, total: s.total_bytes, detail: `${s.done_files}/${s.total_files} files` + (s.errors.length ? ` · ${s.errors.length} errors` : "") });
+      handle.update({ done: s.done_bytes, total: s.total_bytes, detail: (s.current || "").split("/").pop() });
+      if (s.status === "done") { handle.finish("Downloaded"); finishTransfer(tid, "done", `${s.done_files} file(s) saved` + (s.errors.length ? `, ${s.errors.length} failed` : "")); toast(`Saved ${s.done_files} file(s)`); return; }
+      if (handle.cancelRequested) { handle.cancelled(); finishTransfer(tid, "cancelled"); return; }
+    }
+  } catch (e) {
+    handle.fail(e.message || String(e));
+    finishTransfer(tid, "error", e.message || String(e));
+  }
+}
+async function doMkdir() {
+  const name = await promptModal({ title: "New folder", label: "Folder name", okText: "Create" }); if (!name) return;
+  const res = await call("create_folder", { bucket: bucket(), prefix: prefix(), name });
+  if (res.error) { toast(res.error.message, true); return; }
+  toast("Created " + res.created);
+  const entry = LIST_CACHE.get(listKey());
+  if (entry && !entry.error) {
+    const pfx = res.created;
+    const folders = entry.folders || (entry.folders = []);
+    if (!folders.some((f) => f.prefix === pfx)) {
+      folders.push({ prefix: pfx, name: pfx.slice(prefix().length).replace(/\/$/, "") });
+      folders.sort((a, b) => a.name.localeCompare(b.name));
+    }
+    renderList(entry);
+  } else loadListing(true);
+}
+async function doRename(key) {
+  const cur = key.split("/").pop();
+  const name = await promptModal({ title: "Rename", label: "New name", value: cur, okText: "Rename" });
+  if (!name || name === cur) return;
+  const dest = key.slice(0, key.length - cur.length) + name;   // keep the same folder
+  const res = await call("rename_object", { bucket: bucket(), key: dest, src_key: key });
+  if (res.error) { toast(res.error.message, true); return; }
+  dockInvalidate(acctId(), bucket(), key);
+  ACTIVE_KEY = null; toast("Renamed to " + name);
+  const entry = LIST_CACHE.get(listKey());
+  if (entry && !entry.error) {
+    const row = (entry.files || []).find((f) => f.key === key);
+    if (row) { row.key = dest; row.name = name; entry.files.sort((a, b) => a.name.localeCompare(b.name)); }
+    renderList(entry);
+  } else loadListing(true);
+}
+const MULTIPART_THRESHOLD = 8 * 1024 * 1024;   // files larger than this upload in parts
+const PART_SIZE = 8 * 1024 * 1024;
+// key:null opts out of runPython's per-file stale-cancellation, so concurrent
+// uploads (doUpload runs several at once) all finish instead of aborting each
+// other — an aborted call's promise never settles, which stranded them at 0 B.
+async function callUp(action, extra = {}, conn = connParams()) { return fused.runPython("./upload.py", { action, ...conn, ...extra }, { key: null }); }
+function blobToB64(blob) { return new Promise((ok, fail) => { const r = new FileReader(); r.onload = () => ok(r.result.split(",")[1]); r.onerror = () => fail(r.error || new Error("Could not read file")); r.readAsDataURL(blob); }); }
+
+// Uploads run in the background (a few at a time) and never trigger a full
+// refetch: each finished file is inserted straight into the cached listing.
+async function doUpload(files) {
+  const bkt = bucket(), pfx = prefix(), conn = connParams();
+  toast(`Uploading ${files.length} file(s) in the background`);
+  const queue = [...files];
+  await Promise.all(Array.from({ length: Math.min(3, queue.length) }, async () => {
+    while (queue.length) await uploadOne(queue.shift(), bkt, pfx, conn);
+  }));
+}
+function noteUploaded(bkt, key, size, acct) {
+  dockInvalidate(acct, bkt, key);
+  const pfx = key.slice(0, key.lastIndexOf("/") + 1);
+  const k = acct + "|" + bkt + "|" + pfx;
+  const entry = LIST_CACHE.get(k);
+  if (!entry || entry.error) return;
+  const row = { key, name: key.split("/").pop(), size, last_modified: new Date().toISOString(), storage_class: "STANDARD" };
+  const files = entry.files || (entry.files = []);
+  const i = files.findIndex((f) => f.key === key);
+  if (i >= 0) files[i] = row;
+  else { files.push(row); files.sort((a, b) => a.name.localeCompare(b.name)); }
+  if (k === listKey()) renderList(entry);
+}
+async function uploadOne(file, bkt, pfx, conn, tid) {
+  const key = pfx + file.name;
+  if (tid) restartTransfer(tid, file.size); else tid = addTransfer({ name: file.name, kind: "upload", total: file.size });
+  setRetry(tid, () => uploadOne(file, bkt, pfx, conn, tid));
+  try {
+    if (file.size <= MULTIPART_THRESHOLD) {
+      const res = await call("upload", { bucket: bkt, key, content_b64: await blobToB64(file), content_type: file.type || "" }, conn, { key: null });
+      if (res.error) { finishTransfer(tid, "error", res.error.message); return; }
+      finishTransfer(tid, "done");
+      noteUploaded(bkt, key, file.size, conn.account_id);
+      return;
+    }
+    // multipart
+    const partSize = Math.max(PART_SIZE, Math.ceil(file.size / 9000));   // keep under S3's 10000-part cap
+    const totalParts = Math.ceil(file.size / partSize);
+    const start = await callUp("start", { bucket: bkt, key, content_type: file.type || "" }, conn);
+    if (start.error) { finishTransfer(tid, "error", start.error.message); return; }
+    const job = start.job;
+    const handle = fused.trackJob({ id: "s3up:" + job, title: "Upload " + file.name, kind: "task", unit: "bytes", cancellable: true });
+    try {
+      for (let p = 1; p <= totalParts; p++) {
+        const b64 = await blobToB64(file.slice((p - 1) * partSize, p * partSize));
+        const res = await callUp("part", { job, part_number: String(p), content_b64: b64 }, conn);
+        if (res.error) throw new Error(res.error.message);
+        const doneBytes = Math.min(p * partSize, file.size);
+        updateTransfer(tid, { done: doneBytes, detail: `${p}/${totalParts} parts` });
+        handle.update({ done: doneBytes, total: file.size });
+        if (handle.cancelRequested) { await callUp("abort", { job }, conn); handle.cancelled(); finishTransfer(tid, "cancelled"); return; }
+      }
+      const done = await callUp("complete", { job }, conn);
+      if (done.error) throw new Error(done.error.message);
+      handle.finish("Uploaded");
+      finishTransfer(tid, "done", `${totalParts} parts`);
+      noteUploaded(bkt, key, file.size, conn.account_id);
+    } catch (e) {
+      await callUp("abort", { job }, conn);
+      handle.fail(e.message);
+      finishTransfer(tid, "error", e.message);
+    }
+  } catch (e) {
+    finishTransfer(tid, "error", e.message || String(e));
+  }
+}
+
+// ---- bucket properties ----
+async function openBucketInfo() {
+  if (!bucket()) return;
+  $("biName").textContent = bucket();
+  document.querySelectorAll(".bitab").forEach((t) => t.classList.toggle("on", t.dataset.bt === "overview"));
+  $("biScrim").classList.add("open");
+  renderBiTab("overview");
+}
+function renderBiTab(tab) { tab === "overview" ? renderOverview() : renderBucketConfig(tab); }
+async function renderOverview() {
+  $("biBody").innerHTML = `<div class="sidehint"><span class="spin"></span> loading…</div>`;
+  renderBucketInfo(await call("bucket_info", { bucket: bucket() }));
+}
+
+// ---- bucket config editors (policy / CORS / lifecycle) ----
+async function renderBucketConfig(type) {
+  const b = $("biBody");
+  b.innerHTML = `<div class="sidehint"><span class="spin"></span> loading…</div>`;
+  const res = await call("get_bucket_config", { bucket: bucket(), config_type: type });
+  const anon = activeAccount()?.auth === "anonymous";
+  const e = dockErr(res);
+  let text = "", empty = false;
+  if (!e) {
+    if (res.value == null) { empty = true; text = type === "policy" ? "" : "[]"; }
+    else if (type === "policy") { try { text = JSON.stringify(JSON.parse(res.value), null, 2); } catch { text = res.value; } }
+    else text = JSON.stringify(res.value, null, 2);
+  }
+  b.innerHTML = (e || "") +
+    (empty ? `<div class="note">No ${type} configured on this bucket.</div>` : "") +
+    `<textarea id="cfgText" class="cfgtext" spellcheck="false" ${anon ? "readonly" : ""}>${esc(text)}</textarea>
+     <div class="dockactions"><button class="tbtn" id="cfgSave" ${anon ? "disabled" : ""}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 13l4 4L19 7"/></svg>Save ${type}</button><button class="tbtn" id="cfgDelete" ${anon ? "disabled" : ""}>Clear</button></div>
+     <div class="fh" id="cfgMsg"></div>`;
+  $("cfgSave").onclick = () => saveBucketConfig(type);
+  $("cfgDelete").onclick = () => clearBucketConfig(type);
+}
+function cfgMsg(text, ok) { const m = $("cfgMsg"); m.textContent = text; m.style.color = ok ? "var(--ok)" : "var(--danger)"; }
+async function saveBucketConfig(type) {
+  const text = $("cfgText").value.trim();
+  try { JSON.parse(text); } catch (err) { cfgMsg("Invalid JSON: " + err.message, false); return; }
+  const res = await call("put_bucket_config", { bucket: bucket(), config_type: type, config: text });
+  if (res.error) { cfgMsg(res.error.message, false); return; }
+  cfgMsg("Saved.", true);
+}
+async function clearBucketConfig(type) {
+  if (!await confirmModal({ title: "Clear " + type, message: `Clear the ${type} configuration on this bucket?`, okText: "Clear", danger: true })) return;
+  const res = await call("delete_bucket_config", { bucket: bucket(), config_type: type });
+  if (res.error) { cfgMsg(res.error.message, false); return; }
+  renderBucketConfig(type);
+}
+function renderBucketInfo(res) {
+  const b = $("biBody"); const e = dockErr(res); if (e) { b.innerHTML = e; return; }
+  const anon = activeAccount()?.auth === "anonymous";
+  const ver = res.versioning || {};
+  let verLine;
+  if (ver.error) verLine = `<span class="bad">${esc(ver.error)}</span>`;
+  else {
+    verLine = esc(ver.status || "Disabled");
+    if (!anon) { const next = ver.status === "Enabled" ? "Suspended" : "Enabled"; verLine += ` <button class="tbtn" id="verToggle" data-next="${next}" style="padding:3px 9px;">${ver.status === "Enabled" ? "Suspend" : "Enable"}</button>`; }
+  }
+  const enc = res.encryption || {};
+  const encLine = enc.error ? `<span class="bad">${esc(enc.error)}</span>` : enc.none ? "None (no default SSE)" : `${esc(enc.algorithm || "?")}${enc.kms_key ? " · " + esc(enc.kms_key) : ""}${enc.bucket_key ? " · bucket key" : ""}`;
+  const pab = res.public_access_block || {};
+  let pabLine;
+  if (pab.error) pabLine = `<span class="bad">${esc(pab.error)}</span>`;
+  else if (pab.none) pabLine = "Not configured";
+  else pabLine = [["block_public_acls", "Block public ACLs"], ["ignore_public_acls", "Ignore public ACLs"], ["block_public_policy", "Block public policy"], ["restrict_public_buckets", "Restrict public buckets"]].map(([k, lbl]) => `${lbl}: <b>${pab[k] ? "on" : "off"}</b>`).join("<br>");
+  b.innerHTML = `<dl class="props">
+    <dt>Region</dt><dd>${esc(res.region || "—")}</dd>
+    <dt>Versioning</dt><dd>${verLine}</dd>
+    <dt>Default encryption</dt><dd>${encLine}</dd>
+    <dt>Public access block</dt><dd>${pabLine}</dd>
+  </dl>
+  <div class="dockactions" style="margin-top:14px;"><button class="tbtn" id="scanBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>Run security scan</button></div>
+  <div id="scanResult"></div>`;
+  const vt = $("verToggle"); if (vt) vt.onclick = () => toggleVersioning(vt.getAttribute("data-next"));
+  $("scanBtn").onclick = runSecurityScan;
+}
+async function runSecurityScan() {
+  const r = $("scanResult");
+  r.innerHTML = `<div class="sidehint"><span class="spin"></span> scanning…</div>`;
+  const res = await call("security_scan", { bucket: bucket() });
+  const e = dockErr(res); if (e) { r.innerHTML = e; return; }
+  const badge = res.public
+    ? `<div class="scanverdict pub">This bucket is publicly accessible</div>`
+    : `<div class="scanverdict ok">No public exposure detected</div>`;
+  const rows = res.findings.map((f) => `<div class="finding ${f.level}"><span class="fdot"></span><span class="ftxt"><b>${esc(f.title)}</b>${f.detail ? " — " + esc(f.detail) : ""}</span></div>`).join("");
+  r.innerHTML = badge + rows;
+}
+async function toggleVersioning(next) {
+  if (!await confirmModal({ title: "Change versioning", message: `Set versioning to ${next} for this bucket?`, okText: next })) return;
+  const res = await call("set_versioning", { bucket: bucket(), status: next });
+  if (res.error) { toast(res.error.message, true); return; }
+  toast(`Versioning ${next}`); openBucketInfo();
+}
+
+// ---- prompt / confirm dialogs ----
+function dialog(opts, hasInput) {
+  const { title, message = "", label = "", value = "", placeholder = "", okText = "OK", danger = false } = opts;
+  $("dlgTitle").textContent = title;
+  const msg = $("dlgMsg"); msg.textContent = message; msg.style.display = message ? "block" : "none";
+  const fld = $("dlgField"), inp = $("dlgInput");
+  fld.style.display = hasInput ? "block" : "none";
+  if (hasInput) { $("dlgLabel").textContent = label; inp.value = value; inp.placeholder = placeholder; }
+  const ok = $("dlgOk"); ok.textContent = okText; ok.className = "btn " + (danger ? "danger" : "primary");
+  const scrim = $("dlgScrim"); scrim.classList.add("open");
+  if (hasInput) { inp.focus(); inp.select(); } else ok.focus();
+  return new Promise((resolve) => {
+    const close = (val) => {
+      scrim.classList.remove("open");
+      scrim.onclick = $("dlgOk").onclick = $("dlgCancel").onclick = null;
+      document.removeEventListener("keydown", onKey);
+      resolve(val);
+    };
+    const submit = () => close(hasInput ? inp.value : true);
+    const cancel = () => close(hasInput ? null : false);
+    const onKey = (e) => {
+      if (e.key === "Escape") { e.preventDefault(); cancel(); }
+      else if (e.key === "Enter") { e.preventDefault(); submit(); }
+    };
+    $("dlgOk").onclick = submit;
+    $("dlgCancel").onclick = cancel;
+    scrim.onclick = (e) => { if (e.target === scrim) cancel(); };
+    document.addEventListener("keydown", onKey);
+  });
+}
+function promptModal({ title, label, value = "", placeholder = "", okText = "OK" }) {
+  return dialog({ title, label, value, placeholder, okText }, true);
+}
+function confirmModal({ title, message, okText = "OK", danger = false }) {
+  return dialog({ title, message, okText, danger }, false);
+}
+
+// ---- modal ----
+let editingId = null;
+function openModal(a) {
+  editingId = a ? a.id : null;
+  $("mTitle").textContent = a ? "Edit connection" : "Add connection";
+  $("mName").value = a ? a.label : "";
+  $("mRegion").value = a ? (a.region || "") : "";
+  $("mBucket").value = a ? (a.bucket || "") : "";
+  $("mEndpoint").value = a ? (a.endpoint_url || "") : "";
+  $("mAccessKey").value = a && a.access_key ? a.access_key : "";
+  $("mSecretKey").value = ""; $("mSecretKey").placeholder = a && a.secret_key ? "•••••• (unchanged)" : "";
+  $("mToken").value = ""; $("mToken").placeholder = a && a.session_token ? "•••••• stored — re-enter the Secret to change or clear" : "";
+  setAuth(a ? a.auth : "anonymous");
+  $("mDelete").style.display = a ? "block" : "none";
+  populateProfiles(a ? a.profile : "");
+  $("scrim").classList.add("open");
+  $("mName").focus();
+}
+function closeModal() { $("scrim").classList.remove("open"); }
+function setAuth(auth) {
+  document.querySelectorAll("#mAuth button").forEach((btn) => btn.classList.toggle("on", btn.getAttribute("data-auth") === auth));
+  $("fProfile").style.display = auth === "profile" ? "block" : "none";
+  $("fKeys").style.display = auth === "keys" ? "block" : "none";
+}
+function currentAuth() { return document.querySelector("#mAuth button.on")?.getAttribute("data-auth") || "anonymous"; }
+async function populateProfiles(sel) {
+  const el = $("mProfile"); el.innerHTML = `<option value="">default</option>`;
+  const res = await call("list_profiles");
+  (res.profiles || []).forEach((p) => { const o = document.createElement("option"); o.value = p; o.textContent = p; if (p === sel) o.selected = true; el.appendChild(o); });
+}
+async function saveModal() {
+  const name = $("mName").value.trim();
+  if (!name) { toast("Name is required", true); return; }
+  const auth = currentAuth();
+  const prev = editingId ? ACCOUNTS.find((a) => a.id === editingId) : null;
+  // Keep the stored credential set only when editing keys and NOT re-entering the
+  // secret. Re-entering the secret takes access/secret/token fresh from the form —
+  // so a blank token field then clears a stale STS token.
+  const keepCreds = auth === "keys" && !$("mSecretKey").value && prev;
+  const a = {
+    id: editingId || uid(), label: name, auth,
+    region: $("mRegion").value.trim(), bucket: $("mBucket").value.trim().replace(/^s3:\/\//, ""),
+    endpoint_url: $("mEndpoint").value.trim(),
+    profile: auth === "profile" ? $("mProfile").value : "",
+    access_key: auth === "keys" ? $("mAccessKey").value.trim() : "",
+    secret_key: auth === "keys" ? (keepCreds ? prev.secret_key : $("mSecretKey").value) : "",
+    session_token: auth === "keys" ? (keepCreds ? (prev.session_token || "") : $("mToken").value.trim()) : "",
+  };
+  // A keys connection missing either half would silently fall back to the default
+  // AWS credential chain (env/profile) while still showing as key auth — reject it.
+  if (auth === "keys" && (!a.access_key || !a.secret_key)) {
+    toast("Access key and secret key are both required for key auth", true); return;
+  }
+  if (editingId) ACCOUNTS = ACCOUNTS.map((x) => x.id === editingId ? a : x);
+  else ACCOUNTS.push(a);
+  BUCKET_CACHE.delete(a.id);   // credentials/profile may have changed
+  await saveAccounts();
+  closeModal(); renderConns();
+  selectConn(a);
+}
+async function deleteConn() {
+  if (!editingId) return;
+  if (!await confirmModal({ title: "Delete connection", message: "Delete this connection?", okText: "Delete", danger: true })) return;
+  ACCOUNTS = ACCOUNTS.filter((a) => a.id !== editingId);
+  await saveAccounts(); closeModal();
+  if (acctId() === editingId) { fused.params.set("acct", ""); fused.params.set("bucket", ""); fused.params.set("prefix", ""); }
+  else renderConns();
+}
+
+// ---- top-level render ----
+const listKey = () => acctId() + "|" + bucket() + "|" + prefix();
+function setBusy(on) { $("refreshBtn").classList.toggle("busy", on); }
+
+// Paint from cache instantly; fetch only when uncached or forced. A forced
+// refetch keeps the stale rows on screen (refresh button spins) instead of
+// blanking the table.
+async function loadListing(force) {
+  const k = listKey();
+  const cached = LIST_CACHE.get(k);
+  if (cached) renderList(cached);
+  if (cached && !force) return;
+  if (!cached) $("listwrap").innerHTML = `<div class="empty"><span class="spin"></span></div>`;
+  setBusy(true);
+  const res = await call("list_objects", { bucket: bucket(), prefix: prefix() });
+  setBusy(false);
+  if (!res.error) LIST_CACHE.set(k, res);
+  if (k !== listKey()) return;                    // user navigated away meanwhile
+  if (res.error && cached) { toast(`${res.error.code}: ${res.error.message || ""}`, true); return; }
+  renderList(res);
+}
+
+async function render(force = false) {
+  renderConns();
+  const a = activeAccount();
+  $("activeConn").innerHTML = a ? `<b>${esc(a.label)}</b><span class="badge">${esc(connSub(a))}</span>` : `<span style="color:var(--faint)">No connection selected</span>`;
+  renderCrumbs();
+  renderBuckets();
+  const bkt = bucket();
+  $("bucketInfoBtn").disabled = !bkt;
+  if (!a) { $("listwrap").innerHTML = `<div class="empty"><div class="big">Welcome</div>Pick a connection on the left, or add one.</div>`; $("status").textContent = ""; return; }
+  if (!bkt) { $("listwrap").innerHTML = `<div class="empty"><div class="big">Choose a bucket</div>Select a bucket from the sidebar.</div>`; $("status").textContent = ""; return; }
+  if (!region()) {
+    const rk = acctId() + "|" + bkt;
+    let r = REGION_CACHE.get(rk);
+    if (r === undefined) {
+      const res = await call("bucket_region", { bucket: bkt });
+      r = res.error ? "" : (res.region || "");
+      if (!res.error) REGION_CACHE.set(rk, r);
+    }
+    if (r) { fused.params.set("region", r); return; }
+  }
+  await loadListing(force);
+  if (ACTIVE_KEY) renderDock(force);
+}
+function refresh() { render(true); loadBuckets(true); }
+
+// ---- wiring ----
+$("addConn").onclick = () => openModal(null);
+$("refreshBtn").onclick = refresh;
+$("bktFilter").oninput = renderBuckets;
+$("upBtn").onclick = () => $("fileInput").click();
+$("fileInput").onchange = (e) => { if (e.target.files.length) doUpload([...e.target.files]); e.target.value = ""; };
+$("mkdirBtn").onclick = doMkdir;
+$("delBtn").onclick = doDelete;
+$("dlBtn").onclick = openDownload;
+$("dlStart").onclick = startDownload;
+$("dlClose").onclick = () => $("dlScrim").classList.remove("open");
+$("dlScrim").onclick = (e) => { if (e.target === $("dlScrim")) $("dlScrim").classList.remove("open"); };
+$("trClear").onclick = clearTransfers;
+$("trList").onclick = (e) => { const b = e.target.closest("[data-retry]"); if (b) retryTransfer(b.dataset.retry); };
+$("bucketInfoBtn").onclick = openBucketInfo;
+document.querySelectorAll(".bitab").forEach((t) => t.onclick = () => { document.querySelectorAll(".bitab").forEach((x) => x.classList.remove("on")); t.classList.add("on"); renderBiTab(t.dataset.bt); });
+$("biClose").onclick = () => $("biScrim").classList.remove("open");
+$("biScrim").onclick = (e) => { if (e.target === $("biScrim")) $("biScrim").classList.remove("open"); };
+$("dockToggle").onclick = () => $("dock").classList.toggle("collapsed");
+// Drag the top edge of the dock to resize it (persisted per browser).
+(function () {
+  const dock = $("dock"), handle = $("dockResize");
+  const saved = parseInt(localStorage.getItem("s3dockH") || "", 10);
+  if (saved) dock.style.height = saved + "px";
+  handle.onmousedown = (e) => {
+    e.preventDefault();
+    if (dock.classList.contains("collapsed")) dock.classList.remove("collapsed");
+    const startY = e.clientY, startH = dock.offsetHeight;
+    const maxH = () => Math.round(dock.parentElement.getBoundingClientRect().height * 0.82);
+    dock.classList.add("dragging");
+    const move = (ev) => {
+      const h = Math.max(120, Math.min(maxH(), startH + (startY - ev.clientY)));
+      dock.style.height = h + "px";
+    };
+    const up = () => {
+      dock.classList.remove("dragging");
+      document.removeEventListener("mousemove", move);
+      document.removeEventListener("mouseup", up);
+      localStorage.setItem("s3dockH", String(dock.offsetHeight));
+    };
+    document.addEventListener("mousemove", move);
+    document.addEventListener("mouseup", up);
+  };
+})();
+document.querySelectorAll(".dtab").forEach((t) => t.onclick = () => { document.querySelectorAll(".dtab").forEach((x) => x.classList.remove("on")); t.classList.add("on"); renderDock(); });
+$("mAuth").onclick = (e) => { const b = e.target.closest("button"); if (b) setAuth(b.getAttribute("data-auth")); };
+$("mCancel").onclick = closeModal;
+$("mSave").onclick = saveModal;
+$("mDelete").onclick = deleteConn;
+$("scrim").onclick = (e) => { if (e.target === $("scrim")) closeModal(); };
+$("shareExpiry").onchange = genShare;
+$("shareCancel").onclick = () => $("shareScrim").classList.remove("open");
+$("shareCopy").onclick = () => { navigator.clipboard.writeText($("shareUrl").value); toast("Link copied"); };
+$("shareOpen").onclick = () => { if ($("shareUrl").value.startsWith("http")) window.open($("shareUrl").value, "_blank"); };
+$("shareScrim").onclick = (e) => { if (e.target === $("shareScrim")) $("shareScrim").classList.remove("open"); };
+
+// Coalesce the several params.set() calls in one action (e.g. selectConn sets
+// acct+region+bucket+prefix) into a single render of the final, consistent state.
+let lastKey = null, renderScheduled = false;
+fused.params.onChange(() => {
+  if (renderScheduled) return;
+  renderScheduled = true;
+  Promise.resolve().then(() => {
+    renderScheduled = false;
+    const key = acctId() + "|" + bucket() + "|" + prefix() + "|" + region();
+    if (key === lastKey) return;
+    lastKey = key;
+    render(); loadBuckets();
+  });
+});
+
+(async () => {
+  const loc = await fused.runPython("./s3.py", { action: "accounts_path" });
+  ACCOUNTS_FILE = loc.path;
+  await loadAccounts();
+  renderConns();
+  if (!acctId() && ACCOUNTS.length) selectConn(ACCOUNTS[0]);
+  else { render(); loadBuckets(); }
+})();
+</script>
+</body>
+</html>

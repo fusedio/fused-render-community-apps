@@ -1,0 +1,2 @@
+# Saved connections may contain access keys — never commit them.
+accounts.json
