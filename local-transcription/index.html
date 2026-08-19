@@ -256,7 +256,7 @@
       </div>
 
       <div class="group">
-        <label class="check"><input id="vad" type="checkbox" checked /> Skip silence (VAD)</label>
+        <label class="check"><input id="vad" type="checkbox" /> Skip silence (VAD)</label>
       </div>
 
       <div class="group">
@@ -431,7 +431,7 @@ const P = {
   get model() { return fused.params.get("model") || ""; },
   get lang()  { return fused.params.get("lang") || ""; },
   get task()  { return fused.params.get("task") || "transcribe"; },
-  get vad()   { return (fused.params.get("vad") || "1") !== "0"; },
+  get vad()   { return fused.params.get("vad") === "1"; },
   get diarize() { return fused.params.get("diarize") === "1"; },
   // Empty is a VALUE here, not a missing one: it means "estimate the count".
   // So there is no default to fall back to — an absent param and an empty one
