@@ -1586,6 +1586,17 @@ async function transcribe() {
     model,
     task: P.task,
     vad: P.vad,
+    // Word timings, asked for on every run. This is the one BEST-EFFORT option
+    // in the call: asking never fails, and an engine that has none simply
+    // leaves `words` off its segments — so there is nothing to gate on and no
+    // engine check to write. Read them as `s.words || []`. Two caveats worth
+    // knowing rather than working around: `task: "translate"` returns none on
+    // any engine (a translation's words were never spoken in the audio), and
+    // asking is not free — an extra pass per window, and it changes the decode,
+    // since the library's hallucination pruning only runs with timings on. The
+    // same file can therefore come back with a different segment count than a
+    // run without it.
+    words: true,
     onSegment: (s) => {
       live.push(s);
       queueLive(live, model);
