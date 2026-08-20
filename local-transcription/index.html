@@ -235,9 +235,6 @@
           <button id="rescan" class="tiny">Rescan</button>
           <span id="scanNote" class="sub" style="color:var(--muted);font-size:11px"></span>
         </div>
-        <div style="margin-top:8px">
-          <input id="roots" type="text" class="mono" placeholder="folders to scan (comma-separated)" spellcheck="false" />
-        </div>
       </div>
 
       <div class="group">
@@ -1828,7 +1825,6 @@ async function saveSrt() {
 function draw() {
   const path = P.file;
   el("path").value = path;
-  el("roots").value = P.roots;
   el("task").value = P.task;
   el("lang").value = P.lang;
   // …and then whichever of those two the active engine refuses is disabled and
@@ -1885,7 +1881,6 @@ async function verifySelection(path) {
 
 // ── Wiring: controls write params, onChange redraws ────────────────────────
 el("path").addEventListener("change", () => fused.params.set("file", el("path").value.trim()));
-el("roots").addEventListener("change", () => { fused.params.set("roots", el("roots").value.trim()); scan(); });
 el("rescan").addEventListener("click", scan);
 el("task").addEventListener("change", () => fused.params.set("task", el("task").value));
 el("lang").addEventListener("change", () => fused.params.set("lang", el("lang").value));
