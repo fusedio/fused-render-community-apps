@@ -57,6 +57,18 @@
   .row > * { min-width: 0; }
   .check { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12px; }
 
+  .adv { margin-bottom: 18px; border: 1px solid var(--line-soft); border-radius: 6px; }
+  .adv summary {
+    cursor: pointer; padding: 8px 10px; font-size: 11px; text-transform: uppercase;
+    letter-spacing: .08em; color: var(--muted); list-style: none;
+  }
+  .adv summary::-webkit-details-marker { display: none; }
+  .adv summary::before { content: "▸"; display: inline-block; width: 1em; }
+  .adv[open] summary::before { content: "▾"; }
+  .adv[open] summary { border-bottom: 1px solid var(--line-soft); }
+  .adv .group { padding: 12px 10px 0; }
+  .adv .group:last-child { padding-bottom: 12px; }
+
   button {
     font: inherit; color: var(--text); background: var(--panel-2);
     border: 1px solid var(--line); border-radius: 5px; padding: 6px 11px; cursor: pointer;
@@ -239,52 +251,56 @@
         <div id="modelState" class="sub" style="color:var(--muted);font-size:11px;margin-top:6px"></div>
       </div>
 
-      <div class="group">
-        <label for="task" id="taskLabel">Task</label>
-        <select id="task">
-          <option value="transcribe">Transcribe (keep language)</option>
-          <option value="translate">Translate to English</option>
-        </select>
-      </div>
+      <details class="adv" id="advSettings">
+        <summary>Advanced settings</summary>
 
-      <div class="group">
-        <label for="lang" id="langLabel">Language</label>
-        <select id="lang">
-          <option value="">Auto-detect</option>
-          <option value="en">English</option>
-          <option value="es">Spanish</option>
-          <option value="fr">French</option>
-          <option value="de">German</option>
-          <option value="it">Italian</option>
-          <option value="pt">Portuguese</option>
-          <option value="nl">Dutch</option>
-          <option value="hi">Hindi</option>
-          <option value="bn">Bengali</option>
-          <option value="ja">Japanese</option>
-          <option value="ko">Korean</option>
-          <option value="zh">Chinese</option>
-          <option value="ru">Russian</option>
-          <option value="ar">Arabic</option>
-        </select>
-      </div>
-
-      <div class="group">
-        <label class="check"><input id="vad" type="checkbox" /> Skip silence (VAD)</label>
-      </div>
-
-      <div class="group">
-        <!-- `speakers` is an OPTIONAL hint beside `diarize`: left empty, the
-             clustering works the count out from the voices and says so in the
-             reply; given, it is obeyed exactly. So the field starts empty —
-             estimating is the default, and a number is an override for someone
-             who actually knows how many people are in the room. -->
-        <label class="check"><input id="diarize" type="checkbox" /> <span id="diarizeLabel">Identify speakers</span></label>
-        <div class="row" id="speakersRow" style="margin-top:7px; align-items:center; gap:7px">
-          <label class="check" for="speakers" style="flex:1" id="speakersLabel">How many people (optional)</label>
-          <input id="speakers" type="number" min="1" max="100" step="1" placeholder="auto" style="width:64px; flex:none" />
+        <div class="group">
+          <label for="task" id="taskLabel">Task</label>
+          <select id="task">
+            <option value="transcribe">Transcribe (keep language)</option>
+            <option value="translate">Translate to English</option>
+          </select>
         </div>
-        <div id="speakersNote" class="sub" style="color:var(--muted);font-size:11px;margin-top:6px"></div>
-      </div>
+
+        <div class="group">
+          <label for="lang" id="langLabel">Language</label>
+          <select id="lang">
+            <option value="">Auto-detect</option>
+            <option value="en">English</option>
+            <option value="es">Spanish</option>
+            <option value="fr">French</option>
+            <option value="de">German</option>
+            <option value="it">Italian</option>
+            <option value="pt">Portuguese</option>
+            <option value="nl">Dutch</option>
+            <option value="hi">Hindi</option>
+            <option value="bn">Bengali</option>
+            <option value="ja">Japanese</option>
+            <option value="ko">Korean</option>
+            <option value="zh">Chinese</option>
+            <option value="ru">Russian</option>
+            <option value="ar">Arabic</option>
+          </select>
+        </div>
+
+        <div class="group">
+          <label class="check"><input id="vad" type="checkbox" /> Skip silence (VAD)</label>
+        </div>
+
+        <div class="group">
+          <!-- `speakers` is an OPTIONAL hint beside `diarize`: left empty, the
+               clustering works the count out from the voices and says so in the
+               reply; given, it is obeyed exactly. So the field starts empty —
+               estimating is the default, and a number is an override for someone
+               who actually knows how many people are in the room. -->
+          <label class="check"><input id="diarize" type="checkbox" /> <span id="diarizeLabel">Identify speakers</span></label>
+          <div class="row" id="speakersRow" style="margin-top:7px; align-items:center; gap:7px">
+            <label class="check" for="speakers" style="flex:1" id="speakersLabel">How many people (optional)</label>
+            <input id="speakers" type="number" min="1" max="100" step="1" placeholder="auto" style="width:64px; flex:none" />
+          </div>
+          <div id="speakersNote" class="sub" style="color:var(--muted);font-size:11px;margin-top:6px"></div>
+        </div>
+      </details>
 
       <div class="row">
         <button id="go" class="primary" style="flex:1">Transcribe</button>
@@ -1822,6 +1838,10 @@ function draw() {
   el("diarize").checked = P.diarize;
   el("speakers").value = P.speakers;
   syncDiarize();
+  // Open the collapsed section by itself when a bookmarked/typed URL already
+  // carries a non-default value in it — otherwise a saved setting would sit
+  // hidden behind a collapsed summary the user never thinks to expand.
+  if (P.task !== "transcribe" || P.lang || P.vad || P.diarize) el("advSettings").open = true;
   el("q").value = P.q;
   // A URL can carry a source this build doesn't offer; land on the mode the
   // capture code would actually use rather than leaving the select blank.
