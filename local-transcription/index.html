@@ -441,7 +441,10 @@ let catalogRunner = "";  // …and its runner code, e.g. "parakeet-mlx"
 // ── Params are the state ───────────────────────────────────────────────────
 const P = {
   get file()  { return fused.params.get("file") || ""; },
-  get model() { return fused.params.get("model") || ""; },
+  // Named `asrModel` in the URL, not `model` — the fused-render shell's own
+  // sidebar already owns a `model` query param, and sharing the key meant
+  // each one stomped the other's value in the address bar.
+  get model() { return fused.params.get("asrModel") || ""; },
   get lang()  { return fused.params.get("lang") || ""; },
   get task()  { return fused.params.get("task") || "transcribe"; },
   get vad()   { return fused.params.get("vad") === "1"; },
@@ -756,7 +759,7 @@ async function fillModels() {
       `<option value="${esc(want)}" disabled>${esc(want)} — ${esc(engine || "this engine")} cannot load it</option>`);
     sel.value = models[0].id;
     // The param has to move too, or draw() puts the dead option straight back.
-    fused.params.set("model", sel.value);
+    fused.params.set("asrModel", sel.value);
     notice("<b>" + esc(want) + " is not loadable by " + esc(engine || "the speech engine in use") +
       "</b> — switched to <b>" + esc(models[0].label || models[0].id) + "</b>.");
   } else if (stale) {
@@ -1897,7 +1900,7 @@ el("speakers").addEventListener("change", () => {
   // is now perfectly valid.
   syncDiarize();
 });
-el("model").addEventListener("change", () => fused.params.set("model", el("model").value));
+el("model").addEventListener("change", () => fused.params.set("asrModel", el("model").value));
 el("q").addEventListener("input", () => fused.params.set("q", el("q").value));
 el("viewSegments").addEventListener("click", () => fused.params.set("view", "segments"));
 el("viewText").addEventListener("click", () => fused.params.set("view", "text"));
