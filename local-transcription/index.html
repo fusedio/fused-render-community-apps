@@ -185,6 +185,19 @@
   .turn:last-child { margin-bottom: 0; }
   .turn .who { display: block; color: var(--spk); font-size: 11px; text-transform: uppercase; letter-spacing: .07em; margin-bottom: 2px; }
   .spk-none .who { text-transform: none; font-style: italic; }
+
+  /* The legend's names are EDITABLE — diarization can only say "Speaker 2", and
+     a reader who knows the room can say who that is. An input rather than a
+     pencil button: the thing you want to change is the word itself, so the word
+     is the control. Borderless until hovered or focused, because a form field
+     per speaker would read as a settings panel rather than a legend. */
+  input.spkname {
+    background: none; border: 1px solid transparent; border-radius: 4px;
+    color: var(--spk); font: inherit; font-size: 12px; padding: 1px 4px;
+    min-width: 60px;
+  }
+  input.spkname:hover { border-color: var(--border); }
+  input.spkname:focus { border-color: var(--spk); outline: none; color: var(--text); }
 </style>
 </head>
 <body>
@@ -428,7 +441,10 @@ let catalogRunner = "";  // …and its runner code, e.g. "parakeet-mlx"
 // ── Params are the state ───────────────────────────────────────────────────
 const P = {
   get file()  { return fused.params.get("file") || ""; },
-  get model() { return fused.params.get("model") || ""; },
+  // Named `asrModel` in the URL, not `model` — the fused-render shell's own
+  // sidebar already owns a `model` query param, and sharing the key meant
+  // each one stomped the other's value in the address bar.
+  get model() { return fused.params.get("asrModel") || ""; },
   get lang()  { return fused.params.get("lang") || ""; },
   get task()  { return fused.params.get("task") || "transcribe"; },
   get vad()   { return fused.params.get("vad") === "1"; },
@@ -743,7 +759,7 @@ async function fillModels() {
       `<option value="${esc(want)}" disabled>${esc(want)} — ${esc(engine || "this engine")} cannot load it</option>`);
     sel.value = models[0].id;
     // The param has to move too, or draw() puts the dead option straight back.
-    fused.params.set("model", sel.value);
+    fused.params.set("asrModel", sel.value);
     notice("<b>" + esc(want) + " is not loadable by " + esc(engine || "the speech engine in use") +
       "</b> — switched to <b>" + esc(models[0].label || models[0].id) + "</b>.");
   } else if (stale) {
@@ -826,7 +842,13 @@ function speakerClass(label) {
   }
   return "spk-" + ((Number(digits[1]) - 1 + SPK_HUES * 2) % SPK_HUES);
 }
-const speakerName = (label) => label || NO_SPEAKER;
+// Names the reader typed over the runtime's own labels, keyed by the RAW label
+// ("Speaker 2" -> "Priya"). Kept beside `result` rather than inside it: the
+// transcript is what the model said, and this is what the reader knows. Cleared
+// when a new run starts, because "Speaker 2" is a different person in a
+// different recording.
+let spkNames = {};
+const speakerName = (label) => (label ? spkNames[label] || label : NO_SPEAKER);
 
 function drawLegend(segs) {
   const box = el("legend");
@@ -840,13 +862,44 @@ function drawLegend(segs) {
     if (s.speaker && !seen.has(s.speaker)) { seen.add(s.speaker); labels.push(s.speaker); }
   }
   const rows = labels.map((l) =>
-    `<span class="lg ${speakerClass(l)}"><span class="sw"></span>${esc(l)}</span>`);
+    `<span class="lg ${speakerClass(l)}"><span class="sw"></span>` +
+    `<input class="spkname" data-spk="${esc(l)}" value="${esc(speakerName(l))}" ` +
+    `title="Rename ${esc(l)} — the name follows into the transcript, the copy and the .srt" ` +
+    `spellcheck="false" /></span>`);
   if (segs.some((s) => "speaker" in s && !s.speaker)) {
     rows.push(`<span class="lg spk-none"><span class="sw"></span>${esc(NO_SPEAKER)} — ` +
       `words the speaker segmenter heard nobody in</span>`);
   }
   box.innerHTML = rows.join("");
   box.classList.toggle("hidden", !rows.length);
+  box.querySelectorAll("input.spkname").forEach((input) => {
+    sizeName(input);
+    input.addEventListener("input", () => {
+      const raw = input.dataset.spk, typed = input.value.trim();
+      if (!typed || typed === raw) delete spkNames[raw];
+      else spkNames[raw] = typed;
+      sizeName(input);
+      // The transcript is repainted in place rather than through drawResult(),
+      // which rewrites this legend wholesale and would take the caret with it.
+      refreshSpeakerNames();
+    });
+    input.addEventListener("keydown", (e) => { if (e.key === "Enter") input.blur(); });
+  });
+}
+
+// An input as wide as its value, so a legend of short names is not a row of
+// equal boxes with air in them.
+function sizeName(input) {
+  input.size = Math.max(6, Math.min(28, input.value.length + 1));
+}
+
+// Every label already painted carries its RAW label in `data-spk`, so renaming
+// is a pass over those nodes — no re-render, no lost caret, no second copy of
+// the naming rule.
+function refreshSpeakerNames() {
+  document.querySelectorAll("#segments [data-spk], #plain [data-spk]").forEach((node) => {
+    node.textContent = speakerName(node.dataset.spk);
+  });
 }
 
 // Consecutive segments from one speaker are ONE turn: a paragraph per hand-over
@@ -899,7 +952,7 @@ function drawResult() {
     ? segs.map((s, i) => {
         const hit = !q || (s.text || "").toLowerCase().includes(q);
         const who = diarized
-          ? `<span class="spkchip">${esc(speakerName(s.speaker))}</span>`
+          ? `<span class="spkchip" data-spk="${esc(s.speaker || "")}">${esc(speakerName(s.speaker))}</span>`
           : "";
         return `<div class="seg${hit ? "" : " dim"}` +
           (diarized ? " spk " + speakerClass(s.speaker) : "") +
@@ -921,7 +974,7 @@ function drawResult() {
   el("plain").innerHTML = diarized && segs.length
     ? speakerTurns(segs).map((t) =>
         `<div class="turn ${speakerClass(t.who)}">` +
-        `<span class="who">${esc(speakerName(t.who))}</span>` +
+        `<span class="who" data-spk="${esc(t.who || "")}">${esc(speakerName(t.who))}</span>` +
         highlight(t.text, q) + "</div>").join("")
     : highlight(result.text || "", q);
   const seg = P.view !== "text";
@@ -1462,6 +1515,7 @@ async function transcribe() {
   // live, leaving the PREVIOUS run's text sitting under a running progress bar
   // would read as this run's output until the first segment overwrote it.
   result = null;
+  spkNames = {};                    // last run's names, and "Speaker 2" is somebody else now
   timing = null;                    // ditto the timing chart: last run's numbers, wrong picture
   drawResult();
   // A stale search would hide the words as they arrive. Cleared here rather
@@ -1720,32 +1774,37 @@ function drawTiming() {
       : "");
 }
 
+// SRT has no speaker field of its own — every player just draws the cue text —
+// so the convention subtitlers use is a name prefix on the line, and that is
+// what a diarized transcript exports as. Undiarized runs get the bare text, not
+// an empty prefix.
 function toSrt(segments) {
+  const withSpeakers = isDiarized(result);
   const stamp = (s) => {
     const ms = Math.floor((s % 1) * 1000), t = Math.floor(s);
     return [Math.floor(t / 3600), Math.floor((t % 3600) / 60), t % 60]
       .map((n) => String(n).padStart(2, "0")).join(":") + "," + String(ms).padStart(3, "0");
   };
-  return segments.map((s, i) =>
-    (i + 1) + "\n" + stamp(s.start) + " --> " + stamp(s.end) + "\n" + (s.text || "").trim() + "\n"
-  ).join("\n");
+  return segments.map((s, i) => {
+    const prefix = withSpeakers ? speakerName(s.speaker) + ": " : "";
+    return (i + 1) + "\n" + stamp(s.start) + " --> " + stamp(s.end) + "\n" +
+      prefix + (s.text || "").trim() + "\n";
+  }).join("\n");
 }
 
 async function saveSrt() {
   if (!result || !(result.segments || []).length) return;
-  const target = P.file.replace(/\.[^./]+$/, "") + ".srt";
+  // ~/Downloads, not beside the recording — a transcript is something the
+  // reader takes away from this page, so it belongs where every other browser
+  // download lands. A name clash there gets numbered rather than overwritten
+  // or blocked on a confirm(), matching how downloads already behave.
+  const name = (P.file.split(/[\\/]/).pop() || "transcript").replace(/\.[^./]+$/, "");
   const body = toSrt(result.segments);
   try {
-    await fused.writeFile(target, body, { create: true });
-    notice("Wrote <span class='mono'>" + esc(target) + "</span>");
+    const { path } = await fused.runPython("./save_srt.py", { name, body }, { key: null });
+    notice("Wrote <span class='mono'>" + esc(path) + "</span>");
   } catch (err) {
-    if (err.type === "exists") {
-      if (!confirm(target + "\n\nalready exists. Overwrite it?")) return;
-      await fused.writeFile(target, body);
-      notice("Overwrote <span class='mono'>" + esc(target) + "</span>");
-    } else {
-      notice("<b>Could not write the .srt</b> — " + esc(err.message), "error");
-    }
+    notice("<b>Could not write the .srt</b> — " + esc(err.message), "error");
   }
 }
 
@@ -1839,7 +1898,7 @@ el("speakers").addEventListener("change", () => {
   // is now perfectly valid.
   syncDiarize();
 });
-el("model").addEventListener("change", () => fused.params.set("model", el("model").value));
+el("model").addEventListener("change", () => fused.params.set("asrModel", el("model").value));
 el("q").addEventListener("input", () => fused.params.set("q", el("q").value));
 el("viewSegments").addEventListener("click", () => fused.params.set("view", "segments"));
 el("viewText").addEventListener("click", () => fused.params.set("view", "text"));
@@ -1855,10 +1914,21 @@ el("stop").addEventListener("click", async () => {
   try { await fused.ai.cancel(ASR); } catch (err) { notice("Stop failed — " + esc(err.message), "error"); }
 });
 
+// What Copy puts on the clipboard: the same thing the Plain text view shows —
+// turn-grouped and named when the run was diarized, the model's own joined text
+// when it wasn't. Copying a diarized transcript as an unattributed wall of
+// words would throw away the half of it the reader just named.
+function transcriptText() {
+  if (!result) return "";
+  const segs = result.segments || [];
+  if (!isDiarized(result) || !segs.length) return result.text || "";
+  return speakerTurns(segs).map((t) => speakerName(t.who) + ": " + t.text).join("\n\n");
+}
+
 el("copy").addEventListener("click", async () => {
   if (!result) return;
   try {
-    await navigator.clipboard.writeText(result.text || "");
+    await navigator.clipboard.writeText(transcriptText());
     el("copy").textContent = "Copied";
     setTimeout(() => (el("copy").textContent = "Copy"), 1200);
   } catch (err) {
