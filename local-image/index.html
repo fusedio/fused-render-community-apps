@@ -452,7 +452,10 @@ const bytes = (n) => {
 // ── Params are the state ───────────────────────────────────────────────────
 const P = {
   get tab()      { return fused.params.get("tab") || "studio"; },
-  get model()    { return fused.params.get("model") || ""; },
+  // Named `imageModel` in the URL, not `model` — the fused-render shell's own
+  // sidebar already owns a `model` query param, and sharing the key meant
+  // each one stomped the other's value in the address bar.
+  get model()    { return fused.params.get("imageModel") || ""; },
   get prompt()   { return fused.params.get("prompt") || ""; },
   get w()        { return parseInt(fused.params.get("w") || "512", 10) || 512; },
   get h()        { return parseInt(fused.params.get("h") || "512", 10) || 512; },
@@ -592,7 +595,7 @@ async function fillModels() {
   sel.innerHTML = catalogModels
     .map((m) => `<option value="${esc(m.id)}">${esc(m.label || shortName(m.id))}${m.size_gb ? ` · ${m.size_gb} GB` : ""}</option>`)
     .join("");
-  if (!P.model && block && block.default) setP("model", block.default);
+  if (!P.model && block && block.default) setP("imageModel", block.default);
 }
 
 function syncModelNote() {
@@ -842,7 +845,7 @@ function openInStudio(image) {
   setP("w", image.width);
   setP("h", image.height);
   if (image.prompt) setP("prompt", image.prompt);
-  if (image.model) setP("model", image.model);
+  if (image.model) setP("imageModel", image.model);
   setP("tab", "studio");
   // Same reason as Reuse seed: this hands over steps, guidance and a seed, all
   // of which live in the advanced panel.
@@ -1132,7 +1135,7 @@ el("tabs").addEventListener("click", (e) => {
   if (b.dataset.tab === "gallery") loadGallery();
 });
 
-bindParam("model", "model");
+bindParam("model", "imageModel");
 bindParam("prompt", "prompt");
 bindParam("idea", "idea");
 bindParam("steps", "steps");

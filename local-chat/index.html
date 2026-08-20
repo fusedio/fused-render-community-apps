@@ -482,12 +482,16 @@ const DEFAULTS = {
    `raw` and `history` are mutually exclusive at the bridge, and a system prompt
    has nowhere to go without a template. */
 const isRaw = () => P.get("mode") === "raw";
+// `model` in the URL clashes with the fused-render shell's own sidebar param
+// of the same name, so this one is namespaced `chatModel` at the P layer —
+// every other call site still says P.raw("model")/P.set("model", …).
+const PARAM_ALIAS = { model: "chatModel" };
 const P = {
-  get: (k) => { const v = fused.params.get(k); return v === undefined || v === "" ? DEFAULTS[k] : v; },
-  raw: (k) => fused.params.get(k) || "",
+  get: (k) => { const v = fused.params.get(PARAM_ALIAS[k] || k); return v === undefined || v === "" ? DEFAULTS[k] : v; },
+  raw: (k) => fused.params.get(PARAM_ALIAS[k] || k) || "",
   num: (k) => parseFloat(P.get(k)),
   int: (k) => parseInt(P.get(k), 10),
-  set: (k, v) => fused.params.set(k, String(v)),
+  set: (k, v) => fused.params.set(PARAM_ALIAS[k] || k, String(v)),
 };
 
 /* ---------- state ---------- */
