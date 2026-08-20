@@ -1794,19 +1794,17 @@ function toSrt(segments) {
 
 async function saveSrt() {
   if (!result || !(result.segments || []).length) return;
-  const target = P.file.replace(/\.[^./]+$/, "") + ".srt";
+  // ~/Downloads, not beside the recording — a transcript is something the
+  // reader takes away from this page, so it belongs where every other browser
+  // download lands. A name clash there gets numbered rather than overwritten
+  // or blocked on a confirm(), matching how downloads already behave.
+  const name = (P.file.split(/[\\/]/).pop() || "transcript").replace(/\.[^./]+$/, "");
   const body = toSrt(result.segments);
   try {
-    await fused.writeFile(target, body, { create: true });
-    notice("Wrote <span class='mono'>" + esc(target) + "</span>");
+    const { path } = await fused.runPython("./save_srt.py", { name, body }, { key: null });
+    notice("Wrote <span class='mono'>" + esc(path) + "</span>");
   } catch (err) {
-    if (err.type === "exists") {
-      if (!confirm(target + "\n\nalready exists. Overwrite it?")) return;
-      await fused.writeFile(target, body);
-      notice("Overwrote <span class='mono'>" + esc(target) + "</span>");
-    } else {
-      notice("<b>Could not write the .srt</b> — " + esc(err.message), "error");
-    }
+    notice("<b>Could not write the .srt</b> — " + esc(err.message), "error");
   }
 }
 
