@@ -24,8 +24,8 @@ Open `index.html` in fused-render.
   Non-panoramic images stay in the library but are flagged.
 - **Processing ▾ menu** (keys 1–8): interactive 360° sphere (Pannellum,
   WebGL) · original pixels · cube cross (`e2c` dice) · cube strip (`e2c`
-  horizon) · six faces with per-face downloads · perspective (`e2p`, drag to
-  look, scroll to zoom FOV) · little planet (stereographic) · 180° fisheye.
+  horizon) · six faces with per-face downloads · perspective (`e2p`, aim and
+  zoom with sliders) · little planet (stereographic) · 180° fisheye.
 - **Cube inputs**: cross/strip layouts are auto-reprojected via `c2e` for
   the 360° view, and can be materialized as new equirect assets
   ("→ equirect" button on the card).

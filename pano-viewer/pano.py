@@ -1,6 +1,3 @@
-# /// script
-# dependencies = ["py360convert>=1.0.4"]
-# ///
 """Backend for Ranov-UR (index.html): panoramic image library with
 validation, normalization (any Pillow-readable format -> browser-displayable
 JPEG/PNG), and on-the-fly projection conversions (py360convert e2c/e2p/c2e
@@ -143,7 +140,7 @@ def _classify(w, h, raw_head, img):
         return abs(a - b) <= b * tol
 
     if close(ratio, 2.0):
-        reasons.append(f"aspect ratio {ratio:.3f} ≈ 2:1 (full equirectangular)")
+        reasons.append(f"aspect ratio {ratio:.3f} ~= 2:1 (full equirectangular)")
         return "equirect", True, reasons
     if close(ratio, 6.0):
         reasons.append("aspect ratio 6:1 (horizontal cube strip)")

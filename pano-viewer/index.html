@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta name="fused-app">
+  <meta name="fused-app">
 <meta charset="utf-8">
 <title>Pano Viewer</title>
 <style>
@@ -186,6 +186,35 @@
     border: 1px solid var(--edge); border-radius: 5px; padding: 3px 6px; font: inherit;
   }
   #ctrl .hint { font-size: 10.5px; color: var(--dim); margin-top: 4px; }
+  #ctrl.collapsed { display: none !important; }
+  #ctrlCollapse {
+    position: absolute; top: 8px; right: 8px; width: 20px; height: 20px;
+    border: 1px solid var(--edge); border-radius: 5px; background: var(--panel);
+    color: var(--dim); line-height: 1; padding: 0; cursor: pointer; z-index: 21;
+  }
+  #ctrlCollapse:hover { color: var(--text); border-color: #d4d4d8; }
+  .row label input.numin {
+    width: 62px; text-align: right; font-family: ui-monospace, monospace;
+    font-size: 11px; color: var(--text); background: var(--panel);
+    border: 1px solid var(--edge); border-radius: 4px; padding: 1px 4px;
+  }
+  .row label { align-items: center; }
+  .edgetab {
+    position: absolute; top: 12px; z-index: 26; display: none; cursor: pointer;
+    background: rgba(255,255,255,.94); border: 1px solid var(--edge);
+    border-radius: 8px; padding: 5px 11px; font-size: 12px; color: var(--text);
+    box-shadow: 0 2px 8px rgba(0,0,0,.08); backdrop-filter: blur(4px);
+  }
+  #libReopen { left: 12px; }
+  #ctrlReopen { right: 14px; }
+  .edgetab:hover { border-color: #d4d4d8; }
+  #libCollapse {
+    float: right; border: 1px solid var(--edge); border-radius: 5px; cursor: pointer;
+    background: var(--panel); color: var(--dim); width: 20px; height: 20px;
+    line-height: 1; padding: 0; margin-top: -3px; font: inherit;
+  }
+  #libCollapse:hover { color: var(--text); }
+  #mid.lib-collapsed #sidebar { display: none; }
 
   /* ---------- status bar ---------- */
   #status {
@@ -263,7 +292,7 @@
 
   <div id="mid">
     <div id="sidebar">
-      <h3>Library</h3>
+      <h3>Library <button id="libCollapse" title="Hide library">‹</button></h3>
       <div id="assets"></div>
       <div id="sidefoot"></div>
     </div>
@@ -276,6 +305,8 @@
         <div id="spin">converting…</div>
         <div id="warnband"></div>
         <div id="ctrl"></div>
+        <button id="libReopen" class="edgetab" title="Show library">☰ Library</button>
+        <button id="ctrlReopen" class="edgetab" title="Show controls">‹ Controls</button>
       </div>
       <div id="status"><span id="st-asset"></span><span id="st-view"></span><span id="st-msg"></span></div>
     </div>
@@ -291,7 +322,7 @@
     <tr><td><kbd>i</kbd></td><td>import files</td></tr>
     <tr><td><kbd>d</kbd></td><td>download current view</td></tr>
     <tr><td><kbd>?</kbd></td><td>toggle this help</td></tr>
-    <tr><td colspan="2" style="padding-top:10px">Perspective / fisheye: drag the image to look around, scroll to zoom FOV.</td></tr>
+    <tr><td colspan="2" style="padding-top:10px">Perspective / fisheye: use the sliders to aim and zoom.</td></tr>
   </table>
 </div></div>
 
@@ -358,17 +389,23 @@
   const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;")
     .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
+  // fused.params resolves against the shell URL, so a page that embeds this view
+  // in its own iframe can only pass options on the iframe src — read both, with
+  // the shell winning so normal use is unchanged.
+  const ownParams = new URLSearchParams(location.search);
+  const param = (k) => fused.params.get(k) ?? ownParams.get(k) ?? undefined;
+
   const P = {
-    get: (k) => fused.params.get(k) ?? DEFAULTS[k],
+    get: (k) => param(k) ?? DEFAULTS[k],
     set: (k, v) => { v = String(v);
       if (fused.params.get(k) !== v) fused.params.set(k, v); },
-    num: (k) => parseFloat(fused.params.get(k) ?? DEFAULTS[k]),
+    num: (k) => parseFloat(param(k) ?? DEFAULTS[k]),
   };
   const mode = () => {
-    const m = fused.params.get("mode");
+    const m = param("mode");
     return MODES.some((x) => x.id === m) ? m : "view360";
   };
-  const selId = () => parseInt(fused.params.get("asset") || "0", 10);
+  const selId = () => parseInt(param("asset") || "0", 10);
   const selAsset = () => assets.find((a) => a.id === selId()) || null;
 
   function toast(msg, err) {
@@ -381,7 +418,8 @@
   function logEvent(kind, detail) {   // fire-and-forget UI event log
     clearTimeout(logTimer);
     logTimer = setTimeout(() => {
-      py({ action: "log", kind, detail: JSON.stringify(detail) }).catch(() => {});
+      fused.runPython("./pano.py", { action: "log", kind,
+        detail: JSON.stringify(detail) }, { key: "log" }).catch(() => {});
     }, 800);
   }
 
@@ -479,10 +517,11 @@
   }
 
   // ------------------------------------------------------------- controls
-  function slider(key, label, min, max, step, fmt) {
+  function slider(key, label, min, max, step) {
     const v = P.get(key);
-    return `<div class="row"><label>${label}<output id="o-${key}">` +
-      `${fmt ? fmt(v) : v}</output></label>` +
+    return `<div class="row"><label>${label}` +
+      `<input type="number" class="numin" id="n-${key}" data-num="${key}" ` +
+      `min="${min}" max="${max}" step="${step}" value="${v}"></label>` +
       `<input type="range" data-p="${key}" min="${min}" max="${max}" ` +
       `step="${step}" value="${v}"></div>`;
   }
@@ -504,7 +543,7 @@
         sizeSelect("psize", "Output size", [["1024x576", "1024 × 576"],
           ["1280x720", "1280 × 720"], ["1920x1080", "1920 × 1080"],
           ["1080x1080", "1080 × 1080"]]) +
-        `<div class="hint">drag image to look · scroll to zoom</div>`;
+        `<div class="hint">adjust the sliders, then Apply to render</div>`;
     } else if (m === "little_planet") {
       html = `<h4>Little planet</h4>` +
         slider("zoom", "Zoom", 0.2, 3, 0.05) +
@@ -515,21 +554,53 @@
         slider("yaw", "Yaw °", -180, 180, 1) +
         slider("pitch", "Pitch °", -90, 90, 1) +
         sizeSelect("csize", "Output size", [["512", "512 px"], ["1024", "1024 px"], ["2048", "2048 px"]]) +
-        `<div class="hint">drag image to look around</div>`;
+        `<div class="hint">adjust the sliders, then Apply to render</div>`;
     } else if (m === "cube_dice" || m === "cube_horizon" || m === "cube_faces") {
       html = `<h4>${m === "cube_faces" ? "Cube faces (e2c)" : "Cubemap (e2c)"}</h4>` +
         sizeSelect("face", "Face size", [["0", "auto (source/4)"], ["256", "256 px"],
           ["512", "512 px"], ["1024", "1024 px"]]);
     }
+    if (html) html = `<button id="ctrlCollapse" title="Collapse panel">›</button>` + html +
+      `<button class="btn primary" id="applyBtn" style="margin-top:12px;width:100%" disabled>Apply changes</button>`;
     els.ctrl.style.display = html ? "block" : "none";
     els.ctrl.innerHTML = html;
+    const markDirty = () => { const ab = $("applyBtn"); if (ab) ab.disabled = false; };
     els.ctrl.querySelectorAll("[data-p]").forEach((el) => {
       el.addEventListener("input", () => {
-        P.set(el.dataset.p, el.value);
-        const o = $("o-" + el.dataset.p);
-        if (o) o.textContent = el.value;
+        const num = $("n-" + el.dataset.p);
+        if (num) num.value = el.value;          // slider -> number box
+        markDirty();
       });
     });
+    els.ctrl.querySelectorAll("[data-num]").forEach((el) => {
+      const range = () => els.ctrl.querySelector(`[data-p="${el.dataset.num}"]`);
+      el.addEventListener("input", () => {      // typed value -> slider (clamped)
+        const r = range();
+        if (r && el.value !== "") {
+          let n = parseFloat(el.value);
+          if (!isNaN(n)) {
+            n = Math.max(parseFloat(el.min), Math.min(parseFloat(el.max), n));
+            r.value = String(n);
+          }
+        }
+        markDirty();
+      });
+      el.addEventListener("change", () => { const r = range(); if (r) el.value = r.value; });
+    });
+    const applyBtn = $("applyBtn");
+    if (applyBtn) applyBtn.addEventListener("click", () => {
+      const vals = {};
+      els.ctrl.querySelectorAll("[data-p]").forEach((el) => { vals[el.dataset.p] = el.value; });
+      Object.keys(vals).forEach((k) => P.set(k, vals[k]));
+    });
+    const cc = $("ctrlCollapse");
+    if (cc) cc.addEventListener("click", () => {
+      els.ctrl.classList.add("collapsed");
+      $("ctrlReopen").style.display = "block";
+    });
+    $("ctrlReopen").style.display =
+      (html && els.ctrl.classList.contains("collapsed")) ? "block" : "none";
+    if (!html) els.ctrl.classList.remove("collapsed");
   }
 
   // ------------------------------------------------------------- viewer
@@ -627,10 +698,11 @@
   }
 
   function draw(force) {
+    renderSeq++;
     renderModes(); renderControls();
     document.querySelectorAll(".card").forEach((c) => c.classList.remove("sel"));
     const a = selAsset();
-    if (!a) { destroyViewer(); show("empty"); els.warn.style.display = "none";
+    if (!a) { destroyViewer(); show("empty"); busy(false); els.warn.style.display = "none";
       els.stAsset.textContent = ""; setViewStatus("", ""); return; }
     const idx = assets.indexOf(a);
     const card = els.assets.children[idx];
@@ -644,19 +716,17 @@
 
     const m = mode();
     if (m === "view360") {
-      els.img.classList.remove("grabbable");
+      busy(false);
       draw360(a);
     } else if (m === "original") {
       destroyViewer(); show("img");
-      els.img.classList.remove("grabbable");
+      busy(false);
       els.img.src = assetUrl(a.display_path);
       lastView = { path: a.display_path };
       setViewStatus(`original pixels · ${a.display_w}×${a.display_h}` +
         (a.display_w !== a.width ? " (display copy, downscaled)" : ""), "");
     } else {
       destroyViewer();
-      els.img.classList.toggle("grabbable",
-        m === "perspective" || m === "fisheye180");
       scheduleRender();
     }
   }
@@ -815,38 +885,6 @@
     link.click();
   }
 
-  // ------------------------------------------------------------- drag look
-  (function dragLook() {
-    let drag = null;
-    els.img.addEventListener("pointerdown", (e) => {
-      const m = mode();
-      if (m !== "perspective" && m !== "fisheye180") return;
-      drag = { x: e.clientX, y: e.clientY, yaw: P.num("yaw"), pitch: P.num("pitch") };
-      els.img.classList.add("grabbing");
-      els.img.setPointerCapture(e.pointerId);
-    });
-    els.img.addEventListener("pointermove", (e) => {
-      if (!drag) return;
-      const fov = P.num("fov");
-      const scale = (mode() === "fisheye180" ? 120 : fov) / els.img.clientWidth;
-      let yaw = drag.yaw - (e.clientX - drag.x) * scale;
-      let pitch = drag.pitch + (e.clientY - drag.y) * scale;
-      yaw = ((yaw + 180) % 360 + 360) % 360 - 180;
-      pitch = Math.max(-90, Math.min(90, pitch));
-      P.set("yaw", Math.round(yaw));
-      P.set("pitch", Math.round(pitch));
-    });
-    const end = () => { drag = null; els.img.classList.remove("grabbing"); };
-    els.img.addEventListener("pointerup", end);
-    els.img.addEventListener("pointercancel", end);
-    els.img.addEventListener("wheel", (e) => {
-      if (mode() !== "perspective") return;
-      e.preventDefault();
-      const fov = Math.max(20, Math.min(175, P.num("fov") + (e.deltaY > 0 ? 5 : -5)));
-      P.set("fov", Math.round(fov));
-    }, { passive: false });
-  })();
-
   // ------------------------------------------------------------- keyboard
   document.addEventListener("keydown", (e) => {
     const tag = (e.target.tagName || "").toLowerCase();
@@ -867,6 +905,20 @@
     if (e.target === $("help")) $("help").style.display = "none";
   });
 
+  // ----------------------------------------------------------- panel collapse
+  $("libCollapse").addEventListener("click", () => {
+    $("mid").classList.add("lib-collapsed");
+    $("libReopen").style.display = "block";
+  });
+  $("libReopen").addEventListener("click", () => {
+    $("mid").classList.remove("lib-collapsed");
+    $("libReopen").style.display = "none";
+  });
+  $("ctrlReopen").addEventListener("click", () => {
+    els.ctrl.classList.remove("collapsed");
+    $("ctrlReopen").style.display = "none";
+  });
+
   // ------------------------------------------------------------- boot
   fused.params.onChange(() => draw(false));
   try {
@@ -874,7 +926,7 @@
     const r = await py({ action: "setup" });
     assets = r.assets;
     busy(false);
-    if (!fused.params.get("asset") && assets.length)
+    if (!param("asset") && assets.length)
       fused.params.set("asset", String(assets[0].id));
     renderSidebar();
     draw(true);
