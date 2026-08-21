@@ -1,10 +1,10 @@
 """Thorough test of vps_manager do_copy / do_rename against a real filesystem.
 
-We extract the *shipped* helpers (_reject_if_exists, _claim, _rm_quiet) and
-do_copy / do_rename verbatim from vps.py, then run them with faithful
+We extract the *shipped* helpers (_exists, _reject_if_exists, _claim, _rm_quiet)
+and do_copy / do_rename verbatim from vps.py, then run them with faithful
 stand-ins:
 
-  * sh(c, cmd)   -> runs the real command through bash, so cp -a / mv -n /
+  * sh(c, cmd)   -> runs the real command through bash, so cp -a / mv /
                     rm -rf are genuine coreutils and a nonzero exit raises
                     Http(400) like the daemon's sh().
   * sftp.lstat   -> os.lstat (does NOT follow symlinks — a broken link is
@@ -13,13 +13,12 @@ stand-ins:
 
 Covers happy paths plus the reviewed findings: overwrite, false-success race,
 orphaned temp, dangling-symlink dst, rename parity, the BusyBox guard (copy
-must never shell out to mv), and rename's cross-device mv -n fallback.
+must never shell out to mv), and rename's cross-device shell-move fallback.
 """
 import contextlib
 import glob
 import os
 import posixpath
-import re
 import shlex
 import subprocess
 import tempfile
@@ -28,7 +27,7 @@ import threading
 
 _default = os.path.join(os.path.dirname(__file__), "..", "vps.py")
 VPS = os.path.normpath(os.environ.get("VPS_PATH", _default))
-WANT = ("_reject_if_exists", "_claim", "_rm_quiet", "do_rename", "do_copy")
+WANT = ("_exists", "_reject_if_exists", "_claim", "_rm_quiet", "do_rename", "do_copy")
 
 
 def extract(path, names):
@@ -123,7 +122,7 @@ def check(name, cond, detail=""):
 def s1():
     d = fresh()
     src, dst = f"{d}/a.txt", f"{d}/b.txt"
-    open(src, "w").write("hello")
+    open(src, "w", encoding="utf-8").write("hello")
     wire(make_conn())
     r = do_copy("m", src, dst)
     check("S1 returns ok", r == {"ok": True})
@@ -137,8 +136,8 @@ def s2():
     d = fresh()
     src, dst = f"{d}/srcdir", f"{d}/dstdir"
     os.makedirs(f"{src}/sub")
-    open(f"{src}/f1", "w").write("1")
-    open(f"{src}/sub/f2", "w").write("2")
+    open(f"{src}/f1", "w", encoding="utf-8").write("1")
+    open(f"{src}/sub/f2", "w", encoding="utf-8").write("2")
     wire(make_conn())
     r = do_copy("m", src, dst)
     check("S2 returns ok", r == {"ok": True})
@@ -150,8 +149,8 @@ def s2():
 def s3():
     d = fresh()
     src, dst = f"{d}/a.txt", f"{d}/b.txt"
-    open(src, "w").write("new")
-    open(dst, "w").write("KEEP")
+    open(src, "w", encoding="utf-8").write("new")
+    open(dst, "w", encoding="utf-8").write("KEEP")
     wire(make_conn())
     try:
         do_copy("m", src, dst)
@@ -166,7 +165,7 @@ def s3():
 def s4():
     d = fresh()
     src, dst = f"{d}/a.txt", f"{d}/existing_dir"
-    open(src, "w").write("x")
+    open(src, "w", encoding="utf-8").write("x")
     os.makedirs(dst)
     wire(make_conn())
     try:
@@ -182,14 +181,14 @@ def s4():
 def s5():
     d = fresh()
     src, dst = f"{d}/a.txt", f"{d}/b.txt"
-    open(src, "w").write("mine")
+    open(src, "w", encoding="utf-8").write("mine")
 
     class RacySFTP(FakeSFTP):
         # dst is free at pre-check; a competitor creates it just before our
         # sftp.rename runs. The no-clobber refusal must then kick in.
         def rename(self, a, b):
             if b == dst and not os.path.lexists(dst):
-                open(dst, "w").write("SOMEONE ELSE")
+                open(dst, "w", encoding="utf-8").write("SOMEONE ELSE")
             return super().rename(a, b)
 
     conn = {"lock": threading.Lock(), "sftp": RacySFTP()}
@@ -207,13 +206,13 @@ def s5():
 def s6():
     d = fresh()
     src, dst = f"{d}/a.txt", f"{d}/b.txt"
-    open(src, "w").write("data")
+    open(src, "w", encoding="utf-8").write("data")
     conn = make_conn()
 
     def faulty_sh(c, cmd, timeout=60):
         if cmd.lstrip().startswith("cp "):
             tmp = shlex.split(cmd)[-1]
-            open(tmp, "w").write("PARTIAL")   # partial temp, then die
+            open(tmp, "w", encoding="utf-8").write("PARTIAL")   # partial temp, then die
             raise Http(500, "disk full")
         return real_sh(c, cmd, timeout)        # real rm -rf for cleanup
 
@@ -231,7 +230,7 @@ def s6():
 def s7():
     d = fresh()
     src, dst = f"{d}/a.txt", f"{d}/link"
-    open(src, "w").write("data")
+    open(src, "w", encoding="utf-8").write("data")
     try:
         os.symlink(f"{d}/missing_target", dst)  # dangling
     except (OSError, NotImplementedError, AttributeError) as e:
@@ -251,15 +250,15 @@ def s7():
 def s8():
     d = fresh()
     src, dst = f"{d}/a.txt", f"{d}/b.txt"
-    open(src, "w").write("mv me")
+    open(src, "w", encoding="utf-8").write("mv me")
     wire(make_conn())
     r = do_rename("m", src, dst)
     check("S8 rename ok", r == {"ok": True} and os.path.isfile(dst) and not os.path.exists(src))
     # rename onto an existing dst -> 409
     d2 = fresh()
     s2p, d2p = f"{d2}/a.txt", f"{d2}/b.txt"
-    open(s2p, "w").write("x")
-    open(d2p, "w").write("KEEP")
+    open(s2p, "w", encoding="utf-8").write("x")
+    open(d2p, "w", encoding="utf-8").write("KEEP")
     wire(make_conn())
     try:
         do_rename("m", s2p, d2p)
@@ -278,15 +277,15 @@ def s9():
     # normal file copy: no mv anywhere
     d = fresh()
     src, dst = f"{d}/a.txt", f"{d}/b.txt"
-    open(src, "w").write("no busybox worries")
+    open(src, "w", encoding="utf-8").write("no busybox worries")
     wire(make_conn(), sh=no_mv_sh)
     r = do_copy("m", src, dst)
     check("S9 copy ok without mv", r == {"ok": True} and open(dst).read() == "no busybox worries")
     # copy onto an existing dst: still no mv, clean 409
     d2 = fresh()
     s2p, d2p = f"{d2}/a.txt", f"{d2}/b.txt"
-    open(s2p, "w").write("x")
-    open(d2p, "w").write("KEEP")
+    open(s2p, "w", encoding="utf-8").write("x")
+    open(d2p, "w", encoding="utf-8").write("KEEP")
     wire(make_conn(), sh=no_mv_sh)
     try:
         do_copy("m", s2p, d2p)
@@ -298,15 +297,15 @@ def s9():
           f"leftover {temps(d) + temps(d2)}")
 
 
-# --- S10: rename cross-device -> shell mv -n fallback -------------------------
+# --- S10: rename cross-device -> shell mv fallback ---------------------------
 def s10():
     d = fresh()
     src, dst = f"{d}/a.txt", f"{d}/b.txt"
-    open(src, "w").write("exdev")
+    open(src, "w", encoding="utf-8").write("exdev")
 
     class ExdevSFTP(FakeSFTP):
         # a server whose rename always fails (e.g. src and dst straddle
-        # filesystems) — do_rename must fall back to the real shell mv -n
+        # filesystems) — do_rename must fall back to the real shell move
         def rename(self, a, b):
             raise OSError("EXDEV: cross-device link")
 
@@ -322,7 +321,7 @@ def s10():
 def s11():
     d = fresh()
     src, dst = f"{d}/a.txt", f"{d}/b"
-    open(src, "w").write("mine")
+    open(src, "w", encoding="utf-8").write("mine")
 
     class RacyDirSFTP(FakeSFTP):
         # dst is free at pre-check; a competitor creates it as a DIRECTORY just
@@ -349,7 +348,7 @@ def s11():
 def s12():
     d = fresh()
     src, dst = f"{d}/a.txt", f"{d}/b.txt"
-    open(src, "w").write("data")
+    open(src, "w", encoding="utf-8").write("data")
 
     class DeniedSFTP(FakeSFTP):
         # rename fails though dst does not exist (e.g. permission denied / quota
@@ -370,7 +369,35 @@ def s12():
     check("S12 temp cleaned up", temps(d) == [], f"orphan {temps(d)}")
 
 
-for fn in (s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, s12):
+# --- S13: do_rename, dst races in while the shell fallback would run ---------
+def s13():
+    # dst is free at the pre-check, then a directory races in AND sftp.rename
+    # fails (as a cross-device move would). _claim must classify this as the
+    # conflict it is (dst now present -> 409) and NOT shell out to mv, which
+    # would nest src inside the directory and report success.
+    d = fresh()
+    src, dst = f"{d}/a.txt", f"{d}/b"
+    open(src, "w", encoding="utf-8").write("mine")
+
+    class RacyDirExdevSFTP(FakeSFTP):
+        def rename(self, a, b):
+            if b == dst and not os.path.lexists(dst):
+                os.makedirs(dst)
+            raise OSError("EXDEV: cross-device link")
+
+    conn = {"lock": threading.Lock(), "sftp": RacyDirExdevSFTP()}
+    wire(conn)
+    try:
+        do_rename("m", src, dst)
+        check("S13 rename racing dir -> 409", False, "nested into or clobbered the dir")
+    except Http as e:
+        check("S13 rename racing dir -> 409", e.code == 409, f"code {e.code}")
+    check("S13 src not nested into racing dir",
+          os.path.isfile(src) and os.path.isdir(dst) and os.listdir(dst) == [],
+          f"src={os.path.isfile(src)} contents={os.listdir(dst) if os.path.isdir(dst) else 'n/a'}")
+
+
+for fn in (s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, s12, s13):
     fn()
 
 print("=" * 60)

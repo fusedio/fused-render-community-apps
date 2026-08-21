@@ -1251,54 +1251,54 @@ def _serve():
             sftp_of(c).mkdir(path)
         return {"ok": True}
 
+    def _exists(c, path):
+        # True if path is already a name in use on the remote. lstat, not stat —
+        # a broken symlink is still a name in use; stat would follow it to its
+        # missing target and wrongly report the name as free. Call under c[lock].
+        try:
+            sftp_of(c).lstat(path)
+            return True
+        except OSError:
+            return False
+
     def _reject_if_exists(c, dst):
         # The no-overwrite / no-move-into-directory contract both rename and
         # copy honor: refuse a destination that is already a name in use.
-        # lstat, not stat — a broken symlink is still a name in use, and stat
-        # would follow it to its missing target, raise, and wrongly report the
-        # name as free.
         with c["lock"]:
-            try:
-                sftp_of(c).lstat(dst)
-            except OSError:
-                return
-        raise Http(409, f"{posixpath.basename(dst)} already exists")
+            taken = _exists(c, dst)
+        if taken:
+            raise Http(409, f"{posixpath.basename(dst)} already exists")
 
     def _claim(c, src, dst, shell_fallback):
-        # Move src onto dst without ever overwriting it. The caller has already
-        # rejected a dst that existed at check time; this closes the check→move
-        # race. sftp.rename refuses an existing dst outright — no overwrite, no
-        # nesting into a directory — atomically, which is exactly the claim we
-        # want, and it needs no shell (BusyBox mv has no -n flag). The one
-        # thing it cannot do is move across filesystems, so rename (whose src
-        # and dst may straddle them) allows a shell fallback for that case; a
-        # copy stages a temp sibling of dst, always same-filesystem, and never
-        # does.
+        # Move src onto dst without ever overwriting it. sftp.rename refuses an
+        # existing dst outright — no overwrite, no nesting into a directory —
+        # atomically and with no shell. Its one limit is that it can't move
+        # across filesystems, so rename (src and dst may straddle them) falls
+        # back to a shell move; a copy stages a temp sibling of dst, always
+        # same-filesystem, and never does.
         with c["lock"]:
             try:
                 sftp_of(c).rename(src, dst)
                 return
-            except OSError as e:
-                if not shell_fallback:
-                    # rename can fail for reasons other than a conflict
-                    # (permissions, quota, a vanished src, a dropped channel);
-                    # only call it a 409 if dst is in fact what's in the way,
-                    # otherwise surface the real error.
-                    try:
-                        sftp_of(c).lstat(dst)
-                    except OSError:
-                        raise e from None
-                    raise Http(409, f"{posixpath.basename(dst)} already exists") from None
-        # mv -n exits 0 whether it moved anything or not, so the lstat afterward
-        # is what tells a real move from a skipped one: src gone means it landed.
-        with Busy():
-            sh(c, f"mv -n -- {shlex.quote(src)} {shlex.quote(dst)}", timeout=None)
-        with c["lock"]:
-            try:
-                sftp_of(c).lstat(src)
             except OSError:
-                return
-        raise Http(409, f"{posixpath.basename(dst)} already exists")
+                # A rename failure is a conflict, a cross-device move, or a real
+                # error. If dst is now a name in use, that IS the conflict — 409,
+                # never a blind mv that could nest src into a racing directory.
+                # Otherwise a copy re-raises the real error; a rename tries a
+                # shell move for the cross-device case.
+                if _exists(c, dst):
+                    raise Http(409, f"{posixpath.basename(dst)} already exists") from None
+                if not shell_fallback:
+                    raise
+        # rename only, dst free: `[ -e dst ] || mv` is a portable no-clobber
+        # (BusyBox mv has no -n); the check after — src gone means it moved —
+        # tells a real move from one the guard skipped because dst raced in.
+        with Busy():
+            sh(c, f"[ -e {shlex.quote(dst)} ] || mv -- {shlex.quote(src)} {shlex.quote(dst)}", timeout=None)
+        with c["lock"]:
+            moved = not _exists(c, src)
+        if not moved:
+            raise Http(409, f"{posixpath.basename(dst)} already exists")
 
     def _rm_quiet(c, path):
         # Best-effort remove — never raises. Used to tidy a staged temp (which
