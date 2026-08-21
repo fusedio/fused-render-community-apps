@@ -12,4 +12,5 @@ proportional bars, and lets you drill in, preview files, and delete.
 
 Backend is pure-stdlib Python (`disk.py`) called via `fused.runPython`.
 
-> macOS-only: relies on `du -kxd1` semantics and `~/.Trash`.
+> macOS/Linux use `du -kxd1`; Windows uses an equivalent `scandir` walk. Both
+> trash to `~/.Trash` (never a hard `rm`).
