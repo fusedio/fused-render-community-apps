@@ -5,9 +5,7 @@ Actions (dispatched from index.html via fused.runPython):
   preview — metadata + text head for a file, or top entries for a dir
   delete  — move the path to ~/.Trash (never a hard rm)
 
-du/pwd/~/.Trash are POSIX-only. On Windows main() routes to the *_win
-implementations below: scan reads sizes from the fused-render file index,
-preview/delete are plain filesystem ops trashing to a ~/.Trash folder.
+du/pwd are POSIX-only, so on Windows main() routes to the *_win versions below.
 """
 import json
 import os
@@ -173,22 +171,16 @@ def _delete(path: str) -> dict:
 
 
 # --- Windows backend --------------------------------------------------------
-# Same three actions, without du/pwd/subprocess. scan reads sizes from the
-# fused-render file index (instant on huge trees, no console-spawning du);
-# preview/delete are plain single-path filesystem ops. Paths come back
-# POSIX-style so index.html's breadcrumb and treemap logic works unchanged.
+# scan reads sizes from the fused-render file index (no du); preview/delete are
+# plain filesystem ops. Paths come back POSIX-style so index.html is unchanged.
 
 def _posix(p: str) -> str:
     return p.replace("\\", "/")
 
 
 def _win_path(p: str) -> str:
-    # Normalise what reaches the Windows backend: the path box often holds a
-    # double-quoted, backslash path pasted from Explorer ("C:\work\…"), and
-    # index.html's breadcrumb hrefs look like "/C:/Users/…" — that leading slash
-    # makes realpath resolve drive-relative ("C:Users\…"). Strip a surrounding
-    # double-quote pair (illegal in Windows names, so always safe) and the leading
-    # slash; leave apostrophes alone since they are legal in file/dir names.
+    # Undo two things before realpath: a surrounding "" pair from an Explorer
+    # paste, and a breadcrumb's leading slash ("/C:/…" would go drive-relative).
     p = p.strip()
     if len(p) >= 2 and p[0] == '"' and p[-1] == '"':
         p = p[1:-1]
@@ -196,8 +188,7 @@ def _win_path(p: str) -> str:
 
 
 def _index_store_dir() -> str:
-    # Mirrors fused_render's home_dir()/_branch.sanitize(): default store, nested
-    # under branches/<ref> only on a dev worktree (FUSED_RENDER_BRANCH set).
+    # Mirrors fused_render's home_dir()/_branch.sanitize() to find the store.
     home = os.environ.get("FUSED_RENDER_HOME") or os.path.expanduser("~/.fused-render")
     ref = (os.environ.get("FUSED_RENDER_BRANCH") or "").lower()
     if ref and ref not in ("main", "master", "head"):
@@ -208,9 +199,9 @@ def _index_store_dir() -> str:
 
 
 def _index_connect():
-    """A duckdb connection with `files` and `dirs` views, or None if no index
-    has been built yet. Never globs files/*.parquet — old generations linger on
-    disk and would double-count; the manifest names the live set."""
+    """duckdb connection with `files`/`dirs` views, or None if no index yet.
+    Follows the manifest (never globs files/*.parquet — stale generations linger
+    on disk and would double-count)."""
     import duckdb
     d = _index_store_dir()
     try:
@@ -229,9 +220,8 @@ def _index_connect():
 
 
 def _scan_win(path: str, refresh: bool = False) -> dict:
-    """One directory level, read from the fused-render file index (no du-style
-    walk, so it stays instant on huge trees like C:/Users). Sizes are recursive
-    per immediate child, aggregated from the index's `files` rows."""
+    """One directory level, with recursive per-child sizes aggregated from the
+    index's `files` rows (no du walk, so it stays instant on huge trees)."""
     path = os.path.realpath(path)
     if not os.path.isdir(path):
         return {"error": f"not a directory: {path}"}
@@ -256,11 +246,8 @@ def _scan_win(path: str, refresh: bool = False) -> dict:
         if not known:
             return {"error": f"{p} isn't in the file index yet — rescan in fused-render to include it"}
 
-    # Only the top 400 (rows are size-sorted) are shown, so lexists-stat just
-    # those — the tail is tiny files whose bytes are noise in the total. The
-    # existence check drops rows whose entry no longer exists on disk (e.g. just
-    # moved to Trash): the index lags a delete until fsevents catches up, so a
-    # stale row would otherwise show as a phantom tile with an out-of-date size.
+    # Show the top 400 (size-sorted); lexists-stat only those to drop rows whose
+    # entry is already gone (e.g. just trashed — the index lags until fsevents).
     head, tail = rows[:400], rows[400:]
     children = [{"name": seg, "path": prefix + seg, "dir": bool(is_dir), "size": int(sz or 0)}
                 for seg, sz, is_dir in head
