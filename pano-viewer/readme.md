@@ -38,11 +38,18 @@ Open `index.html` in fused-render.
 Conversions are cached on disk (`display/<id>/derived/<hash>.jpg`) keyed by
 all conversion parameters, so repeated views are instant.
 
-First launch generates sample panoramas (JPEG scene, WebP, TIFF, a cube
-cross, and a deliberately non-panoramic image) so every feature is
-exercisable out of the box. Requires `numpy`, `pillow`, `py360convert`
-(in the project deps). UI: shadcn-style light theme.
+First launch seeds the library with two real equirectangular panoramas
+(bundled under `samples/`) so the app is usable out of the box. Requires
+`numpy`, `pillow`, `py360convert` (in the project deps). UI: shadcn-style
+light theme.
 
 Vendored third-party assets: [Pannellum](https://pannellum.org/) (MIT
 license) for the WebGL 360° viewer, and the
 [Inter](https://rsms.me/inter/) font (SIL Open Font License 1.1).
+
+Sample panoramas (downscaled to 4096×2048), both from Wikimedia Commons:
+
+- `sample_pano_1.jpg` — ["Au Marché de la Butte, Paris"](https://commons.wikimedia.org/wiki/File:Au_March%C3%A9_de_la_Butte,_Paris_April_2007.jpg)
+  by Alexandre Duret-Lutz, CC BY-SA 2.0.
+- `sample_pano_2.jpg` — ["Biblioteca Pública de Évora — Hall de entrada"](https://commons.wikimedia.org/wiki/File:Biblioteca_P%C3%BAblica_de_%C3%89vora_-_Hall_de_entrada_(360_panorama).jpg)
+  by Waldyrious, CC BY-SA 4.0.

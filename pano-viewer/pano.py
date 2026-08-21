@@ -31,6 +31,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 LIBRARY = os.path.join(HERE, "library")
 DISPLAY = os.path.join(HERE, "display")
 UPLOADS = os.path.join(HERE, ".cache", "uploads")
+SAMPLES = os.path.join(HERE, "samples")
 DB = os.path.join(HERE, "pano.db")
 
 DISPLAY_MAX_W = 8192   # keep under common WebGL texture limits
@@ -526,83 +527,18 @@ def op_to_equirect(asset_id):
 
 # ---------------------------------------------------------------- samples
 
-def _make_samples():
-    """Synthetic demo panos so the app works out of the box: a JPEG scene,
-    a WEBP color-band pano, a TIFF pano, a cube-cross layout, and one
-    deliberately non-panoramic image."""
-    import io
+SAMPLE_PANOS = [
+    ("sample_pano_1.jpg", "Paris market (equirectangular).jpg"),
+    ("sample_pano_2.jpg", "Évora library (equirectangular).jpg"),
+]
 
-    import numpy as np
-    import py360convert
-    from PIL import Image, ImageDraw, ImageFont
 
-    W, H = 4096, 2048
-    lon = np.linspace(-180, 180, W, endpoint=False)[None, :].repeat(H, 0)
-    lat = np.linspace(90, -90, H)[:, None].repeat(W, 1)
-
-    # --- scene: sky gradient, sun, ground, cardinal markers, meridian grid
-    img = np.zeros((H, W, 3), dtype=np.float64)
-    t = np.clip((lat + 90) / 180, 0, 1)
-    img[..., 0] = 30 + 90 * t
-    img[..., 1] = 40 + 130 * t
-    img[..., 2] = 70 + 170 * t
-    ground = lat < 0
-    img[ground] = np.stack([
-        50 + 25 * np.sin(np.radians(lon[ground] * 6)),
-        90 + 30 * np.cos(np.radians(lat[ground] * 8)),
-        55 + 10 * np.sin(np.radians(lon[ground] * 3)),
-    ], axis=-1)
-    sun = (lon - 45) ** 2 + (lat - 45) ** 2 < 64
-    img[sun] = [255, 240, 180]
-    grid = (np.abs((lon % 30)) < 0.25) | (np.abs((lat % 30)) < 0.25)
-    img[grid] = img[grid] * 0.5 + 110
-    pil = Image.fromarray(img.astype("uint8"))
-    draw = ImageDraw.Draw(pil)
-    try:
-        font = ImageFont.load_default(size=140)
-    except TypeError:
-        font = ImageFont.load_default()
-    for name, deg in [("N", 0), ("E", 90), ("S", 180), ("W", -90)]:
-        x = (deg + 180) / 360 * W
-        draw.text((x, H * 0.48), name, fill=(255, 255, 255), anchor="mm",
-                  font=font)
-    buf = io.BytesIO()
-    pil.save(buf, format="JPEG", quality=90)
-    _import_bytes(buf.getvalue(), "sample_scene_equirect.jpg")
-
-    # --- webp: hue wheel by longitude
-    hue = ((lon + 180) / 360 * 255).astype("uint8")
-    sat = np.full_like(hue, 200)
-    val = (255 * np.clip((lat + 90) / 180 * 1.2, 0.15, 1)).astype("uint8")
-    hsv = Image.fromarray(np.stack([hue, sat, val], -1), "HSV").convert("RGB")
-    hsv = hsv.resize((2048, 1024))
-    buf = io.BytesIO()
-    hsv.save(buf, format="WEBP", quality=88)
-    _import_bytes(buf.getvalue(), "sample_hue_wheel.webp")
-
-    # --- tiff: checker + latitude bands
-    checker = (((lon // 15) + (lat // 15)) % 2) * 120 + 60
-    tif = np.stack([checker, 255 - checker, np.abs(lat) * 2.5 + 30], -1)
-    tif_img = Image.fromarray(tif.astype("uint8")).resize((2048, 1024))
-    buf = io.BytesIO()
-    tif_img.save(buf, format="TIFF")
-    _import_bytes(buf.getvalue(), "sample_checker.tiff")
-
-    # --- cube cross derived from the scene (exercises c2e on import)
-    dice = py360convert.e2c(np.asarray(pil.resize((2048, 1024))), face_w=512,
-                            cube_format="dice")
-    buf = io.BytesIO()
-    Image.fromarray(dice).save(buf, format="PNG")
-    _import_bytes(buf.getvalue(), "sample_cube_cross.png")
-
-    # --- a non-panoramic image to demo validation failure
-    flat = Image.fromarray(
-        (np.random.default_rng(7).random((600, 800, 3)) * 80 + 100).astype("uint8"))
-    ImageDraw.Draw(flat).text((400, 300), "not a pano", fill=(255, 80, 80),
-                              anchor="mm", font=font)
-    buf = io.BytesIO()
-    flat.save(buf, format="PNG")
-    _import_bytes(buf.getvalue(), "sample_not_a_pano.png")
+def _seed_samples():
+    """Import the bundled real-world equirectangular panoramas so the library
+    isn't empty on first launch. Sources and licenses are in readme.md."""
+    for fname, name in SAMPLE_PANOS:
+        with open(os.path.join(SAMPLES, fname), "rb") as fh:
+            _import_bytes(fh.read(), name)
 
 
 def op_setup():
@@ -610,9 +546,9 @@ def op_setup():
         os.makedirs(d, exist_ok=True)
     if not op_list()["assets"]:
         try:
-            _make_samples()
+            _seed_samples()
         except Exception as e:
-            print(f"sample generation failed: {e}")
+            print(f"sample seeding failed: {e}")
     return op_list()
 
 
