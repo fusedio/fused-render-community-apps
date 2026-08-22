@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "name": "Learn Fused Render",
+  "description": "The full Fused Render handbook, as an app: opening files, building a page + Python app, Claude Code skills, templates, mounts and a showcase — with live embedded demos.",
+  "author": { "name": "Vasu", "github": "vasu2001" },
+  "tags": ["tutorial", "docs", "onboarding", "reference"],
+  "category": "starters",
+  "version": "1.0.0",
+  "requires_python": true
+}
