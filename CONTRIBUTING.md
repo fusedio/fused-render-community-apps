@@ -50,12 +50,37 @@ unique (it's a directory name) and permanent — renaming a folder is a new app.
 | `version` | yes | semver, bump on changes |
 | `min_fused_render` | no | oldest fused-render version the app works on |
 | `requires_python` | yes | `true` if the app calls `fused.runPython` |
+| `ai_capabilities` | no | AI capability ids the app can drive with *any* model of that capability — see below |
+| `ai_models` | no | exact model ids when the app only works with specific models — see below |
+| `ai_model_param` | no | the URL query param the app reads its model from; required if either AI list is set |
 
 `local-ai` is for apps built around fused-render's on-device model runtime —
 they call `fused.ai(...)` / `fused.ai.image(...)` (text-generation or
 text-to-image against a locally resident model) rather than a remote API.
 
 Unknown keys are ignored (forward-lenient).
+
+### AI metadata (`ai_capabilities`, `ai_models`, `ai_model_param`)
+
+Declare these when your app accepts a model handoff — fused-render's AI
+Playground lists matching apps under its stage and opens yours with the
+selected model in your declared param.
+
+- `ai_capabilities` — a list of catalog capability ids, exactly one of:
+  `text-generation`, `text-to-image`, `automatic-speech-recognition`,
+  `embeddings`. It claims your app works with *any* model of that capability.
+- `ai_models` — a list of exact wire model ids (a Hugging Face repo id like
+  `mlx-community/Llama-3.2-3B-Instruct-4bit`, or a bare GGUF filename — copy
+  the id from the AI Models page). Narrower than `ai_capabilities` and it
+  wins: a matching model shows your app as **Recommended**; an
+  `ai_models`-only app is not listed for other models at all.
+- `ai_model_param` — the query param your app reads the model id from, e.g.
+  `"chatModel"`. It must **not** be literally `model` (the fused-render shell
+  owns that query key and the two would stomp each other). Without a usable
+  param your app is never listed — a handoff needs somewhere to land.
+
+Example: [`local-chat/metadata.json`](local-chat/metadata.json) declares
+`"ai_capabilities": ["text-generation"], "ai_model_param": "chatModel"`.
 
 ## What CI checks
 
