@@ -334,7 +334,9 @@
   }
   const HTML_PATH = new URLSearchParams(location.search).get("path") || "";
   const BASE_DIR = HTML_PATH.slice(0, HTML_PATH.lastIndexOf("/") + 1);
-  const assetUrl = (rel) => fused.rawUrl(BASE_DIR + rel);
+  // Bundled assets are relative to this page; generated artifacts come back as
+  // absolute cache paths (served straight through fused.rawUrl).
+  const assetUrl = (rel) => fused.rawUrl(/^([a-zA-Z]:\/|\/)/.test(rel) ? rel : BASE_DIR + rel);
   const py = (params) => fused.runPython("./pano.py", params);
 
   const fontCss = document.createElement("style");
