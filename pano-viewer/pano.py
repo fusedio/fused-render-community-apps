@@ -4,7 +4,7 @@ JPEG/PNG), and on-the-fly projection conversions (py360convert e2c/e2p/c2e
 plus custom little-planet / fisheye resamplers). Assets and an event log
 persist in pano.db so the library is restored across sessions.
 
-Layout on disk (all next to this file):
+Layout on disk (under fused-render's per-app cache, not the app folder):
   library/            original imported bytes, verbatim
   display/<id>/       display.jpg|png (capped 8192px), thumb.jpg, derived/<hash>.jpg
   .cache/uploads/     chunk staging for browser uploads
@@ -28,11 +28,19 @@ if "__file__" not in globals():
     __file__ = os.path.join(sys.path[0], "pano.py")
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-LIBRARY = os.path.join(HERE, "library")
-DISPLAY = os.path.join(HERE, "display")
-UPLOADS = os.path.join(HERE, ".cache", "uploads")
+# Generated artifacts go in fused-render's per-app cache so nothing is written
+# into the app folder / repo; only the bundled samples stay next to this script.
+DATA = os.path.join(os.path.expanduser("~"), ".fused-render", "cache", "pano_viewer")
+LIBRARY = os.path.join(DATA, "library")
+DISPLAY = os.path.join(DATA, "display")
+UPLOADS = os.path.join(DATA, ".cache", "uploads")
 SAMPLES = os.path.join(HERE, "samples")
-DB = os.path.join(HERE, "pano.db")
+DB = os.path.join(DATA, "pano.db")
+
+
+def _url(rel):
+    """Absolute forward-slash path under DATA, for the frontend's fused.rawUrl."""
+    return os.path.join(DATA, rel).replace(os.sep, "/")
 
 DISPLAY_MAX_W = 8192   # keep under common WebGL texture limits
 CONVERT_MAX_W = 4096   # resample source cap so conversions stay interactive
@@ -44,6 +52,7 @@ IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".tif", ".tiff", ".bmp",
 # ---------------------------------------------------------------- db / log
 
 def _db():
+    os.makedirs(DATA, exist_ok=True)   # sqlite won't create the parent dir
     con = sqlite3.connect(DB, timeout=10)
     con.execute(
         """CREATE TABLE IF NOT EXISTS assets (
@@ -95,6 +104,10 @@ def _row_to_asset(r):
     a = dict(zip(keys, r))
     a["reasons"] = json.loads(a["reasons"])
     a["valid"] = bool(a["valid"])
+    # Hand the frontend absolute paths it can serve via fused.rawUrl; orig_path
+    # stays relative (server-only, resolved against DATA on delete).
+    a["display_path"] = _url(a["display_path"]) if a["display_path"] else ""
+    a["thumb_path"] = _url(a["thumb_path"]) if a["thumb_path"] else ""
     return a
 
 
@@ -202,7 +215,7 @@ def _import_bytes(raw, orig_name):
     os.makedirs(LIBRARY, exist_ok=True)
     ext = os.path.splitext(orig_name)[1] or "." + fmt.lower()
     orig_rel = f"library/{asset_id}_{os.path.splitext(orig_name)[0]}{ext}"
-    with open(os.path.join(HERE, orig_rel), "wb") as f:
+    with open(os.path.join(DATA, orig_rel), "wb") as f:
         f.write(raw)
 
     ddir = os.path.join(DISPLAY, str(asset_id))
@@ -218,17 +231,17 @@ def _import_bytes(raw, orig_name):
         )
     if has_alpha:
         disp_rel = f"display/{asset_id}/display.png"
-        disp.save(os.path.join(HERE, disp_rel))
+        disp.save(os.path.join(DATA, disp_rel))
     else:
         disp_rel = f"display/{asset_id}/display.jpg"
-        disp.save(os.path.join(HERE, disp_rel), quality=92)
+        disp.save(os.path.join(DATA, disp_rel), quality=92)
 
     thumb = disp.convert("RGB")
     thumb = thumb.resize(
         (THUMB_W, max(1, round(thumb.height * THUMB_W / thumb.width))), Image.LANCZOS
     )
     thumb_rel = f"display/{asset_id}/thumb.jpg"
-    thumb.save(os.path.join(HERE, thumb_rel), quality=85)
+    thumb.save(os.path.join(DATA, thumb_rel), quality=85)
 
     with con:
         con.execute(
@@ -334,7 +347,7 @@ def op_delete(asset_id):
     con.close()
     if a["orig_path"]:
         try:
-            os.remove(os.path.join(HERE, a["orig_path"]))
+            os.remove(os.path.join(DATA, a["orig_path"]))
         except OSError:
             pass
     shutil.rmtree(os.path.join(DISPLAY, str(asset_id)), ignore_errors=True)
@@ -358,7 +371,7 @@ def _load_equirect(asset):
     import py360convert
     from PIL import Image
 
-    img = Image.open(os.path.join(HERE, asset["display_path"])).convert("RGB")
+    img = Image.open(asset["display_path"]).convert("RGB")   # already absolute (_row_to_asset)
     if img.width > CONVERT_MAX_W:
         img = img.resize(
             (CONVERT_MAX_W, max(1, round(img.height * CONVERT_MAX_W / img.width))),
@@ -447,9 +460,9 @@ def op_convert(asset_id, mode, fov, yaw, pitch, roll, zoom, out_w, out_h, face_w
         res = {"w": w, "h": h, "cached": cached,
                "ms": round((time.time() - t0) * 1000)}
         if isinstance(rel_or_faces, list):
-            res["faces"] = rel_or_faces
+            res["faces"] = [{"face": f["face"], "path": _url(f["path"])} for f in rel_or_faces]
         else:
-            res["path"] = rel_or_faces
+            res["path"] = _url(rel_or_faces)
         if not cached:
             _log("convert", {"id": asset_id, "mode": mode, "key": key,
                              "ms": res["ms"]})
@@ -458,7 +471,7 @@ def op_convert(asset_id, mode, fov, yaw, pitch, roll, zoom, out_w, out_h, face_w
     if mode == "cube_faces":
         names = ["F", "R", "B", "L", "U", "D"]
         rels = [f"display/{asset_id}/derived/{hid}_{n}.jpg" for n in names]
-        if all(os.path.isfile(os.path.join(HERE, r)) for r in rels):
+        if all(os.path.isfile(os.path.join(DATA, r)) for r in rels):
             fw = face_w or 1024
             return finish([{"face": n, "path": r} for n, r in zip(names, rels)],
                           fw, fw, True)
@@ -466,12 +479,12 @@ def op_convert(asset_id, mode, fov, yaw, pitch, roll, zoom, out_w, out_h, face_w
         fw = face_w or min(1024, equi.shape[1] // 4)
         faces = py360convert.e2c(equi, face_w=fw, cube_format="dict")
         for n, r in zip(names, rels):
-            Image.fromarray(faces[n]).save(os.path.join(HERE, r), quality=90)
+            Image.fromarray(faces[n]).save(os.path.join(DATA, r), quality=90)
         return finish([{"face": n, "path": r} for n, r in zip(names, rels)],
                       fw, fw, False)
 
     rel = f"display/{asset_id}/derived/{hid}.jpg"
-    full = os.path.join(HERE, rel)
+    full = os.path.join(DATA, rel)
     if os.path.isfile(full):
         with Image.open(full) as im:
             return finish(rel, im.width, im.height, True)
