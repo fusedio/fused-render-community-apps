@@ -224,7 +224,15 @@ def _delete_bucket_config(client, bucket, config_type, **_):
     return {"ok": True, "type": config_type}
 
 
-def _list_objects(client, bucket, prefix, delimiter, token, max_keys, **_):
+def _list_objects(client, conn, bucket, prefix, delimiter, token, max_keys, **_):
+    # If the caller doesn't know the bucket's region, resolve it in THIS
+    # subprocess and rebuild the client, instead of forcing a whole separate
+    # bucket_region round-trip before the page can list (halves a bucket switch).
+    out_region = conn["region"]
+    if not out_region and not conn["endpoint_url"] and not token:
+        out_region = _resolve_region(client, bucket) or ""
+        if out_region:
+            client = s3lib.client({**conn, "region": out_region})
     kw = {"Bucket": bucket, "Prefix": prefix, "MaxKeys": max_keys}
     if delimiter:
         kw["Delimiter"] = delimiter
@@ -250,6 +258,7 @@ def _list_objects(client, bucket, prefix, delimiter, token, max_keys, **_):
         })
     return {
         "bucket": bucket,
+        "region": out_region or None,
         "prefix": prefix,
         "delimiter": delimiter,
         "folders": folders,

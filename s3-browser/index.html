@@ -1299,7 +1299,14 @@ async function loadListing(force) {
   setBusy(true);
   const res = await call("list_objects", { bucket: bucket(), prefix: prefix() });
   setBusy(false);
-  if (!res.error) LIST_CACHE.set(k, res);
+  if (!res.error) {
+    LIST_CACHE.set(k, res);
+    // list_objects also reports the bucket's region; cache it and sync the param.
+    if (res.region) {
+      REGION_CACHE.set(acctId() + "|" + bucket(), res.region);
+      if (!region()) fused.params.set("region", res.region);
+    }
+  }
   if (k !== listKey()) return;                    // user navigated away meanwhile
   if (res.error && cached) { toast(`${res.error.code}: ${res.error.message || ""}`, true); return; }
   renderList(res);
@@ -1315,17 +1322,13 @@ async function render(force = false) {
   $("bucketInfoBtn").disabled = !bkt;
   if (!a) { $("listwrap").innerHTML = `<div class="empty"><div class="big">Welcome</div>Pick a connection on the left, or add one.</div>`; $("status").textContent = ""; return; }
   if (!bkt) { $("listwrap").innerHTML = `<div class="empty"><div class="big">Choose a bucket</div>Select a bucket from the sidebar.</div>`; $("status").textContent = ""; return; }
-  // Paint the target listing up front, before region detection can return early,
-  // so switching buckets never leaves the previous bucket's rows on screen.
+  // Paint the target listing up front so switching buckets never leaves the
+  // previous bucket's rows on screen.
   paintListing(force);
+  // Use a known region if we have one; otherwise let list_objects resolve it in
+  // the same subprocess (no separate bucket_region round-trip).
   if (!region()) {
-    const rk = acctId() + "|" + bkt;
-    let r = REGION_CACHE.get(rk);
-    if (r === undefined) {
-      const res = await call("bucket_region", { bucket: bkt });
-      r = res.error ? "" : (res.region || "");
-      if (!res.error) REGION_CACHE.set(rk, r);
-    }
+    const r = REGION_CACHE.get(acctId() + "|" + bkt);
     if (r) { fused.params.set("region", r); return; }
   }
   await loadListing(force);
