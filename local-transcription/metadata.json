@@ -5,6 +5,8 @@
   "author": { "name": "Isaac" },
   "tags": ["local-ai", "transcription", "speech-to-text", "whisper", "audio"],
   "category": "local-ai",
-  "version": "1.0.0",
-  "requires_python": true
+  "version": "1.1.0",
+  "requires_python": true,
+  "ai_capabilities": ["automatic-speech-recognition"],
+  "ai_model_param": "asrModel"
 }
