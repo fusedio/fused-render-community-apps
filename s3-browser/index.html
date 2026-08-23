@@ -468,6 +468,21 @@ function embedUrl(localPath) {
 }
 
 // ---- persistence ----
+// Reading accounts.json needs a Python round-trip for its path plus a disk read,
+// so the sidebar is also mirrored to localStorage and painted from there on load
+// — connections show up instantly instead of after that round-trip. Only display
+// fields are mirrored; secrets stay on disk and the backend reads them by id.
+const ACCT_CACHE_KEY = "s3_accounts_cache";
+function cacheAccounts() {
+  try {
+    const slim = ACCOUNTS.map(({ id, label, auth, region, bucket, endpoint_url, profile }) =>
+      ({ id, label, auth, region, bucket, endpoint_url, profile }));
+    localStorage.setItem(ACCT_CACHE_KEY, JSON.stringify(slim));
+  } catch {}
+}
+function cachedAccounts() {
+  try { return JSON.parse(localStorage.getItem(ACCT_CACHE_KEY) || "[]"); } catch { return []; }
+}
 async function loadAccounts() {
   try {
     const text = await fused.readFile(ACCOUNTS_FILE);
@@ -480,9 +495,11 @@ async function loadAccounts() {
     ];
     await saveAccounts();
   }
+  cacheAccounts();
 }
 async function saveAccounts() {
   await fused.writeFile(ACCOUNTS_FILE, JSON.stringify({ accounts: ACCOUNTS }, null, 2));
+  cacheAccounts();
 }
 
 // ---- connections sidebar ----
@@ -503,7 +520,7 @@ function renderConns() {
   });
 }
 function selectConn(a) {
-  SEL.clear(); NEXT = null; ACTIVE_KEY = null; BUCKETS = [];
+  SEL.clear(); NEXT = null; resetDock(); BUCKETS = [];
   fused.params.set("acct", a.id);
   fused.params.set("region", a.region || "");
   fused.params.set("bucket", a.bucket || "");
@@ -543,7 +560,7 @@ function renderBuckets() {
   });
 }
 function openBucket(name) {
-  SEL.clear(); NEXT = null; ACTIVE_KEY = null;
+  SEL.clear(); NEXT = null; resetDock();
   fused.params.set("region", "");   // clear so render() auto-detects THIS bucket's region (buckets may span regions)
   fused.params.set("bucket", name);
   fused.params.set("prefix", "");
@@ -559,7 +576,7 @@ function renderCrumbs() {
   let acc = "";
   parts.forEach((p, i) => { const s = document.createElement("span"); s.className = "csep"; s.textContent = "/"; c.appendChild(s); acc += p + "/"; c.appendChild(mk(p, acc, i === parts.length - 1)); });
 }
-function navigate(pfx) { SEL.clear(); NEXT = null; ACTIVE_KEY = null; fused.params.set("prefix", pfx); }
+function navigate(pfx) { SEL.clear(); NEXT = null; resetDock(); fused.params.set("prefix", pfx); }
 
 // ---- file list ----
 function renderList(res) {
@@ -617,6 +634,11 @@ async function loadMore() {
 }
 
 // ---- dock ----
+function resetDock() {
+  ACTIVE_KEY = null;
+  $("dockName").textContent = "";
+  $("dockBody").innerHTML = `<div class="sidehint">Select an object to inspect it.</div>`;
+}
 function selectObject(key) {
   ACTIVE_KEY = key;
   document.querySelectorAll("#listwrap tbody tr").forEach((tr) => tr.classList.toggle("active", tr.getAttribute("data-key") === key));
@@ -1288,6 +1310,11 @@ async function render(force = false) {
   $("bucketInfoBtn").disabled = !bkt;
   if (!a) { $("listwrap").innerHTML = `<div class="empty"><div class="big">Welcome</div>Pick a connection on the left, or add one.</div>`; $("status").textContent = ""; return; }
   if (!bkt) { $("listwrap").innerHTML = `<div class="empty"><div class="big">Choose a bucket</div>Select a bucket from the sidebar.</div>`; $("status").textContent = ""; return; }
+  // Paint the target listing (from cache, else a spinner) up front, before the
+  // region-detection round-trip below can return early — otherwise switching
+  // buckets leaves the previous bucket's rows on screen until region resolves.
+  if (LIST_CACHE.has(listKey())) { if (!force) renderList(LIST_CACHE.get(listKey())); }
+  else $("listwrap").innerHTML = `<div class="empty"><span class="spin"></span></div>`;
   if (!region()) {
     const rk = acctId() + "|" + bkt;
     let r = REGION_CACHE.get(rk);
@@ -1325,13 +1352,17 @@ $("dockToggle").onclick = () => $("dock").classList.toggle("collapsed");
 // Drag the top edge of the dock to resize it (persisted per browser).
 (function () {
   const dock = $("dock"), handle = $("dockResize");
+  const mainH = () => dock.parentElement.getBoundingClientRect().height;
+  // Restore the saved height, but cap it to half the pane so a height saved in a
+  // taller window can't make the dock cover the whole view on load — it stays a
+  // docked bottom pane by default. Manual dragging can still go taller (below).
   const saved = parseInt(localStorage.getItem("s3dockH") || "", 10);
-  if (saved) dock.style.height = saved + "px";
+  if (saved) dock.style.height = Math.max(120, Math.min(Math.round(mainH() * 0.5), saved)) + "px";
   handle.onmousedown = (e) => {
     e.preventDefault();
     if (dock.classList.contains("collapsed")) dock.classList.remove("collapsed");
     const startY = e.clientY, startH = dock.offsetHeight;
-    const maxH = () => Math.round(dock.parentElement.getBoundingClientRect().height * 0.82);
+    const maxH = () => Math.round(mainH() * 0.82);
     dock.classList.add("dragging");
     const move = (ev) => {
       const h = Math.max(120, Math.min(maxH(), startH + (startY - ev.clientY)));
@@ -1374,13 +1405,22 @@ fused.params.onChange(() => {
   });
 });
 
-(async () => {
-  const loc = await fused.runPython("./s3.py", { action: "accounts_path" });
-  ACCOUNTS_FILE = loc.path;
-  await loadAccounts();
+function boot() {
   renderConns();
   if (!acctId() && ACCOUNTS.length) selectConn(ACCOUNTS[0]);
   else { render(); loadBuckets(); }
+}
+(async () => {
+  // Paint (and start browsing) from the cached connections immediately so the
+  // sidebar never looks empty while accounts.json is fetched off disk. Ids match
+  // the file, so the backend resolves credentials by id even before it loads.
+  const cached = cachedAccounts();
+  if (cached.length) { ACCOUNTS = cached; boot(); }
+  else $("connList").innerHTML = `<div class="sidehint"><span class="spin"></span> loading…</div>`;
+  const loc = await fused.runPython("./s3.py", { action: "accounts_path" });
+  ACCOUNTS_FILE = loc.path;
+  await loadAccounts();   // on-disk source of truth; reconcile the cached paint
+  boot();
 })();
 </script>
 </body>
