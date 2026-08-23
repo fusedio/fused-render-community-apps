@@ -1,0 +1,1771 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lens — accuracy audit</title>
+<style>
+  :root {
+    color-scheme: dark;
+    /* palette lifted from the fused-render explorer shell */
+    --bg: #10131a;
+    --bg-header: #131417f2;
+    --surface: #1c1e24;
+    --surface-2: #202329;
+    --line: #ffffff14;
+    --line-strong: #ffffff2b;
+    --text: #e8e8e8;
+    --text-dim: #b4b6bd;
+    --text-mute: #7c7f88;
+    --accent: #e5ff44;
+    --accent-dim: #e5ff4421;
+    --ok: #3fca6b;
+    --warn: #ff6b6b;
+    /* a partial-failure notice is not an emergency: amber, not red */
+    --amber: #e0b155;
+    /* type scale — 5 steps, ~1.3 ratio. */
+    --fs-xs: 11px;
+    --fs-sm: 14px;
+    --fs-md: 18px;
+    --fs-lg: 24px;
+    --fs-xl: 32px;
+    /* elevation, in steps. */
+    --e1: 0 1px 2px #0000003d;
+    --e2: 0 6px 18px #00000052, 0 1px 0 #ffffff0a inset;
+    --e3: 0 24px 70px #000000a6, 0 1px 0 #ffffff0f inset;
+    --maxw: 1680px;
+    /* spacing scale */
+    --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 32px;
+    --r: 10px;
+    --ease: cubic-bezier(.22, .61, .36, 1);
+    /* the reading measure for a page of prose — lens.html is a grid and uses
+       --maxw, these two are documents and must not span a 2560px display */
+    --readw: 1080px;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: var(--fs-sm)/1.5 -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection { background: var(--accent-dim); }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: #ffffff1f; border-radius: 99px;
+    border: 3px solid var(--bg); }
+  ::-webkit-scrollbar-thumb:hover { background: #ffffff33; }
+  a { color: var(--text-dim); }
+  /* screen-reader-only */
+  .vh { position: absolute !important; width: 1px; height: 1px; padding: 0;
+        margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+        border: 0; }
+  @media (prefers-reduced-motion: reduce) {
+    /* ::before too — a drawn hairline is a pseudo element, and stopping only
+       one of the pair leaves half the animation running */
+    *, *::before, *::after {
+      animation: none !important; transition: none !important;
+    }
+  }
+
+  /* ── header ─────────────────────────────────────────────────────────── */
+  header {
+    position: sticky; top: 0; z-index: 6;
+    background: var(--bg-header); backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--line);
+    padding: var(--s3) var(--s5);
+    display: flex; gap: var(--s4); align-items: center; flex-wrap: wrap;
+    row-gap: var(--s2);
+  }
+  .mark { flex: none; font-size: var(--fs-md); font-weight: 600;
+          letter-spacing: -.03em; color: var(--text); }
+  .mark small { font-weight: 400; font-size: var(--fs-xs);
+                color: var(--text-mute); letter-spacing: .04em;
+                margin-left: var(--s2); }
+  /* ── the pill nav: one control, present on all four surfaces ─────────── */
+  .pills { flex: none; margin-left: auto; display: flex; gap: 2px; padding: 2px;
+           background: var(--surface); border: 1px solid var(--line);
+           border-radius: 999px; }
+  .pills button { border: 0; background: none; color: var(--text-mute);
+    font: inherit; font-size: var(--fs-xs); letter-spacing: .02em;
+    padding: 4px 11px; border-radius: 999px; cursor: pointer;
+    white-space: nowrap;
+    transition: background .15s var(--ease), color .15s var(--ease); }
+  .pills button:hover { color: var(--text); }
+  .pills button[aria-current="page"] { background: var(--accent-dim);
+    color: var(--accent); cursor: default; }
+  .pills button:focus-visible { outline: none;
+    box-shadow: inset 0 0 0 1px var(--accent); }
+  .pills .info { font-style: normal; font-size: var(--fs-sm); line-height: 1;
+                 padding: 3px 9px; }
+
+  /* ── page-local: buttons, in the shape lens.html uses ────────────────── */
+  .hbtn {
+    flex: none; display: inline-flex; align-items: center; gap: 5px;
+    background: var(--surface); color: var(--text-dim);
+    border: 1px solid var(--line); border-radius: 8px;
+    padding: 5px 10px; font: inherit; font-size: var(--fs-xs);
+    letter-spacing: .02em; cursor: pointer;
+    transition: background .15s var(--ease), border-color .15s var(--ease),
+                color .15s var(--ease), opacity .15s var(--ease);
+  }
+  .hbtn:hover:not(:disabled) { background: var(--surface-2);
+    border-color: var(--line-strong); color: var(--text); }
+  .hbtn:focus-visible { outline: none; border-color: var(--accent); }
+  .hbtn:disabled { opacity: .45; cursor: default; }
+  .hbtn .gl { display: inline-block; line-height: 1; }
+  .hbtn.spin .gl { animation: spin 1.2s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* the run indicator. Same vocabulary as lens.html's status: a dot that
+     pulses while something is happening, red when nothing is answering. */
+  .pill { display: inline-flex; align-items: center; gap: var(--s2);
+          font-size: var(--fs-xs); color: var(--text-dim);
+          letter-spacing: .02em; white-space: nowrap; }
+  .pill .dot { width: 6px; height: 6px; border-radius: 50%; flex: none;
+               background: var(--accent);
+               animation: pulse 1.1s ease-in-out infinite; }
+  .pill.done .dot { background: var(--ok); animation: none; }
+  .pill.err { color: var(--warn); }
+  .pill.err .dot { background: var(--warn); animation: none; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+
+  /* ── page frame ──────────────────────────────────────────────────────── */
+  main { max-width: var(--readw); margin: 0 auto;
+         padding: var(--s5) var(--s5) 64px; }
+  section { margin: 0 0 var(--s6); }
+  /* Section labels are the one place this page uses mono at display size: an
+     audit reads like a report, and the label says "this is a measurement, not
+     a headline". The type scale is the same five steps as lens.html — no new
+     sizes were invented for this page, only weight, case and tracking. */
+  h2 { display: flex; align-items: center; gap: var(--s3); flex-wrap: wrap;
+       margin: 0 0 var(--s3);
+       font: 600 var(--fs-xs)/1 var(--mono); letter-spacing: .1em;
+       text-transform: uppercase; color: var(--text-mute); }
+  h2 .rule { flex: 1; height: 1px; min-width: 20px; background: var(--line); }
+  h2 .tag { font-weight: 400; letter-spacing: .04em; text-transform: none;
+            color: var(--text-mute); opacity: .8; }
+  .panel { background: var(--surface); border: 1px solid var(--line);
+           border-radius: 12px; min-width: 0; }
+  .sub { margin: calc(var(--s1) * -1) 0 var(--s4); max-width: 78ch;
+         font-size: var(--fs-sm); color: var(--text-mute); }
+  .sub b { color: var(--text-dim); font-weight: 600; }
+  .sub code, code { font-family: var(--mono); font-size: var(--fs-xs);
+    background: var(--surface-2); border: 1px solid var(--line);
+    border-radius: 5px; padding: 1px 5px; color: var(--text-dim); }
+  .hidden { display: none !important; }
+
+  /* ── verdict ─────────────────────────────────────────────────────────── */
+  #verdict { padding: var(--s4) var(--s5); display: grid; gap: var(--s5);
+             align-items: center;
+             /* minmax(0,…) on both tracks: without it the prose column
+                refuses to shrink below its longest word and the panel pushes
+                the page sideways on a phone */
+             grid-template-columns: minmax(0, 150px) minmax(0, 1fr); }
+  @media (max-width: 720px) { #verdict { grid-template-columns: minmax(0, 1fr); } }
+  .vring { position: relative; width: 132px; height: 132px; }
+  .vring svg { display: block; }
+  /* the numeral is absolutely centred *over* the ring rather than laid out
+     beside it, so the ring can change size without moving the number */
+  .vring .mid { position: absolute; inset: 0; display: flex;
+    flex-direction: column; align-items: center; justify-content: center;
+    gap: 1px; }
+  .vring .num { font: 600 var(--fs-xl)/1 var(--mono); letter-spacing: -.02em;
+                font-variant-numeric: tabular-nums; }
+  .vring .cap { font-family: var(--mono); font-size: 9px; letter-spacing: .08em;
+                text-transform: uppercase; color: var(--text-mute); }
+  .eyebrow { font-family: var(--mono); font-size: var(--fs-xs);
+    letter-spacing: .09em; text-transform: uppercase; color: var(--text-mute); }
+  #vread { margin: 7px 0 0; font-size: var(--fs-md); font-weight: 500;
+           line-height: 1.34; letter-spacing: -.01em; overflow-wrap: anywhere; }
+  #vnote { margin: var(--s3) 0 0; max-width: 72ch; font-size: var(--fs-sm);
+           color: var(--text-mute); }
+  #vnote b { color: var(--text-dim); font-weight: 600; }
+  .provenance { margin: var(--s3) 0 0; font-family: var(--mono);
+                font-size: var(--fs-xs); color: var(--text-mute); opacity: .85;
+                overflow-wrap: anywhere; }
+
+  /* ── stat tiles ──────────────────────────────────────────────────────── */
+  /* One tile per check, one row of them at the reading measure. Five across is
+     206px a tile at --readw, which is where the longest label still fits on two
+     lines above its percentage; below that the row breaks rather than the
+     words. */
+  .tiles { display: grid; gap: var(--s3); margin: 0 0 var(--s4);
+           grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  @media (max-width: 980px) { .tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  @media (max-width: 820px) { .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .tile { padding: 11px 13px; display: flex; flex-direction: column; gap: 3px; }
+  .tile .k { font-family: var(--mono); font-size: 9.5px; letter-spacing: .08em;
+             text-transform: uppercase; color: var(--text-mute); }
+  .tile .v { font: 600 var(--fs-lg)/1.05 var(--mono); letter-spacing: -.01em;
+             font-variant-numeric: tabular-nums; }
+  .tile .x { font-family: var(--mono); font-size: 10px; color: var(--text-mute);
+             opacity: .85; overflow-wrap: anywhere; }
+
+  /* ── per-check cards ─────────────────────────────────────────────────── */
+  /* align-items:start rather than the default stretch: a clean check has two
+     sentences and a finding has ten, and stretching the short card to the tall
+     one's height left a panel that was mostly empty — which reads as something
+     that failed to render rather than as a check with nothing to report. */
+  .cgrid { display: grid; gap: var(--s3); align-items: start;
+           grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  @media (max-width: 820px) { .cgrid { grid-template-columns: minmax(0, 1fr); } }
+  .ccard { padding: var(--s3) var(--s4) var(--s4); display: flex;
+           flex-direction: column; gap: var(--s3); }
+  .ccard > header { display: flex; align-items: center; gap: var(--s3);
+                    padding: 0; background: none; border: 0; position: static;
+                    backdrop-filter: none; }
+  .ccard h3 { flex: 1; min-width: 0; margin: 0; font-size: var(--fs-md);
+              font-weight: 600; letter-spacing: -.01em; }
+  .ccard .say { margin: 0; font-size: var(--fs-sm); color: var(--text-dim);
+                line-height: 1.5; }
+  .ccard .say code { white-space: nowrap; }
+  /* The answer to the question in the heading, in the words somebody would use
+     saying it out loud. It is the only thing in the card that has to be read, so
+     it is the only thing set above body size. */
+  .ccard .ans { margin: 0; font-size: var(--fs-md); line-height: 1.42;
+                letter-spacing: -.005em; color: var(--text); }
+  .ccard .ans b { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .ccard .ans .yes { color: var(--ok); }
+  .ccard .ans .hm { color: var(--amber); }
+  .ccard .ans .no { color: var(--warn); }
+  /* how a check was actually run — reference material, behind a disclosure */
+  details.dl .method { padding: 0 9px 9px; font-size: 13px; line-height: 1.5;
+                       color: var(--text-dim); }
+  details.dl .method p { margin: 0; }
+  details.dl .method .frow { margin-top: var(--s3); }
+  details.dl .method code { white-space: nowrap; }
+  .mring { position: relative; width: 44px; height: 44px; flex: none; }
+  .mring .mv { position: absolute; inset: 0; display: flex;
+    align-items: center; justify-content: center;
+    font: 600 var(--fs-xs)/1 var(--mono); font-variant-numeric: tabular-nums; }
+  .st { flex: none; font-family: var(--mono); font-size: 9.5px;
+        letter-spacing: .08em; text-transform: uppercase;
+        border-radius: 999px; padding: 2px 8px;
+        border: 1px solid var(--line-strong); color: var(--text-mute); }
+  .st.ok { border-color: #3fca6b40; color: var(--ok); background: #3fca6b12; }
+  .st.mid { border-color: #e0b15540; color: var(--amber); background: #e0b1550f; }
+  .st.bad { border-color: #ff6b6b40; color: #ffb3b3; background: #ff6b6b12; }
+  /* the numbers the check itself reported, in its own words */
+  .frow { display: flex; gap: var(--s2); align-items: baseline; flex-wrap: wrap;
+          font-family: var(--mono); font-size: var(--fs-xs);
+          color: var(--text-mute); }
+  .frow b { color: var(--text); font-weight: 600;
+            font-variant-numeric: tabular-nums; }
+  .frow .sep { opacity: .4; }
+  /* a finding is not an error: amber, and it gets room to explain itself */
+  .finding { border: 1px solid #e0b15533; background: #e0b1550f;
+             border-radius: 8px; padding: var(--s2) var(--s3);
+             font-size: var(--fs-sm); color: #dcbe8b; line-height: 1.5; }
+  .finding b { color: var(--text); font-weight: 600; }
+  .finding.bad { border-color: #ff6b6b3d; background: #ff6b6b0f; color: #ffb3b3; }
+  .finding ul { margin: var(--s2) 0 0; padding-left: 18px; }
+  .finding li { margin: 2px 0; }
+  .finding .name { font-family: var(--mono); color: var(--text); }
+
+  /* expandable detail rows — reference material, closed by default */
+  details.dl { border: 1px solid var(--line); border-radius: 8px;
+               background: #0d1117; margin: 0; }
+  details.dl > summary { font-family: var(--mono); font-size: var(--fs-xs);
+    color: var(--text-mute); padding: 6px 9px; cursor: pointer;
+    list-style: none; display: flex; gap: 6px; align-items: center; }
+  details.dl > summary::-webkit-details-marker { display: none; }
+  details.dl > summary::before { content: "▸"; color: var(--accent); flex: none; }
+  details.dl[open] > summary::before { content: "▾"; }
+  details.dl > summary:hover { color: var(--text); }
+  details.dl > summary:focus-visible { outline: none; color: var(--accent); }
+  details.dl > summary b { color: var(--text); font-weight: 600; }
+  ul.dlist { list-style: none; margin: 0; padding: 0 9px 9px; display: flex;
+             flex-direction: column; gap: 6px; }
+  ul.dlist li { display: flex; gap: var(--s2); flex-wrap: wrap;
+    align-items: baseline; font-family: var(--mono); font-size: var(--fs-xs);
+    line-height: 1.45; min-width: 0;
+    border-top: 1px solid var(--line); padding-top: 6px; }
+  ul.dlist li:first-child { border-top: 0; padding-top: 0; }
+  ul.dlist .p { min-width: 0; color: var(--text); overflow-wrap: anywhere; }
+  ul.dlist .p.wide { flex: 1 1 100%; }
+  ul.dlist em { color: var(--text-mute); font-style: normal;
+                margin-right: var(--s1); }
+  .empty { font-family: var(--mono); font-size: var(--fs-xs);
+           color: var(--text-mute); padding: 0 9px 9px; }
+
+  /* ── tier 2: the manual check ────────────────────────────────────────── */
+  .t2wrap { overflow-x: auto; }
+  table.t2 { width: 100%; min-width: 620px; border-collapse: collapse;
+             font-family: var(--mono); font-size: var(--fs-xs); }
+  table.t2 th { text-align: left; font-weight: 600; font-size: 9.5px;
+    letter-spacing: .08em; text-transform: uppercase; color: var(--text-mute);
+    padding: 9px 12px; border-bottom: 1px solid var(--line);
+    white-space: nowrap; }
+  table.t2 td { padding: 8px 12px; border-bottom: 1px solid #ffffff0d;
+                vertical-align: middle; }
+  table.t2 tr:last-child td { border-bottom: 0; }
+  table.t2 tbody tr:hover { background: var(--surface-2); }
+  table.t2 .nm { color: var(--text); overflow-wrap: anywhere; }
+  table.t2 .mu { color: var(--text-mute); }
+  .th { width: 52px; height: 52px; display: block; border-radius: 7px;
+        object-fit: cover; background: var(--surface-2);
+        border: 1px solid var(--line); }
+  /* a thumb the daemon could not render must not become a browser's
+     broken-image glyph in the middle of an accuracy table */
+  .thbox { position: relative; width: 52px; height: 52px; flex: none; }
+  .thbox.bad .th { visibility: hidden; }
+  .thbox.bad::after { content: "⚠︎"; position: absolute; inset: 0;
+    display: grid; place-items: center; font-size: var(--fs-xs);
+    color: var(--text-mute); border: 1px solid var(--line);
+    border-radius: 7px; background: var(--surface-2); }
+  .glink { display: inline-flex; align-items: center; gap: 5px;
+    white-space: nowrap; font-family: var(--mono); font-size: 10.5px;
+    padding: 4px 9px; border-radius: 7px; text-decoration: none;
+    border: 1px solid #e5ff4440; color: var(--accent);
+    background: var(--accent-dim);
+    transition: background .15s var(--ease); }
+  .glink:hover { background: #e5ff4433; }
+  .glink:focus-visible { outline: none; border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-dim); }
+  /* the link is disabled because the query cannot be built, and the row says
+     which half is missing rather than showing a dead control */
+  .glink.off { border-color: var(--line); color: var(--text-mute);
+               background: none; cursor: default; }
+
+  /* ── caveats ─────────────────────────────────────────────────────────── */
+  ul.notes { list-style: none; margin: var(--s4) 0 0; padding: var(--s3) var(--s4);
+             display: flex; flex-direction: column; gap: var(--s3); }
+  ul.notes li { display: flex; gap: var(--s3); align-items: flex-start;
+    font-size: var(--fs-sm); color: var(--text-mute); line-height: 1.5; }
+  ul.notes .ic { flex: none; margin-top: 2px; width: 1em; text-align: center;
+                 font-family: var(--mono); font-size: var(--fs-xs);
+                 color: var(--amber); }
+  ul.notes b { color: var(--text-dim); font-weight: 600; }
+  ul.notes code { white-space: nowrap; }
+
+  /* ── loading / failure ───────────────────────────────────────────────── */
+  #wait { padding: var(--s5); display: flex; flex-direction: column;
+          gap: var(--s2); }
+  #wait .h { font-size: var(--fs-md); font-weight: 600; letter-spacing: -.01em; }
+  #wait .d { font-size: var(--fs-sm); color: var(--text-mute); max-width: 68ch; }
+  #fail { padding: var(--s5); display: flex; flex-direction: column;
+          gap: var(--s3); align-items: flex-start; }
+  #fail .h { font-size: var(--fs-lg); font-weight: 600; letter-spacing: -.02em; }
+  #fail .d { font-size: var(--fs-sm); color: var(--text-mute); max-width: 68ch; }
+  #fail .cmd { display: flex; gap: var(--s2); align-items: center;
+               flex-wrap: wrap; }
+  #fail code { color: var(--accent); }
+  .row2 { display: flex; gap: var(--s2); flex-wrap: wrap; }
+
+  @media (max-width: 520px) {
+    main { padding: var(--s4) var(--s4) 48px; }
+    header { padding: var(--s3) var(--s4); }
+    #verdict { padding: var(--s4); }
+    .tiles { grid-template-columns: minmax(0, 1fr); }
+  }
+</style></head>
+<body>
+  <header>
+    <span class="mark">lens <small>audit</small></span>
+    <span class="pill" id="run" role="status" aria-live="polite">
+      <i class="dot"></i><span id="runtext">checking…</span></span>
+    <button class="hbtn" id="rerun" type="button" disabled
+            title="Run every check again">
+      <span class="gl" aria-hidden="true">↻</span><span>Re-run</span></button>
+    <nav class="pills" id="pills" aria-label="Views">
+      <button type="button" data-nav="photos">Photos</button>
+      <button type="button" data-nav="trips">Trips</button>
+      <button type="button" data-nav="people">People</button>
+      <button type="button" data-nav="explain" class="info"
+              title="How lens works" aria-label="How it works">ⓘ</button>
+      <button type="button" data-nav="audit" aria-current="page"
+              title="Accuracy audit of this library">audit</button>
+    </nav>
+  </header>
+
+<main>
+  <!-- ===== verdict ===== -->
+  <section id="vsec">
+    <h2>we tested lens against your real library<span class="rule"></span>
+      <span class="tag" id="vtag">nothing was changed</span></h2>
+
+    <div class="panel" id="wait">
+      <span class="h">Running the audit…</span>
+      <span class="d">We re-open some of your photos and read them from scratch,
+        search for photos we already know the answer for, and rebuild the trips
+        and the people from the pieces they are made of. Each check now opens
+        its own subprocess rather than asking a process that was already
+        running, so this takes up to twenty seconds rather than a third of
+        one — and, as before, nothing is written or changed.</span>
+    </div>
+
+    <div class="panel hidden" id="fail">
+      <span class="h" id="failh">Audit could not run</span>
+      <span class="d" id="faild"></span>
+      <span class="cmd" id="failcmd"></span>
+      <div class="row2">
+        <button class="hbtn" id="retry" type="button">Retry now</button>
+      </div>
+    </div>
+
+    <div class="panel hidden" id="verdict">
+      <div class="vring" id="vringbox">
+        <div class="mid"><span class="num" id="vpct">—</span>
+          <span class="cap">agree</span></div>
+      </div>
+      <div>
+        <div class="eyebrow" id="veyebrow">how much of it agreed</div>
+        <p id="vread">—</p>
+        <p id="vnote"></p>
+        <details class="dl" id="vnerd" style="margin-top: var(--s3)">
+          <summary>Details for nerds — what this percentage actually is</summary>
+          <div class="method" id="vnerdbody"></div>
+        </details>
+        <p class="provenance" id="prov"></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== tier 1 ===== -->
+  <section id="tier1" class="hidden">
+    <h2><span id="t1h">the checks, one question each</span><span class="rule"></span>
+      <span class="tag">done by lens itself</span></h2>
+    <p class="sub">Lens works everything out for itself — the date, the place, who
+      is in a photo, which days were a trip. Each check below asks one plain
+      question, works the answer out again from your files as they are right now,
+      and says where the two answers differ.</p>
+    <div class="tiles" id="tiles"></div>
+    <div class="cgrid" id="cards"></div>
+  </section>
+
+  <!-- ===== tier 2 ===== -->
+  <section id="tier2" class="hidden">
+    <h2>check it with your own eyes<span class="rule"></span>
+      <span class="tag" id="t2tag">8 random photos</span></h2>
+    <p class="sub">Everything above is lens checking its own arithmetic. This is
+      the part it cannot do for you. Here are eight random photos and what lens
+      believes about each one — click a row to see it in lens and judge for
+      yourself.</p>
+    <div class="panel t2wrap">
+      <table class="t2">
+        <thead><tr>
+          <th>photo</th><th>where lens thinks</th><th>when lens thinks</th>
+          <th>which camera</th><th>see it in lens</th>
+        </tr></thead>
+        <tbody id="t2body"></tbody>
+      </table>
+    </div>
+    <div class="row2" style="margin-top: var(--s3)">
+      <button class="hbtn" id="reshuffle" type="button">
+        <span class="gl" aria-hidden="true">⇄</span><span>Show me eight more</span></button>
+      <span class="provenance" id="t2note" style="margin: 0; align-self: center"></span>
+    </div>
+  </section>
+
+  <!-- ===== caveats ===== -->
+  <section id="csec" class="hidden">
+    <h2>why small differences are normal<span class="rule"></span>
+      <span class="tag">read this before quoting a number</span></h2>
+    <ul class="notes panel" id="caveats"></ul>
+  </section>
+</main>
+
+<script>
+  const RMQ = matchMedia("(prefers-reduced-motion: reduce)");
+
+  const ESC = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+  const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ESC[c]);
+  const num = n => Number(n).toLocaleString("en-US");
+  const pct = n => Math.round(100 * n) + "%";
+  const plural = (n, w) => `${num(n)} ${w}${n === 1 ? "" : "s"}`;
+  const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  // "2025-07-14T19:58:02" → "14 Jul 2025". No Date parsing: these are local,
+  // tz-naive strings and new Date() would shift them.
+  function fmtDate(iso) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || "");
+    return m ? `${+m[3]} ${MONTHS[+m[2] - 1]} ${m[1]}` : "";
+  }
+
+  // How many photos the manual table offers. Eight is what fits on a laptop
+  // screen without scrolling — this is a table someone works through by hand,
+  // and a list longer than the attention it takes to check one row is a list
+  // nobody finishes.
+  const T2_ROWS = 8;
+  // The order the checks are reported in — the order they run in validate.py,
+  // which is also cheapest-claim-first: a date, then a query, then the vectors,
+  // then the trips built on top of all three, then the faces and the people
+  // built on top of the same thumbnails the vectors came from.
+  const ORDER = ["exif_consistency", "retrieval_sanity", "embedding_integrity",
+                 "trips_invariants", "faces_integrity"];
+  // Each check as the question somebody would actually ask about their photos.
+  // The old titles named the mechanism ("EXIF, re-read from disk"), which is the
+  // one thing a reader cannot check for themselves; the mechanism now lives in
+  // each card's "how we checked" disclosure instead.
+  const TITLES = {
+    exif_consistency: "Are the dates and places right?",
+    retrieval_sanity: "Can it find what it should?",
+    embedding_integrity: "Is its memory intact?",
+    trips_invariants: "Are trips grouped sensibly?",
+    faces_integrity: "Do the faces and people line up?",
+  };
+  // The same checks named inside a sentence. A question works as a heading and
+  // not as a clause — "can it find what it should came back short" is not
+  // English — so the prose gets its own names.
+  const SHORT = {
+    exif_consistency: "the dates-and-places check",
+    retrieval_sanity: "the can-it-find-it check",
+    embedding_integrity: "the memory check",
+    trips_invariants: "the trips check",
+    faces_integrity: "the faces check",
+  };
+  // What each check's detail rows *are*, so the disclosure says what is behind
+  // it. "trips_invariants details 2" is the field name; "things that disagreed
+  // 2" is the thing the user is deciding whether to open.
+  const DETAIL_LABEL = {
+    exif_consistency: "details that disagreed",
+    retrieval_sanity: "photos it could not find",
+    embedding_integrity: "problems found",
+    trips_invariants: "things worth knowing",
+    faces_integrity: "problems found",
+  };
+  // Small counts, as words. "five checks" is English and "5 checks" is a field
+  // name, and this page writes both — the sentences take the word, the mono
+  // rows take the digits. Past this list a number is one nobody counts on their
+  // fingers, so digits are the right form for it anyway.
+  const COUNT_WORD = ["no", "one", "two", "three", "four", "five", "six",
+                      "seven", "eight"];
+  const countWord = n => COUNT_WORD[n] === undefined ? num(n) : COUNT_WORD[n];
+  // "a, b and c". No Oxford comma: the clauses this joins are short and the
+  // extra comma reads as another item.
+  const listOf = a => a.length < 2
+    ? (a[0] || "")
+    : a.slice(0, -1).join(", ") + " and " + a[a.length - 1];
+
+  const $ = id => document.getElementById(id);
+
+  // ── motion ────────────────────────────────────────────────────────────
+  // GSAP is vendored under views/vendor/ — nothing here reaches the network at
+  // runtime. It cannot be a plain relative <script src>: this page is served
+  // from /render?path=…, so "vendor/gsap.min.js" would resolve against /render
+  // rather than against the file's own folder. fused.rawUrl() is the runtime's
+  // answer to that, and it still reads the file off local disk.
+  //
+  // Never awaited before first paint. Every animation below is guarded, so
+  // without GSAP this is the same page with no transitions.
+  let gsap = null;
+  const motion = () => gsap && !RMQ.matches;
+
+  function loadScript(src) {
+    return new Promise((ok, fail) => {
+      const el = document.createElement("script");
+      el.src = src;
+      el.onload = ok;
+      el.onerror = () => fail(new Error("could not load " + src));
+      document.head.appendChild(el);
+    });
+  }
+
+  (async () => {
+    try {
+      await loadScript(fused.rawUrl("./vendor/gsap.min.js"));
+      if (!window.gsap) throw new Error("motion library did not define itself");
+      gsap = window.gsap;
+      // A reduced-motion preference can be turned on mid-session, and a tween
+      // already running must not be left frozen halfway — so the global
+      // timeline is sped through rather than paused, and motion() stops new
+      // ones being started at all.
+      const syncRM = () => gsap.globalTimeline.timeScale(RMQ.matches ? 200 : 1);
+      RMQ.addEventListener("change", syncRM);
+      syncRM();
+      onMotionReady();               // whatever the page wants animated on load
+    } catch (err) {
+      console.warn("lens: motion unavailable —", err.message);
+    }
+  })();
+
+  // ── page nav ──────────────────────────────────────────────────────────
+  // Four surfaces, three files: Photos and Trips are two states of lens.html,
+  // told apart by the `view` param, and the other two are pages of their own.
+  // `null` for a page that takes no view; "" for the one that wants the param
+  // gone.
+  // Every entry is spelled RELATIVE TO THE APP FOLDER, not as a bare filename:
+  // the four surfaces no longer live in one directory. The entry page is the
+  // app folder's index.html (the marketplace requires exactly one top-level
+  // .html, named that) and this page and the audit stayed in views/.
+  const PAGES = {
+    photos: ["index.html", ""],
+    trips: ["index.html", "trips"],
+    people: ["index.html", "people"],
+    explain: ["views/explain.html", null],
+    audit: ["views/validate.html", null],
+  };
+  // The trailing path to swap. Anchored to the three files we know, so a URL
+  // shaped some other way is left alone rather than rewritten into a guess.
+  //
+  // The optional `views/` prefix is what makes a cross-directory hop a plain
+  // string replace, in both directions and with no path arithmetic:
+  //
+  //   /embed/<root>/views/explain.html  → "index.html"         → /embed/<root>/index.html
+  //   /embed/<root>/index.html          → "views/explain.html" → /embed/<root>/views/explain.html
+  //
+  // JS alternation is greedy, so on the first line the match starts at `views/`
+  // and the whole segment pair is replaced — not just the filename, which
+  // would have left `/views/index.html`. The prefix has to be *adjacent* to one
+  // of the three names to match at all, so an app checked out under a parent
+  // directory that merely happens to be called `views` is unaffected.
+  const NAV_FILES = /(?:views\/)?(?:index|explain|validate)\.html/;
+  // The file this page is, so its own pills are a param write rather than a
+  // navigation: reloading the page to switch tab would throw away the grid, the
+  // scroll position and the daemon's warm text encoder.
+  const SELF = "views/validate.html";
+
+  // The URL in the address bar is not this frame's. A view is rendered inside
+  // the fused-render shell, and the shell's URL is the one that carries
+  // fused.params — so nav has to climb to it, by the same rule the runtime uses
+  // (topmost same-origin ancestor, stopping under a param boundary).
+  function navTarget() {
+    let w = window;
+    try {
+      while (w.parent && w.parent !== w) {
+        void w.parent.location.href;      // throws when cross-origin
+        if (w.parent._fusedParamBoundary) break;
+        w = w.parent;
+      }
+    } catch (err) { /* w is the last ancestor we are allowed to touch */ }
+    return w;
+  }
+
+  // `search` with a set of params written, removed, or left alone — carrying
+  // every other param across, because a link between pages should keep what it
+  // was showing. A value of "" or null deletes; anything else sets.
+  //
+  // The runtime always reinserts the raw `_layout=(…)` span last and never
+  // decodes it (it can hold literal `&`), so the search splits cleanly there:
+  // everything before the span is ordinary params, and the span is copied
+  // byte-for-byte rather than re-encoded.
+  //
+  // (chrome.md's withView() is this function with one hard-coded key. The pill
+  // nav needs exactly that; the tier-2 deep link needs to write four params at
+  // once, so the general form is what lives here and nav() calls it.)
+  function withParams(search, want) {
+    const s = (search || "").replace(/^\?/, "");
+    const m = /(^|&)_layout=\(/.exec(s);
+    const head = m ? s.slice(0, m.index) : s;
+    const tail = m ? s.slice(m.index + m[1].length) : "";
+    const p = new URLSearchParams(head);
+    for (const [k, v] of Object.entries(want || {})) {
+      if (v === "" || v === null || v === undefined) p.delete(k);
+      else p.set(k, v);
+    }
+    const out = [p.toString(), tail].filter(Boolean).join("&");
+    return out ? "?" + out : "";
+  }
+  // Neither index applies a query, so arriving at one must not leave one sitting
+  // in the search box describing a filter that is not being used — the same rule
+  // lens.html applies when the pill is pressed from inside it. The ids go too: a
+  // `trip` or `person` from wherever the user came from describes something the
+  // destination knows nothing about.
+  const withView = (search, view) =>
+    withParams(search, view === "trips" || view === "people"
+               ? { view, q: "", trip: "", person: "" } : { view });
+
+  // The absolute URL of another lens page with `want` written onto the shell's
+  // params — or null when this page is open at a URL we do not recognise, which
+  // is the honest answer rather than a guess.
+  //
+  // Two URL shapes, because a view can be embedded or opened standalone:
+  // /embed/<path>/lens.html carries the filename as a path segment, and
+  // /render?path=<path>/lens.html carries it as a param.
+  function hrefFor(file, want) {
+    const loc = navTarget().location;
+    if (NAV_FILES.test(loc.pathname)) {
+      return loc.origin + loc.pathname.replace(NAV_FILES, file)
+             + withParams(loc.search, want);
+    }
+    const u = new URL(loc.href);
+    const p = u.searchParams.get("path");
+    if (!p || !NAV_FILES.test(p)) return null;   // a URL we do not recognise
+    // `path` is an ordinary param, so it is written through withParams with
+    // the rest — one rewrite of the search, not two.
+    return u.origin + u.pathname
+           + withParams(u.search, { ...want, path: p.replace(NAV_FILES, file) });
+  }
+
+  function navTo(file, want) {
+    const href = hrefFor(file, want);
+    if (href) navTarget().location.href = href;
+  }
+
+  function nav(key) {
+    const page = PAGES[key];
+    if (!page) return;
+    const [file, view] = page;
+    if (file === SELF) {                  // same page, different state
+      if (view !== null) fused.params.set("view", view);
+      return;
+    }
+    // `view === null` means the destination has no view state, so the param is
+    // left exactly as it was rather than deleted — the other page may be one
+    // that reads it.
+    navTo(file, view === null ? {} : { view });
+  }
+
+  document.getElementById("pills").addEventListener("click", e => {
+    const b = e.target.closest("button[data-nav]");
+    if (b && b.getAttribute("aria-current") !== "page") nav(b.dataset.nav);
+  });
+
+  // Which pill is lit. Called once on a static page, and on every param change
+  // on lens.html.
+  function paintPills(current) {
+    for (const b of document.querySelectorAll("#pills button")) {
+      if (b.dataset.nav === current) b.setAttribute("aria-current", "page");
+      else b.removeAttribute("aria-current");
+    }
+  }
+
+  // ── colour + rings ────────────────────────────────────────────────────
+  // Where a score stops being reassuring. These checks re-derive the same
+  // computation from the same files, so a healthy library scores 1.0 — anything
+  // short of that is a real disagreement, and the bands are set much higher
+  // than a "quality score" would want. 80% is a finding, not a pass.
+  const ramp = p => p >= 95 ? "var(--ok)" : p >= 75 ? "var(--amber)" : "var(--warn)";
+
+  // Two concentric circles: a track, and an arc whose dash pattern is the whole
+  // circumference with the unfilled part pushed out of view by the dash offset.
+  // Rotated -90° so the arc starts at twelve o'clock rather than three.
+  //
+  // Rendered at its FINAL value, always — the sweep is a tween applied
+  // afterwards, and only when there is motion to apply. A ring that starts at
+  // zero and waits for GSAP is a ring that reads "0%" forever under
+  // prefers-reduced-motion.
+  function ringSvg(p, size, stroke, color) {
+    const r = (size - stroke) / 2;
+    const c = 2 * Math.PI * r;
+    const o = c * (1 - Math.max(0, Math.min(100, p)) / 100);
+    const h = size / 2;
+    return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"
+      aria-hidden="true"><circle cx="${h}" cy="${h}" r="${r}" fill="none"
+      stroke="var(--surface-2)" stroke-width="${stroke}"/>
+      <circle class="arc" cx="${h}" cy="${h}" r="${r}" fill="none"
+      stroke="${color}" stroke-width="${stroke}" stroke-linecap="round"
+      stroke-dasharray="${c.toFixed(2)}" stroke-dashoffset="${o.toFixed(2)}"
+      data-c="${c.toFixed(2)}" data-o="${o.toFixed(2)}"
+      transform="rotate(-90 ${h} ${h})"/></svg>`;
+  }
+
+  // GSAP loads asynchronously and the audit arrives asynchronously, so either
+  // can be last. Both paths call the same animators, and this set is what stops
+  // an element being animated twice when they land close together.
+  const ANIMATED = new WeakSet();
+
+  function sweepRings(root) {
+    if (!motion()) return;
+    for (const el of (root || document).querySelectorAll(".arc")) {
+      if (ANIMATED.has(el)) continue;
+      ANIMATED.add(el);
+      gsap.fromTo(el,
+        { attr: { "stroke-dashoffset": el.dataset.c } },
+        { attr: { "stroke-dashoffset": el.dataset.o },
+          duration: 0.9, ease: "power2.out", overwrite: "auto" });
+    }
+  }
+
+  // A percentage that counts up beside a ring that sweeps. The text is written
+  // to its final value first, so this is decoration on top of a correct DOM,
+  // never the thing that produces it.
+  function rollPct(el, target) {
+    if (!el) return;
+    el.textContent = Math.round(target) + "%";
+    if (!motion() || ANIMATED.has(el)) return;
+    ANIMATED.add(el);
+    const box = { n: 0 };
+    gsap.to(box, { n: target, duration: 0.9, ease: "power2.out",
+      onUpdate: () => { el.textContent = Math.round(box.n) + "%"; },
+      onComplete: () => { el.textContent = Math.round(target) + "%"; } });
+  }
+
+  function enterStagger(sel, root) {
+    if (!motion()) return;
+    const els = [...(root || document).querySelectorAll(sel)]
+      .filter(el => !ANIMATED.has(el));
+    if (!els.length) return;
+    els.forEach(el => ANIMATED.add(el));
+    gsap.from(els, { opacity: 0, y: 10, duration: 0.34, ease: "power3.out",
+      stagger: 0.04, overwrite: "auto", clearProps: "transform,opacity" });
+  }
+
+  // Called once GSAP is live. Whatever is already on screen gets its entrance
+  // late rather than not at all; whatever arrives later animates from its own
+  // render path.
+  function onMotionReady() {
+    sweepRings();
+    enterStagger(".tiles .tile");
+    enterStagger(".cgrid .ccard");
+    enterStagger("#t2body tr");
+  }
+
+  // ── the seam ──────────────────────────────────────────────────────────
+  // There used to be a `DAEMON` constant here and a plain `fetch()` at every
+  // call site. lens.html's own "where the data comes from" note has the full
+  // story; this is the same seam, trimmed to the two ops this page actually
+  // asks for: `validate` and `query` (the latter only ever with an empty `q`,
+  // for the tier-2 sample table, so it never hits the embedding handshake —
+  // kept anyway so this reads the same as every other port of this seam).
+  // `api()` still speaks the daemon's old paths, still hands back the
+  // daemon's old shapes, and the error contract is unchanged — lens_api.py's
+  // `{error, message}` becomes an `Error` with `.code`.
+  const API = "./lens_api.py";
+  const EMBED_MODEL = "google/siglip2-so400m-patch14-384";
+
+  function endpoint(path) {
+    const [base, qs] = path.split("?");
+    const q = new URLSearchParams(qs || "");
+    const num_ = k => (q.get(k) === null ? undefined : q.get(k));
+    if (base === "/validate") return { op: "validate" };
+    if (base === "/query") {
+      return { op: "query", q: q.get("q") || "", limit: num_("limit"),
+               scope: num_("scope") };
+    }
+    return null;
+  }
+
+  function strings(params) {
+    const out = {};
+    for (const [k, v] of Object.entries(params)) {
+      if (v === undefined || v === null) continue;
+      out[k] = typeof v === "string" ? v : String(v);
+    }
+    return out;
+  }
+
+  const VECS = new Map();
+
+  async function embedOne(text) {
+    if (VECS.has(text)) return VECS.get(text);
+    const res = await withModel(() =>
+      fused.ai.embed({ texts: [text], model: EMBED_MODEL }));
+    VECS.set(text, res.vectors[0]);
+    return res.vectors[0];
+  }
+
+  async function withModel(call) {
+    try {
+      return await call();
+    } catch (err) {
+      if (err.type !== "model_loading" || !err.jobId) throw asApiError(err);
+      setRun("", "loading the search model…");
+      try {
+        await fused.watchJob(err.jobId).watch(job => {
+          const p = job && job.total ? Math.round(100 * job.done / job.total) : null;
+          setRun("", p === null
+            ? "downloading the search model…" : `downloading the search model… ${p}%`);
+        });
+      } catch (watchErr) { /* the watch is a progress display */ }
+      try {
+        return await call();
+      } catch (again) {
+        throw asApiError(again);
+      }
+    }
+  }
+
+  function asApiError(err) {
+    const out = new Error(err.type === "ai_unavailable"
+      ? "The search model isn’t available on this machine — " + err.message
+      : err.message || "the embedding failed");
+    out.code = err.type || "embed failed";
+    return out;
+  }
+
+  async function api(path) {
+    const spec = endpoint(path);
+    if (!spec) {
+      const err = new Error("No route for " + path);
+      err.code = "not found";
+      throw err;
+    }
+    const call = params => fused.runPython(API, strings(params), { key: null });
+    let data = await call(spec);
+    if (data && data.need_embed) {
+      const vec = await embedOne(data.need_embed);
+      data = await call({ ...spec, vec: JSON.stringify(vec) });
+    }
+    if (data && data.error) {
+      const err = new Error(data.message || data.error);
+      err.code = data.error;
+      throw err;
+    }
+    return data || {};
+  }
+
+  // ── state ─────────────────────────────────────────────────────────────
+  let auditSeq = 0, sampleSeq = 0;
+  let AUDIT = null;          // the last /validate payload
+  let SAMPLE = [];           // the photo rows tier 2 draws from
+  let lastSeed = null;       // so a param change can tell a reshuffle apart
+
+  function setRun(cls, text) {
+    const el = $("run");
+    if (el.className === "pill " + cls && $("runtext").textContent === text) return;
+    el.className = ("pill " + cls).trim();
+    $("runtext").textContent = text;
+  }
+
+  const show = (id, on) => $(id).classList.toggle("hidden", !on);
+
+  // ── the audit ─────────────────────────────────────────────────────────
+  async function runAudit() {
+    const seq = ++auditSeq;
+    $("rerun").disabled = true;
+    $("rerun").classList.add("spin");
+    setRun("", "running audit…");
+    // The panels already on screen stay exactly as they are while a re-run is
+    // in flight. Blanking them would mean the page shows less than it knows
+    // for the up-to-twenty seconds the checks now take.
+    if (!AUDIT) { show("wait", true); show("fail", false); }
+
+    // `api()` collapses "nothing answered" and "it answered and refused"
+    // into one throw; `err.code` is how this still tells them apart —
+    // `undefined` is a runPython-level refusal (no subprocess, no
+    // environment), anything else is lens_api.py explaining itself.
+    let data;
+    try {
+      data = await api("/validate");
+    } catch (err) {
+      if (seq !== auditSeq) return;
+      return failed(err.code ? "refused" : "down", err.message);
+    }
+    if (seq !== auditSeq) return;
+
+    AUDIT = data;
+    $("rerun").disabled = false;
+    $("rerun").classList.remove("spin");
+    setRun("done", `checked in ${num(data.elapsed_ms)} ms`);
+    show("wait", false);
+    show("fail", false);
+    renderVerdict(data);
+    renderTiles(data);
+    renderCards(data);
+    renderCaveats(data);
+    show("verdict", true);
+    show("tier1", true);
+    show("csec", true);
+    sweepRings();
+    rollPct($("vpct"), 100 * (data.composite || 0));
+    enterStagger(".tiles .tile");
+    enterStagger(".cgrid .ccard");
+  }
+
+  function failed(kind, message) {
+    $("rerun").disabled = false;
+    $("rerun").classList.remove("spin");
+    setRun("err", kind === "down" ? "library unavailable" : "check failed");
+    // A failed re-run does not erase a successful earlier one: the numbers on
+    // screen are still the numbers the last audit reported, and saying so is
+    // more use than an empty page.
+    if (AUDIT) return;
+    show("wait", false);
+    show("verdict", false);
+    show("tier1", false);
+    show("tier2", false);
+    show("csec", false);
+    show("fail", true);
+    if (kind === "down") {
+      // `err.code` was undefined — runPython itself refused rather than
+      // lens_api.py explaining a store problem. There is no daemon to start
+      // any more, so "retry" is the only action left, not a command to copy.
+      $("failh").textContent = "The audit could not run";
+      $("faild").textContent = message
+        || "lens_api.py did not answer. Press retry.";
+      $("failcmd").innerHTML = "";
+      return;
+    }
+    $("failh").textContent = "The check itself failed";
+    $("faild").textContent = message
+      || "lens_api.py refused to run the audit. Press retry.";
+    $("failcmd").innerHTML = "";
+  }
+
+  // ── verdict ───────────────────────────────────────────────────────────
+  // The headline word tracks the band; the sentence after it is built from what
+  // actually happened, because "95%" on its own does not say which check was
+  // short — and that is the only thing on this page worth acting on.
+  // The headline is a count of checks passed, not a grade: "it passed 5 of 5" is
+  // a sentence anybody can repeat, and 99.8% is not. The sentence after it names
+  // whichever check came back short, because that is the only thing on this page
+  // worth acting on.
+  function reading(p, short, errored, n) {
+    if (errored.length) {
+      return [`could not finish`, `${plural(errored.length, "check")} did not run
+        at all, so what you see below is only the ones that did.`];
+    }
+    const passed = n - short.length;
+    if (!short.length) {
+      return [`passed ${countWord(n)} of ${countWord(n)}`,
+        `nothing we re-checked disagreed with what lens is showing you.`];
+    }
+    const names = listOf(short.map(k => SHORT[k]));
+    if (p >= 95) {
+      return [`passed ${countWord(passed)} of ${countWord(n)}`,
+        `your photos and what lens says about them line up, and ${names} came
+         back very slightly short — each one explains itself below.`];
+    }
+    if (p >= 75) {
+      return [`passed ${countWord(passed)} of ${countWord(n)}`,
+        `most of it lined up, but ${names} disagreed by enough to be worth
+         reading.`];
+    }
+    if (p > 0) {
+      return [`mostly failed`,
+        `several things did not survive being checked again — ${names}. Treat
+         what lens shows you as unconfirmed until these are explained.`];
+    }
+    return ["failed",
+      `nothing we checked matched what lens stores. Either something is badly
+       wrong, or your library is empty.`];
+  }
+
+  function renderVerdict(d) {
+    const checks = d.checks || {};
+    const present = ORDER.filter(k => checks[k]);
+    const scored = present.filter(k => Number.isFinite(checks[k].score));
+    const short = scored.filter(k => checks[k].score < 1 && !checks[k].error);
+    const errored = present.filter(k => checks[k].error);
+    const has = Number.isFinite(d.composite);
+    const p = has ? 100 * d.composite : 0;
+    const col = ramp(p);
+
+    $("vpct").textContent = has ? Math.round(p) + "%" : "—";
+    $("vpct").style.color = col;
+    const box = $("vringbox");
+    const old = box.querySelector("svg");
+    if (old) old.remove();
+    box.insertAdjacentHTML("afterbegin", ringSvg(has ? p : 0, 132, 9, col));
+
+    const lib = d.library || {};
+    $("veyebrow").textContent = scored.length === present.length
+      ? `we tested lens ${countWord(present.length)} ways`
+      : `${countWord(scored.length)} of ${countWord(present.length)} checks came back with a number`;
+    $("t1h").textContent =
+      `the ${countWord(present.length)} checks, one question each`;
+    const rd = reading(p, short, errored, present.length);
+    $("vread").innerHTML = `<b style="color:${col}">It ${esc(rd[0])}</b> — `
+      + esc(rd[1].replace(/\s+/g, " ").trim());
+
+    // The composite is a mean of unlike numbers and the page has to say so
+    // before anyone quotes it. The individual scores are printed here so "95%"
+    // is visibly an average of 100, 100, 100, 100 and 80 rather than a
+    // measurement of anything.
+    //
+    // The samples are listed from the checks that actually reported, not from a
+    // sentence written once against five of them: an older daemon sends four,
+    // and a clause about a sample that does not exist would be an invented fact.
+    const each = scored.map(k => Math.round(100 * checks[k].score));
+    const samples = [];
+    if (checks.exif_consistency) {
+      samples.push(`dates, places and cameras on
+        ${esc(num(checks.exif_consistency.sampled_n || 0))} photos`);
+    }
+    if (checks.retrieval_sanity) {
+      samples.push(`${esc(num(checks.retrieval_sanity.sampled_n || 0))} searches
+        with a known answer`);
+    }
+    if (checks.embedding_integrity) {
+      samples.push(`${esc(num(checks.embedding_integrity.sampled_n || 0))} of the
+        fingerprints lens keeps of your pictures`);
+    }
+    if (checks.trips_invariants) {
+      samples.push(`every trip in the library, rebuilt`);
+    }
+    if (checks.faces_integrity) {
+      samples.push(`all ${esc(num(checks.faces_integrity.faces || 0))} faces
+        against the people they were put into`);
+    }
+    $("vnote").innerHTML =
+      `<b>The ring is a summary, not a score.</b> `
+      + (each.length
+        ? `Read the cards below — they are the actual answers. The ring is only
+           a way in.`
+        : `No check came back with a number, so there is nothing to summarise.`)
+        .replace(/\s+/g, " ");
+    $("vnerdbody").innerHTML = each.length
+      ? `<p>The percentage is the plain arithmetic mean of the
+         ${esc(countWord(scored.length))} check scores —
+         ${esc(each.join(", "))} — and they measure unlike things on unlike
+         samples: ${listOf(samples)}. Averaging them weights a one-photo trip the
+         same as ${esc(num((checks.exif_consistency || {}).compared || 0))}
+         re-read EXIF fields, so it is a way in and not a measurement of
+         anything.</p>`.replace(/\s+/g, " ")
+      : `<p>No check produced a score, so there is nothing to average.</p>`;
+
+    // The faces sub-object arrived with the people feature, so it is printed
+    // only when the daemon sent one. "12 people" is `plural`-proof — that
+    // function would say "persons" — so the two forms are spelled here.
+    const fl = lib.faces || {};
+    $("prov").textContent =
+      `your library · ${plural(lib.images || 0, "picture")} · `
+      + `${num(lib.photos || 0)} taken with a camera · `
+      + `${plural(lib.trips || 0, "trip")}`
+      + (Number.isFinite(fl.faces)
+        ? ` · ${plural(fl.faces, "face")} · ${num(fl.people || 0)} `
+          + `${fl.people === 1 ? "person" : "people"}`
+        : "")
+      + ` · checked in ${num(d.elapsed_ms)} ms, nothing changed`;
+  }
+
+  // ── tier 1 tiles ──────────────────────────────────────────────────────
+  // Each tile's footnote is the sample the score was measured on, because a
+  // percentage with no denominator is a number with no meaning. Built from the
+  // response's own fields, so a check that reported less says less.
+  function sampleNote(k, c) {
+    const n = Number.isFinite(c.sampled_n) ? c.sampled_n : 0;
+    if (c.error) return "did not run";
+    if (k === "exif_consistency") {
+      return `${num(n)} photos re-opened`
+        + (Number.isFinite(c.population) ? ` of ${num(c.population)}` : "");
+    }
+    if (k === "retrieval_sanity") {
+      return `${num(n)} searches with a known answer`;
+    }
+    if (k === "embedding_integrity") {
+      return (Number.isFinite(c.ids) ? `${num(c.ids)} fingerprints · ` : "")
+        + `${num(n)} opened`;
+    }
+    if (k === "faces_integrity") {
+      // The face count, not the coverage: this line is the denominator of the
+      // score, and coverage is the one number this check deliberately does not
+      // score. It gets said in full on the card instead.
+      return (Number.isFinite(c.faces) ? `${num(c.faces)} faces · ` : "")
+        + `${num(n)} opened`;
+    }
+    return `all ${num(n)} photos, nothing sampled`;
+  }
+
+  const TILE_K = {
+    exif_consistency: "dates & places",
+    retrieval_sanity: "finds what it should",
+    embedding_integrity: "memory intact",
+    trips_invariants: "trips sensible",
+    faces_integrity: "faces line up",
+  };
+
+  function renderTiles(d) {
+    const checks = d.checks || {};
+    $("tiles").innerHTML = ORDER.map(k => {
+      const c = checks[k];
+      // Same rule as renderCards: a check the daemon never mentioned gets no
+      // tile. A tile reading "—" would say this check did not run, which is a
+      // claim about a check an older daemon does not have.
+      if (!c) return "";
+      const has = Number.isFinite(c.score);
+      const p = has ? 100 * c.score : 0;
+      const v = has ? Math.round(p) + "%" : "—";
+      return `<div class="panel tile"><span class="k">${esc(TILE_K[k])}</span>
+        <span class="v" style="color:${has ? ramp(p) : "var(--text-mute)"}">${esc(v)}</span>
+        <span class="x">${esc(sampleNote(k, c))}</span></div>`;
+    }).join("");
+  }
+
+  // ── per-check cards ───────────────────────────────────────────────────
+  // The answer to the card's question, in the words somebody would say it out
+  // loud, with the counts framed rather than listed: "we re-opened 25 photos and
+  // all 25 matched" is a sentence, "exif_consistency 1.0 (n=25)" is a field. Only
+  // the numbers the check actually reported are used, so a check that sent less
+  // says less rather than saying "undefined".
+  const YES = `<span class="yes">Yes.</span>`;
+  const HM = `<span class="hm">Almost.</span>`;
+  const NO = `<span class="no">No.</span>`;
+  const B = v => `<b>${esc(num(v))}</b>`;
+
+  function plainAnswer(k, c) {
+    if (c.error) {
+      return `<span class="no">We could not check this one.</span> Lens caught
+        the failure and reported it rather than giving up on the rest.`;
+    }
+    const ok = c.pass === true;
+    const lead = ok ? YES : (Number.isFinite(c.score) && c.score < 0.75 ? NO : HM);
+    const n = Number.isFinite(c.sampled_n) ? c.sampled_n : 0;
+
+    if (k === "exif_consistency") {
+      const cmp = Number.isFinite(c.compared) ? c.compared : 0;
+      const bad = cmp - (Number.isFinite(c.agreed) ? c.agreed : 0);
+      return ok
+        ? `${lead} We re-opened ${B(n)} of your photos and read the date, the
+           place and the camera straight off the files again — all ${B(cmp)}
+           details matched what lens had stored.`
+        : `${lead} We re-opened ${B(n)} of your photos and re-read ${B(cmp)}
+           details off the files. ${B(bad)} of them did not match what lens had
+           stored${c.unreadable ? `, and ${B(c.unreadable)} of the files would
+           not open at all` : ""}.`;
+    }
+    if (k === "retrieval_sanity") {
+      const found = Number.isFinite(c.found) ? c.found : 0;
+      return ok
+        ? `${lead} We took ${B(n)} photos and searched for each one using only
+           the place and the month lens believes it was taken — and all ${B(n)}
+           came back.`
+        : `${lead} We searched for ${B(n)} photos using only the place and month
+           lens believes for each — ${B(found)} came back and ${B(n - found)}
+           did not.`;
+    }
+    if (k === "embedding_integrity") {
+      // "Fingerprint" is the whole translation this card needs: lens keeps one
+      // per picture so it can find things by sight, and everything measured here
+      // is whether they are all present, in order, and undamaged.
+      const ids = Number.isFinite(c.ids) ? c.ids : 0;
+      const intro = `Lens keeps a fingerprint of what is in each picture, so it
+        can find photos by what they look like.`;
+      if (ok) {
+        return `${lead} ${intro} All ${B(ids)} of them are present and in the
+          right order, and the ${B(n)} we opened at random were undamaged, with
+          their small preview images still on disk.`;
+      }
+      const bits = [];
+      if (c.aligned === false) {
+        bits.push(`the fingerprints have got out of step with the photos they
+          belong to`);
+      }
+      if (c.coverage != null && c.coverage < 1) {
+        bits.push(`${esc(pct(c.coverage))} of your pictures have one so far — the
+          rest have not been looked at yet`);
+      }
+      if (Number.isFinite(c.norms_ok) && c.norms_ok < n) {
+        bits.push(`${B(n - c.norms_ok)} of the ${B(n)} we opened were the wrong
+          shape`);
+      }
+      if (Number.isFinite(c.thumbs_ok) && Number.isFinite(c.thumbs_n)
+          && c.thumbs_ok < c.thumbs_n) {
+        bits.push(`${B(c.thumbs_n - c.thumbs_ok)} are missing their small preview
+          image`);
+      }
+      return `${lead} ${intro} ${bits.length ? bits.join("; ") + "."
+        : "Something about them came back short of perfect."}`;
+    }
+    if (k === "trips_invariants") {
+      const trips = Number.isFinite(c.trips) ? c.trips : 0;
+      const under = Array.isArray(c.undersized) ? c.undersized : [];
+      const mm = Number.isFinite(c.mismatch) ? c.mismatch : 0;
+      if (ok) {
+        return `${lead} We re-grouped all ${B(n)} of your photos into trips from
+          scratch, and got back the same ${B(trips)} trips lens is showing you.`;
+      }
+      const bits = [];
+      if (mm) {
+        bits.push(`${B(mm)} photos would land in a different trip if lens
+          regrouped them now`);
+      }
+      if (under.length) {
+        bits.push(`${B(under.length)} of the ${B(trips)} trips it has stored are
+          too small to show as a trip (fewer than three photos), so you never see
+          ${under.length === 1 ? "it" : "them"}`);
+      }
+      return `${lead} We re-grouped all ${B(n)} of your photos into trips from
+        scratch. ${bits.length ? bits.join(", and ") + "."
+          : "The result came back slightly short of perfect."}`;
+    }
+    // faces
+    const faces = Number.isFinite(c.faces) ? c.faces : 0;
+    if (ok) {
+      return `${lead} Every one of the ${B(faces)} faces lens has found is still
+        matched to its own fingerprint, every person is made only of faces that
+        really exist, and every person's cover photo really is one of theirs.`;
+    }
+    const bits = [];
+    if (c.aligned === false) bits.push(`faces and fingerprints have got out of step`);
+    if (c.missing_vectors) bits.push(`${B(c.missing_vectors)} faces have no fingerprint`);
+    if (c.orphan_vectors) bits.push(`${B(c.orphan_vectors)} fingerprints belong to no face`);
+    if (Number.isFinite(c.norms_ok) && c.norms_ok < n) {
+      bits.push(`${B(n - c.norms_ok)} of the ${B(n)} we opened were the wrong shape`);
+    }
+    if (c.dangling_persons) bits.push(`${B(c.dangling_persons)} faces point at a person who does not exist`);
+    if (c.bad_covers) bits.push(`${B(c.bad_covers)} people show a cover photo that is not theirs`);
+    return `${lead} Of the ${B(faces)} faces lens has found, ${bits.length
+      ? bits.join("; ") : "something did not line up"}.`;
+  }
+
+  // How a check was actually run. Reference material now — it lives behind each
+  // card's "how we checked this" disclosure rather than above the answer.
+  function saying(k, c) {
+    const n = num(c.sampled_n || 0);
+    if (k === "exif_consistency") {
+      return `${n} photos still on disk were re-opened, their EXIF extracted
+        again and their coordinates re-geocoded, then <code>taken_at</code>,
+        <code>camera</code>, <code>lat</code> and <code>lon</code> compared
+        field by field with the catalog. A field neither side claims is not
+        counted as a match.`;
+    }
+    if (k === "retrieval_sanity") {
+      // The format string, not an example city: an invented “Denpasar Jul 2026”
+      // on a page about honesty is a place this library may not contain.
+      return `For ${n} photos the catalog's own columns were turned back into a
+        query — <code>place_city</code> then the capture month as
+        <code>Mon YYYY</code> — run through the real parser and the real
+        <code>WHERE</code> builder, and the photo they describe either came back
+        or it did not. This is the only check that exercises the query path end
+        to end.`;
+    }
+    if (k === "embedding_integrity") {
+      return `The id list and the embedding matrix were checked for the same
+        length — a gap there and every vector after it belongs to a different
+        photo — then ${n} sampled vectors were re-normed and their thumbnails
+        looked for on disk.`;
+    }
+    if (k === "faces_integrity") {
+      return `The <code>faces</code> table and <code>faces.npz</code> were held
+        against each other in both directions — a face row with no vector cannot
+        be clustered, a vector with no row describes a face nothing can show —
+        then ${n} sampled face vectors were re-normed, every non-null
+        <code>cluster_id</code> looked up in the persons table, and every
+        person's cover face checked to be one of their own. The clustering is not
+        re-run: whether two faces are the same person is a judgement, and this
+        check measures only whether the pieces still agree.`;
+    }
+    return `<code>compute_trips</code> was re-run over all ${n} photo rows as
+      the catalog stands now, and its assignments compared with the stored trip
+      ids; each stored trip was also held against
+      <code>trips.MIN_PHOTOS</code>, which wants at least three photographs —
+      a trip stored below it was made by a lens that predates the rule and never
+      rebuilt.`;
+  }
+
+  // Only the fields a check actually reported. A check that raised carries none
+  // of them, and printing "undefined" for each would be worse than silence.
+  const fin = v => (Number.isFinite(v) ? num(v) : null);
+
+  function factsFor(k, c) {
+    if (k === "exif_consistency") {
+      return [["fields compared", fin(c.compared)], ["agreed", fin(c.agreed)],
+              ["unreadable files", fin(c.unreadable)],
+              ["photos eligible", fin(c.population)]];
+    }
+    if (k === "retrieval_sanity") {
+      return [["found", Number.isFinite(c.found)
+                ? `${num(c.found)} / ${num(c.sampled_n)}` : null],
+              ["left a residual word", fin(c.residual)],
+              ["photos with place + date", fin(c.population)]];
+    }
+    if (k === "embedding_integrity") {
+      return [["ids", fin(c.ids)], ["matrix rows", fin(c.rows)],
+              ["dims", fin(c.dims)],
+              ["aligned", c.aligned === undefined ? null : (c.aligned ? "yes" : "no")],
+              ["coverage", c.coverage == null ? null : pct(c.coverage)],
+              ["unit norms", Number.isFinite(c.norms_ok)
+                ? `${num(c.norms_ok)} / ${num(c.sampled_n)}` : null],
+              ["thumbs on disk", Number.isFinite(c.thumbs_ok)
+                ? `${num(c.thumbs_ok)} / ${num(c.thumbs_n)}` : null]];
+    }
+    if (k === "faces_integrity") {
+      // The four things checked, then the three the People view is made of.
+      // Zeros are printed rather than dropped: "0 vectors with no row" is the
+      // measurement, and an absent line would read as a check that skipped it.
+      return [["face rows", fin(c.faces)], ["vectors", fin(c.vectors)],
+              ["aligned", c.aligned === undefined ? null : (c.aligned ? "yes" : "no")],
+              ["unit norms", Number.isFinite(c.norms_ok)
+                ? `${num(c.norms_ok)} / ${num(c.sampled_n)}` : null],
+              ["rows with no vector", fin(c.missing_vectors)],
+              ["vectors with no row", fin(c.orphan_vectors)],
+              ["faces pointing at no person", fin(c.dangling_persons)],
+              ["covers not their own", fin(c.bad_covers)],
+              ["people", fin(c.people)], ["named", fin(c.named)],
+              ["faces inside a person", fin(c.clustered)]];
+    }
+    return [["stored trips", fin(c.trips)], ["recomputed", fin(c.recomputed)],
+            ["assignments disagreeing", fin(c.mismatch)],
+            ["agreement", c.agreement == null ? null : pct(c.agreement)],
+            ["under 3 photos", Array.isArray(c.undersized)
+              ? num(c.undersized.length) : null]];
+  }
+
+  function frowHTML(pairs) {
+    const bits = pairs
+      .filter(([, v]) => v !== null && v !== undefined && v !== "")
+      .map(([kk, v]) => `<span>${esc(kk)} <b>${esc(v)}</b></span>`);
+    return bits.length
+      ? `<div class="frow">${bits.join('<span class="sep">·</span>')}</div>` : "";
+  }
+
+  // A number a check reported that is neither its score nor a fault. Only the
+  // faces check has one, and it needs its own line precisely because it is not a
+  // finding: how far the face sweep has got is the denominator that stops
+  // "12 people" reading as "you know twelve people", and validate.faces_integrity
+  // deliberately leaves it out of the score (a photograph nobody has looked for
+  // faces in has broken no promise). Saying it inside findingHTML would file it
+  // as a fault; leaving it out would let the counts above stand without one.
+  function noteFor(k, c) {
+    if (k !== "faces_integrity" || c.error) return "";
+    if (!Number.isFinite(c.scanned) || !Number.isFinite(c.eligible)) return "";
+    // Nothing indexed at all: "0 of 0 images, the rest have not been looked at"
+    // describes a rest that does not exist.
+    if (!c.eligible) {
+      return `<p class="say">Lens has not looked at any pictures yet, so there is
+        nothing here to be right or wrong about.</p>`;
+    }
+    const done = c.scanned >= c.eligible;
+    return `<p class="say">Lens has looked for faces in
+      <b>${esc(num(c.scanned))}</b> of your ${esc(num(c.eligible))} pictures${
+        c.coverage == null ? "" : ` (${esc(pct(c.coverage))})`}${done
+          ? `, so the people it found are everybody in your library`
+          : ` — it has not seen the rest yet, so these are the people found so
+             far rather than everybody in your library`}. That is how far it has
+      got, not a mistake, so it does not count against the score.</p>`;
+  }
+
+  // The finding, said in words, when a check did not come back clean. This is
+  // the part the page exists for: a ring at 80% is a colour, and "two trips
+  // hold fewer than three photos, here are their names" is something someone
+  // can act on.
+  // What is left to say once the answer above has said what happened: the names
+  // of the things involved, and what would fix it. The old version of this block
+  // restated the fault in the vocabulary of the code — that job now belongs to
+  // plainAnswer(), and this one only carries what a person could act on.
+  function findingHTML(k, c) {
+    if (c.error) {
+      return `<div class="finding bad"><b>This check stopped with an error.</b>
+        Lens reported it rather than abandoning the other checks:
+        <span class="name">${esc(c.error)}</span>. Nothing here is evidence
+        either way — this one question is simply unanswered.</div>`;
+    }
+    if (Number.isFinite(c.score) && c.score >= 1) return "";
+    if (k === "trips_invariants") {
+      const under = Array.isArray(c.undersized) ? c.undersized : [];
+      const mm = Number.isFinite(c.mismatch) ? c.mismatch : 0;
+      let html = `<div class="finding">`;
+      if (under.length) {
+        html += `<b>These are the trips that are too small to show:</b>
+          <ul>` + under.map(u =>
+            `<li><span class="name">${esc(u.name)}</span> — ${esc(plural(u.photos, "photo"))}
+             </li>`).join("") + `</ul>
+          They are not bad data — lens keeps them, and the Trips view folds
+          anything under three photos into “Not part of a trip”.`;
+      }
+      if (mm) {
+        html += `${under.length ? " " : ""}<b>The trips were built before the
+          newest photos arrived.</b> Letting lens look through your photos again
+          puts them right.`;
+      }
+      return html + `</div>`;
+    }
+    if (k === "exif_consistency") {
+      return `<div class="finding">Every detail that disagreed is listed below,
+        with both versions side by side — the one lens stored, and the one we
+        just read off the file.</div>`;
+    }
+    if (k === "retrieval_sanity") {
+      const missed = (c.sampled_n || 0) - (c.found || 0);
+      // A short score with nothing missed means the check reported numbers this
+      // page cannot reconcile. Say that, rather than print "0 photos could not
+      // be found" and look broken.
+      if (missed < 1) {
+        return `<div class="finding"><b>This check came back short without naming
+          a photo it failed to find.</b> The rows below are whatever it did send
+          back.</div>`;
+      }
+      return `<div class="finding">The searches, and what came back instead, are
+        listed below. A photo you cannot find by its own place and date is a photo
+        you cannot find.</div>`;
+    }
+    if (k === "faces_integrity") {
+      return `<div class="finding">Letting lens look for faces again on the
+        photos involved rebuilds both halves. How far it has got through your
+        library is not part of this score.</div>`;
+    }
+    return `<div class="finding">Letting lens look through your photos again
+      rebuilds the fingerprints and the previews that go with them.</div>`;
+  }
+
+  // The detail rows differ per check — {path, field, catalog, fresh} for EXIF,
+  // {path, query, matched, …} for retrieval, {id, field, value} for embeddings,
+  // {path, stored, recomputed} or {undersized:{…}} for trips — so nothing here
+  // assumes a shape. Whatever keys are present are printed, one level of
+  // nesting is flattened (that is the {undersized:{…}} wrapper), and every
+  // value is escaped: these are file paths and EXIF strings.
+  const WIDE = new Set(["path", "name", "query", "error"]);
+
+  function detailHTML(rows) {
+    if (!Array.isArray(rows) || !rows.length) {
+      return `<div class="empty">nothing to report — everything agreed.</div>`;
+    }
+    return `<ul class="dlist">` + rows.map(row => {
+      const pairs = [];
+      for (const [k, v] of Object.entries(row || {})) {
+        if (v && typeof v === "object" && !Array.isArray(v)) {
+          for (const [k2, v2] of Object.entries(v)) pairs.push([k2, v2]);
+        } else {
+          pairs.push([k, v]);
+        }
+      }
+      if (!pairs.length) return "";
+      // the long, wrapping values (a path, a query) take their own line so the
+      // short key/value pairs beside them stay legible as a row
+      const wide = pairs.filter(([k]) => WIDE.has(k));
+      const rest = pairs.filter(([k]) => !WIDE.has(k));
+      const cell = ([k, v], cls) =>
+        `<span class="p${cls}"><em>${esc(k)}</em> ${
+          v === null || v === undefined || v === "" ? "—" : esc(v)}</span>`;
+      return `<li>${wide.map(x => cell(x, " wide")).join("")}${
+        rest.map(x => cell(x, "")).join("")}</li>`;
+    }).join("") + `</ul>`;
+  }
+
+  function renderCards(d) {
+    const checks = d.checks || {};
+    $("cards").innerHTML = ORDER.map(k => {
+      const c = checks[k];
+      // A check the daemon did not mention at all is not the same as one that
+      // failed, and inventing a card for it would be inventing a result.
+      if (!c) return "";
+      const has = Number.isFinite(c.score);
+      const p = has ? 100 * c.score : 0;
+      const col = has ? ramp(p) : "var(--text-mute)";
+      const badge = c.error ? ["bad", "error"]
+        : c.pass ? ["ok", "pass"] : ["mid", "finding"];
+      const rows = Array.isArray(c.details) ? c.details : [];
+      return `<div class="panel ccard">
+        <header>
+          <h3>${esc(TITLES[k] || k)}</h3>
+          <span class="st ${badge[0]}">${esc(badge[1])}</span>
+          <span class="mring">${ringSvg(p, 44, 4, col)}<span class="mv"
+            style="color:${col}">${has ? Math.round(p) : "—"}</span></span>
+        </header>
+        <p class="ans">${plainAnswer(k, c).replace(/\s+/g, " ")}</p>
+        ${noteFor(k, c)}
+        ${findingHTML(k, c)}
+        <details class="dl"><summary>how we checked this</summary>
+          <div class="method"><p>${saying(k, c)}</p>
+            ${frowHTML(factsFor(k, c))}</div></details>
+        <details class="dl"><summary>${esc(DETAIL_LABEL[k] || k)}
+          <b>${esc(num(rows.length))}</b></summary>${detailHTML(rows)}</details>
+      </div>`;
+    }).join("");
+  }
+
+  // ── caveats ───────────────────────────────────────────────────────────
+  // Quoting the response's own populations, so the sampling note is about this
+  // run rather than about the constants in validate.py.
+  function renderCaveats(d) {
+    const c = d.checks || {};
+    const ex = c.exif_consistency || {}, rt = c.retrieval_sanity || {};
+    const em = c.embedding_integrity || {}, tr = c.trips_invariants || {};
+    // Absent rather than empty when the daemon predates the people feature: the
+    // caveat below is about numbers this run reported, and there are none.
+    const fa = c.faces_integrity;
+    const items = [
+      ["⧗", `<b>Most of these are spot-checks, not a full sweep.</b> We re-opened
+        ${esc(num(ex.sampled_n || 0))} photos out of
+        ${esc(num(ex.population || 0))}, searched for
+        ${esc(num(rt.sampled_n || 0))} photos out of the
+        ${esc(num(rt.population || 0))} that have both a place and a date, and
+        opened ${esc(num(em.sampled_n || 0))} of
+        ${esc(num(em.ids || 0))} picture fingerprints${fa
+          ? `, plus ${esc(num(fa.sampled_n || 0))} of
+             ${esc(num(fa.vectors || 0))} face ones` : ""}. A spot-check that
+        agrees means nothing is broken across the board — not that every single
+        photo is perfect.`],
+      ["≈", `<b>“Right” means lens read your photo correctly — not that the date
+        is true.</b> The information comes from the camera, and lens reads it the
+        same way twice. A camera with the clock set wrong, or a photo that passed
+        through an app that rewrote its details, will agree with itself
+        perfectly.`],
+      ["◎", `<b>A place is the nearest named town, worked out offline.</b> Never a
+        street, never a venue, and not always the town you would say you were in.
+        The can-it-find-it check inherits that: it can only ask for the place lens
+        already believes.`],
+      ["≤", `<b>That check tests narrowing down, not judging pictures.</b> The
+        searches were built out of what lens already stored, so they are the
+        easiest possible case — the words you would actually type are harder, and
+        lens would also have to decide what the photos look like.`],
+      ["✓", `<b>The trips check is the only complete one.</b> It re-grouped all
+        ${esc(num(tr.sampled_n || 0))} of your photos, with no sampling at all —
+        which is why what it finds is a fact about your whole library rather than
+        about a handful of it.`],
+    ];
+    if (fa) {
+      items.push(["◍", `<b>The faces check says nothing about who anybody
+        is.</b> All it checks is that the pieces line up: every face still has its
+        fingerprint, every person is made of faces that exist, and nobody is
+        showing a cover photo that is not theirs. Whether lens put the right faces
+        together is a judgement about your own photos, and the only way to check
+        it is to look at a person's card. How far lens has got
+        (${esc(num(fa.scanned || 0))} of ${esc(num(fa.eligible || 0))} pictures)
+        is reported for the same reason and left out of the score: a photo nobody
+        has looked at yet has broken no promise.`]);
+    }
+    $("caveats").innerHTML = items.map(([ic, html]) =>
+      `<li><span class="ic" aria-hidden="true">${ic}</span><span>${
+        html.replace(/\s+/g, " ")}</span></li>`).join("");
+  }
+
+  // ── tier 2: eight photos, by hand ─────────────────────────────────────
+  // mulberry32. Thirty-two bits of state, no dependencies, and the same seed
+  // gives the same eight photos in every browser — which is the point: a
+  // reshuffled table is a link someone else can open and see what you saw.
+  function prng(seed) {
+    let a = seed >>> 0;
+    return () => {
+      a = (a + 0x6d2b79f5) >>> 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  // FNV-1a over the seed string, so the param can be anything a URL can carry
+  // rather than only a number.
+  function hashSeed(s) {
+    let h = 2166136261;
+    const str = String(s);
+    for (let i = 0; i < str.length; i++) {
+      h ^= str.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return h >>> 0;
+  }
+
+  // Fixed by default, deliberately. A random default would mean the same URL
+  // shows different photos on every reload, and then a disagreement someone
+  // reports has nothing to be checked against. Reshuffle writes a seed, and
+  // from then on the table is part of the link.
+  const currentSeed = () => fused.params.get("seed") || "lens";
+
+  // Partial Fisher-Yates: only the first `n` positions are settled, which is
+  // all that is drawn, and it never touches the source array.
+  function pick(rows, n, rand) {
+    const a = rows.slice();
+    const k = Math.min(n, a.length);
+    for (let i = 0; i < k; i++) {
+      const j = i + Math.floor(rand() * (a.length - i));
+      const t = a[i]; a[i] = a[j]; a[j] = t;
+    }
+    return a.slice(0, k);
+  }
+
+  // The query validate.retrieval_sanity builds, built the same way: the
+  // catalog's place, then the capture month as "%b %Y". If either half is
+  // missing there is no query to build, and the row says so instead of linking
+  // somewhere arbitrary.
+  function claimQuery(it) {
+    const m = /^(\d{4})-(\d{2})/.exec(it.taken_at || "");
+    if (!it.place_city || !m) return null;
+    return `${it.place_city} ${MONTHS[+m[2] - 1]} ${m[1]}`;
+  }
+
+  function whyNoLink(it) {
+    const m = /^(\d{4})-(\d{2})/.exec(it.taken_at || "");
+    if (!it.place_city && !m) return "no place and no date stored";
+    if (!it.place_city) return "no place stored";
+    return "no date stored";
+  }
+
+  function t2Row(it) {
+    const q = claimQuery(it);
+    // The deep link is a *place + month* filter, not "open this photo": lens.html
+    // reads q, scope, limit, view and trip, and has no param for a single photo.
+    // Linking to a param it ignores would look like a broken control, so this
+    // lands the user on a grid that contains the photo and says so on the tin.
+    const href = q ? hrefFor("index.html",
+      { q, scope: "photos", view: "", trip: "", seed: "" }) : null;
+    const link = q && href
+      ? `<a class="glink" href="${esc(href)}" data-q="${esc(q)}"
+           title="Shows you everything from ${esc(q)} — this photo is in there"
+           >see this place &amp; month ↗</a>`
+      : `<span class="glink off" title="${esc(q
+            ? "this page is open at a URL it cannot rewrite into a link"
+            : "the catalog has no place or no date for this photo, so there is no query to build")}"
+           >${esc(q ? "no link from this URL" : whyNoLink(it))}</span>`;
+    // `it.thumb` is a local path, not a daemon URL, straight off op_query's
+    // response — see `_thumb_url` in lens_api.py. `fused.rawUrl()` is what
+    // turns any absolute path off local disk into something an <img> can
+    // load; a photo with no cached thumbnail gets no src at all and falls
+    // through to the "error" handler below, same as a 404 used to.
+    return `<tr>
+      <td><span class="thbox"><img class="th" loading="lazy" decoding="async"
+        src="${it.thumb ? esc(fused.rawUrl(it.thumb)) : ""}"
+        alt="${esc(String(it.path || "").split("/").pop())}"></span></td>
+      <td class="nm">${it.place_city ? esc(it.place_city)
+        : `<span class="mu">no place</span>`}</td>
+      <td class="mu">${it.taken_at ? esc(fmtDate(it.taken_at))
+        : "no date"}</td>
+      <td class="nm">${it.camera ? esc(it.camera)
+        : `<span class="mu">no camera in EXIF</span>`}</td>
+      <td>${link}</td>
+    </tr>`;
+  }
+
+  function renderTier2() {
+    if (!SAMPLE.length) {
+      $("t2body").innerHTML = `<tr><td colspan="5" class="mu">No photos to check yet —
+        lens has not found any.</td></tr>`;
+      $("t2note").textContent = "";
+      show("tier2", true);
+      return;
+    }
+    const seed = currentSeed();
+    const rows = pick(SAMPLE, T2_ROWS, prng(hashSeed(seed)));
+    $("t2body").innerHTML = rows.map(t2Row).join("");
+    $("t2tag").textContent = `${rows.length} of ${num(SAMPLE.length)} photos`;
+    $("t2note").textContent =
+      `these eight are in the page address, so sending someone the link`
+      + ` shows them the same ${rows.length} photos.`;
+    show("tier2", true);
+    enterStagger("#t2body tr");
+  }
+
+  async function loadSample() {
+    const seq = ++sampleSeq;
+    let data;
+    try {
+      data = await api("/query?q=&limit=200&scope=photos");
+    } catch (err) {
+      if (seq !== sampleSeq) return;
+      show("tier2", false);           // the audit's own error state covers this
+      return;
+    }
+    if (seq !== sampleSeq) return;    // the call is a second await
+    SAMPLE = (data.groups || []).flatMap(g => g.items || []);
+    renderTier2();
+  }
+
+  // a thumb the daemon could not render gets a labelled placeholder rather than
+  // the browser's broken-image glyph. Capturing, because `error` does not
+  // bubble.
+  $("t2body").addEventListener("error", e => {
+    if (e.target.tagName === "IMG") e.target.parentElement.classList.add("bad");
+  }, true);
+
+  $("t2body").addEventListener("click", e => {
+    const a = e.target.closest("a.glink");
+    if (!a) return;
+    // The href is a real, absolute URL of the shell — so copying the link or
+    // cmd-clicking it works. A plain click is handled here instead, because the
+    // frame that has to navigate is the shell's, not this view's.
+    e.preventDefault();
+    navTo("index.html",
+      { q: a.dataset.q, scope: "photos", view: "", trip: "", seed: "" });
+  });
+
+  $("reshuffle").addEventListener("click", () => {
+    // Written to the URL rather than held in a variable: the param *is* the
+    // state, so a reshuffled table survives a reload and travels in a link.
+    // Base 36 keeps it short enough to read in the address bar.
+    fused.params.set("seed", Math.floor(Math.random() * 1679616).toString(36));
+  });
+
+  $("rerun").addEventListener("click", () => {
+    if ($("rerun").disabled) return;
+    runAudit();
+    loadSample();                      // the library may have moved on too
+  });
+  $("retry").addEventListener("click", () => runAudit().then(loadSample));
+
+  // ── params ────────────────────────────────────────────────────────────
+  // A seed change is a reshuffle and needs no network at all — every other
+  // param this page ever read (the `daemon` override) went with the fetch it
+  // pointed at, so a reshuffle is the only param change left to react to.
+  fused.params.onChange(() => {
+    const seed = currentSeed();
+    if (seed !== lastSeed) { lastSeed = seed; renderTier2(); }
+  });
+
+  paintPills("audit");
+  lastSeed = currentSeed();
+  runAudit();
+  loadSample();
+</script>
+</body>
+</html>

@@ -1,0 +1,2137 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lens — how it works</title>
+<style>
+  /* ── design tokens ────────────────────────────────────────────────────────
+     Inlined verbatim from the shared page chrome rather than linked. This page
+     is served from /render?path=…, so a relative <link href> resolves against
+     the wrong folder, and injecting one at runtime would flash the page
+     unstyled. Three files carry the same block on purpose. */
+  :root {
+    color-scheme: dark;
+    /* palette lifted from the fused-render explorer shell */
+    --bg: #10131a;
+    --bg-header: #131417f2;
+    --surface: #1c1e24;
+    --surface-2: #202329;
+    --line: #ffffff14;
+    --line-strong: #ffffff2b;
+    --text: #e8e8e8;
+    --text-dim: #b4b6bd;
+    --text-mute: #7c7f88;
+    --accent: #e5ff44;
+    --accent-dim: #e5ff4421;
+    --ok: #3fca6b;
+    --warn: #ff6b6b;
+    /* a partial-failure notice is not an emergency: amber, not red */
+    --amber: #e0b155;
+    /* type scale — 5 steps, ~1.3 ratio. */
+    --fs-xs: 11px;
+    --fs-sm: 14px;
+    --fs-md: 18px;
+    --fs-lg: 24px;
+    --fs-xl: 32px;
+    /* elevation, in steps. */
+    --e1: 0 1px 2px #0000003d;
+    --e2: 0 6px 18px #00000052, 0 1px 0 #ffffff0a inset;
+    --e3: 0 24px 70px #000000a6, 0 1px 0 #ffffff0f inset;
+    --maxw: 1680px;
+    /* spacing scale */
+    --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 32px;
+    --r: 10px;
+    --ease: cubic-bezier(.22, .61, .36, 1);
+    /* the reading measure for a page of prose — lens.html is a grid and uses
+       --maxw, these two are documents and must not span a 2560px display */
+    --readw: 1080px;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: var(--fs-sm)/1.5 -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection { background: var(--accent-dim); }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: #ffffff1f; border-radius: 99px;
+    border: 3px solid var(--bg); }
+  ::-webkit-scrollbar-thumb:hover { background: #ffffff33; }
+  a { color: var(--text-dim); }
+  /* screen-reader-only */
+  .vh { position: absolute !important; width: 1px; height: 1px; padding: 0;
+        margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+        border: 0; }
+  @media (prefers-reduced-motion: reduce) {
+    /* ::before too — a drawn hairline is a pseudo element, and stopping only
+       one of the pair leaves half the animation running */
+    *, *::before, *::after {
+      animation: none !important; transition: none !important;
+    }
+  }
+
+  /* ── header ─────────────────────────────────────────────────────────── */
+  header {
+    position: sticky; top: 0; z-index: 6;
+    background: var(--bg-header); backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--line);
+    padding: var(--s3) var(--s5);
+    display: flex; gap: var(--s4); align-items: center; flex-wrap: wrap;
+    row-gap: var(--s2);
+  }
+  .mark { flex: none; font-size: var(--fs-md); font-weight: 600;
+          letter-spacing: -.03em; color: var(--text); }
+  .mark small { font-weight: 400; font-size: var(--fs-xs);
+                color: var(--text-mute); letter-spacing: .04em;
+                margin-left: var(--s2); }
+  /* ── the pill nav: one control, present on all four surfaces ─────────── */
+  .pills { flex: none; margin-left: auto; display: flex; gap: 2px; padding: 2px;
+           background: var(--surface); border: 1px solid var(--line);
+           border-radius: 999px; }
+  .pills button { border: 0; background: none; color: var(--text-mute);
+    font: inherit; font-size: var(--fs-xs); letter-spacing: .02em;
+    padding: 4px 11px; border-radius: 999px; cursor: pointer;
+    white-space: nowrap;
+    transition: background .15s var(--ease), color .15s var(--ease); }
+  .pills button:hover { color: var(--text); }
+  .pills button[aria-current="page"] { background: var(--accent-dim);
+    color: var(--accent); cursor: default; }
+  .pills button:focus-visible { outline: none;
+    box-shadow: inset 0 0 0 1px var(--accent); }
+  .pills .info { font-style: normal; font-size: var(--fs-sm); line-height: 1;
+                 padding: 3px 9px; }
+
+  /* ── the live status, same shape as lens.html's ──────────────────────── */
+  #st { display: flex; align-items: center; gap: var(--s2);
+        font-size: var(--fs-xs); color: var(--text-dim); white-space: nowrap;
+        letter-spacing: .02em; }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok);
+         flex: none; }
+  #st.busy .dot { background: var(--accent); animation: pulse 1.1s ease-in-out infinite; }
+  #st.off .dot { background: var(--warn); }
+  #st.off { color: var(--warn); }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+  @media (max-width: 460px) {
+    /* the words stay in the live region for anyone listening, they just stop
+       eating the header row */
+    #sttext { position: absolute; width: 1px; height: 1px; padding: 0;
+              margin: -1px; overflow: hidden; clip: rect(0 0 0 0);
+              white-space: nowrap; }
+  }
+
+  /* ── page frame ─────────────────────────────────────────────────────── */
+  main { max-width: var(--readw); margin-inline: auto;
+         padding: var(--s5) var(--s5) 72px; }
+  section { margin: 0 0 var(--s6); }
+  h2 { display: flex; align-items: center; gap: var(--s3);
+       margin: 0 0 var(--s4); font: 600 var(--fs-xs)/1 var(--mono);
+       letter-spacing: .12em; text-transform: uppercase; color: var(--text-mute); }
+  h2::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+  h2 .live { flex: none; text-transform: none; letter-spacing: .02em;
+             font-weight: 400; color: var(--text-mute); }
+  .lede { margin: calc(var(--s3) * -1) 0 var(--s4); max-width: 66ch;
+          font-size: var(--fs-sm); color: var(--text-dim); }
+  .panel { background: var(--surface); border: 1px solid var(--line);
+           border-radius: var(--r); }
+  .mono { font-family: var(--mono); }
+  /* `overflow-wrap: anywhere` because these are symbol names, not words: at
+     380px `indexer.SKIP_SUFFIXES = (".photoslibrary",)` is one unbreakable
+     token wider than the column it sits in. */
+  code { font-family: var(--mono); font-size: .92em; color: var(--accent);
+         background: var(--surface-2); border: 1px solid var(--line);
+         border-radius: 5px; padding: 1px 5px; overflow-wrap: anywhere; }
+  /* Wide things scroll inside their own box. The body must never scroll
+     sideways: a 1060px diagram and an 80-column shell command are both wider
+     than a phone, and letting either push the page wide breaks every section
+     above and below it. */
+  .scrollx { overflow-x: auto; overscroll-behavior-x: contain; }
+  /* Anything the pipeline diagram jumps to. The header is sticky, so a bare
+     scrollIntoView({block:"start"}) parks the target's first line underneath
+     it — the card you clicked for arrives with its claim sentence hidden. */
+  section[id], .card[id] { scroll-margin-top: 74px; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px;
+                   border-radius: 4px; }
+
+  /* ── 0 · the title moment ───────────────────────────────────────────── */
+  /* The one claim a first-time reader has to leave with, at a size nothing else
+     on the page competes with. Everything below it is evidence for this line. */
+  #hero { margin: var(--s5) 0 var(--s6); }
+  #hero h1 { margin: 0; max-width: 24ch;
+             font-size: clamp(30px, 6vw, 46px); line-height: 1.06;
+             font-weight: 600; letter-spacing: -.035em; color: var(--text); }
+  #hero p { margin: var(--s4) 0 0; max-width: 54ch; font-size: var(--fs-md);
+            line-height: 1.45; color: var(--text-dim); }
+
+  /* ── 1 · story strip ────────────────────────────────────────────────── */
+  /* Four beats, and the columns are earned rather than declared so the row
+     wraps where it runs out rather than squeezing four 90px cards onto a
+     phone. */
+  .story { display: grid; gap: var(--s3);
+           grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
+  .beat { padding: var(--s3) var(--s4); display: flex; flex-direction: column;
+          gap: var(--s2); min-width: 0; }
+  .beat .top { display: flex; align-items: center; gap: var(--s2); }
+  .beat .n { flex: none; width: 17px; height: 17px; border-radius: 50%;
+             display: inline-flex; align-items: center; justify-content: center;
+             font: 600 10px/1 var(--mono); color: #10131a;
+             background: var(--accent); }
+  .beat svg { width: 24px; height: 24px; display: block; flex: none; }
+  .beat .say { font-size: var(--fs-sm); line-height: 1.35; color: var(--text); }
+  .beat .tech { font-family: var(--mono); font-size: 10.5px;
+                color: var(--text-mute); overflow-wrap: anywhere; }
+
+  /* ── 2 · pipeline diagram ───────────────────────────────────────────── */
+  #pipe { display: block; width: 100%; min-width: 780px; height: auto; }
+  #pipe .nodebox { fill: var(--surface); stroke: var(--line); stroke-width: 1;
+                   transition: stroke .15s var(--ease), fill .15s var(--ease); }
+  #pipe .hit { cursor: pointer; }
+  #pipe .hit:hover .nodebox { stroke: var(--accent); fill: var(--surface-2); }
+  #pipe .hit:focus { outline: none; }
+  #pipe .hit:focus-visible .nodebox { stroke: var(--accent);
+                                      fill: var(--surface-2); }
+  #pipe .nlab { fill: var(--text); font: 600 13px var(--mono); }
+  #pipe .nsub { fill: var(--text-mute); font: 10px var(--mono); }
+  #pipe .keylab { fill: var(--accent); font: 600 13px var(--mono); }
+  #pipe .base { stroke: var(--line-strong); stroke-width: 1; fill: none; }
+  /* marching ants: the pair is deliberate — the solid path says the edge
+     exists, the dashed one says data is moving along it, and reduced motion
+     leaves the first behind rather than an empty gap */
+  #pipe .flow { stroke: var(--accent); stroke-width: 1.4; fill: none;
+                opacity: .8; stroke-dasharray: 5 9;
+                animation: ants 1.1s linear infinite; }
+  @keyframes ants { to { stroke-dashoffset: -14; } }
+  #pipe .vpill { fill: var(--surface-2); stroke: var(--line); }
+  #pipe .brace { stroke: var(--line); stroke-width: 1; fill: none;
+                 stroke-dasharray: 3 4; }
+  .hint { margin: var(--s3) 0 0; font-family: var(--mono);
+          font-size: 10.5px; color: var(--text-mute); }
+
+  /* ── 3 · live proof ─────────────────────────────────────────────────── */
+  /* Four numbers, one row. The same tile shape the audit page uses, so the two
+     documents count things in one visual language. */
+  .tiles { display: grid; gap: var(--s3);
+           grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  @media (max-width: 820px) { .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 420px) { .tiles { grid-template-columns: minmax(0, 1fr); } }
+  .tile { padding: 12px 14px; display: flex; flex-direction: column; gap: 3px;
+          min-width: 0; }
+  .tile .k { font-family: var(--mono); font-size: 9.5px; letter-spacing: .08em;
+             text-transform: uppercase; color: var(--text-mute); }
+  .tile .v { font: 600 var(--fs-lg)/1.05 var(--mono); letter-spacing: -.01em;
+             font-variant-numeric: tabular-nums; color: var(--text); }
+  body.offline .tile .v { color: var(--text-mute); }
+  .tile .x { font-size: 11.5px; color: var(--text-mute); }
+  /* where it all lives — one sentence, because "delete this folder" is the
+     answer to the only question anybody actually asks about privacy */
+  .storedin { margin: var(--s4) 0 0; max-width: 72ch; font-size: var(--fs-sm);
+              color: var(--text-dim); }
+  .storedin code { font-size: 11.5px; }
+
+  .cards { display: grid; gap: var(--s3);
+           grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); }
+  .card { padding: var(--s4); min-width: 0; }
+  /* A card's own header is a <header>, and the shared chrome styles that
+     element unqualified — so this inherits the page bar's sticky positioning,
+     its blur, its padding and its `align-items: center`, which was quietly
+     centring every byline. The shared block is copied verbatim by contract and
+     must not be narrowed, so every inherited property is turned off here by
+     name rather than one at a time as each is noticed. */
+  .card > header { display: flex; flex-direction: column;
+                   align-items: flex-start; flex-wrap: nowrap;
+                   gap: 3px; row-gap: 3px;
+                   margin: 0 0 var(--s3); padding: 0; background: none;
+                   position: static; top: auto; z-index: auto; border: 0;
+                   backdrop-filter: none; }
+  .card h3 { margin: 0; font-size: var(--fs-sm); font-weight: 600;
+             line-height: 1.35; color: var(--text); letter-spacing: -.005em; }
+  .card .src { font-family: var(--mono); font-size: 10.5px;
+               color: var(--text-mute); overflow-wrap: anywhere; }
+  .big { display: flex; align-items: baseline; gap: var(--s2);
+         flex-wrap: wrap; margin: var(--s2) 0 0; }
+  .bignum { font: 600 var(--fs-xl)/1 var(--mono); letter-spacing: -.02em;
+            color: var(--text); font-variant-numeric: tabular-nums;
+            overflow-wrap: anywhere; }
+  .bignum.sm { font-size: var(--fs-md); line-height: 1.3; }
+  .bignum.xs { font-size: 12.5px; line-height: 1.45; font-weight: 400;
+               color: var(--text-dim); }
+  .bigunit { font-family: var(--mono); font-size: var(--fs-xs);
+             color: var(--text-mute); }
+  .card .note { margin: var(--s3) 0 0; font-size: 12px; color: var(--text-mute); }
+  .card .note b { color: var(--text-dim); font-weight: 600; }
+  /* a number from the last successful poll is not a fact about a daemon that
+     has stopped answering */
+  body.offline .bignum { color: var(--text-mute); }
+  .split { display: flex; gap: 2px; height: 8px; border-radius: 99px;
+           overflow: hidden; background: var(--surface-2);
+           border: 1px solid var(--line); margin-top: var(--s3); }
+  .split i { display: block; }
+  .split .a { background: var(--accent); }
+  .split .v { background: #7fb2ff; }
+  .split .b { background: #ffffff26; }
+  .legend { display: flex; flex-wrap: wrap; gap: var(--s3);
+            margin-top: var(--s2); font-family: var(--mono);
+            font-size: 10.5px; color: var(--text-mute); }
+  .legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .legend i { width: 8px; height: 8px; border-radius: 2px; flex: none; }
+
+  /* ── the check-it-yourself block ────────────────────────────────────── */
+  details.q { border: 1px solid var(--line); border-radius: 9px;
+              background: #0c0e13; margin: 0 0 var(--s2); }
+  details.q > summary { display: flex; align-items: center; gap: var(--s2);
+    font-family: var(--mono); font-size: var(--fs-xs); color: var(--text-mute);
+    padding: 7px 11px; cursor: pointer; list-style: none; }
+  details.q > summary::-webkit-details-marker { display: none; }
+  details.q > summary::before { content: "▸"; color: var(--accent); flex: none; }
+  details.q[open] > summary::before { content: "▾"; }
+  details.q > summary:hover { color: var(--text); }
+  details.q .body { padding: 0 11px 11px; }
+  /* A shell command is scrolled, never wrapped: a soft break in the middle of
+     a URL is indistinguishable from a real newline once it is selected by hand,
+     and these lines exist to be copied verbatim. Its own box, so an 80-column
+     command cannot make the whole page scroll sideways on a phone. */
+  details.q pre { margin: 0; font-family: var(--mono); font-size: 10.5px;
+                  line-height: 1.55; color: #c3cbd6;
+                  overflow-x: auto; overscroll-behavior-x: contain;
+                  padding-bottom: 2px; }
+  details.q .why { margin: 0 0 var(--s2); font-size: 12px;
+                   color: var(--text-mute); }
+  /* The "details for nerds" variant: same disclosure, but it holds sections
+     rather than a single command, so it is labelled in prose at reading size
+     and given room inside. Closed by default everywhere — the page has to read
+     as four sentences before it reads as a spec. */
+  details.q.nerd { margin: var(--s4) 0 0; }
+  details.q.nerd > summary { font-family: inherit; font-size: var(--fs-sm);
+    color: var(--text-dim); padding: 9px 12px; }
+  details.q.nerd > summary:hover { color: var(--text); }
+  details.q.nerd > .body { padding: var(--s3) 12px 14px; }
+  details.q.nerd h4 { margin: var(--s4) 0 var(--s2); font: 600 var(--fs-xs)/1
+    var(--mono); letter-spacing: .1em; text-transform: uppercase;
+    color: var(--text-mute); }
+  details.q.nerd h4:first-child { margin-top: 0; }
+  /* the seven real steps, as a list rather than seven cards */
+  ol.steps { margin: 0; padding-left: 20px; font-size: 13px;
+             color: var(--text-dim); }
+  ol.steps li { margin: 0 0 var(--s2); }
+  ol.steps b { color: var(--text); font-weight: 600; }
+  ol.steps .tech { display: block; font-family: var(--mono);
+    font-size: 10.5px; color: var(--text-mute); overflow-wrap: anywhere; }
+
+  .copy { margin-left: auto; flex: none; background: var(--surface);
+          color: var(--text-dim); border: 1px solid var(--line);
+          border-radius: 6px; padding: 2px 8px; font: inherit;
+          font-size: 10.5px; cursor: pointer;
+          transition: background .15s var(--ease), color .15s var(--ease),
+                      border-color .15s var(--ease); }
+  .copy:hover { background: var(--surface-2); color: var(--text);
+                border-color: var(--line-strong); }
+
+  /* ── 4 · the ranking ────────────────────────────────────────────────── */
+  pre.src { margin: 0; padding: var(--s4); font-family: var(--mono);
+            font-size: 11.5px; line-height: 1.6; color: #c3cbd6;
+            background: #0c0e13; }
+  pre.src b { color: var(--accent); font-weight: 600; }
+  pre.src i { color: var(--text-mute); font-style: normal; }
+  .srcwrap { border: 1px solid var(--line); border-radius: var(--r);
+             background: #0c0e13; }
+  .srcwrap > figcaption { padding: 7px 11px; border-bottom: 1px solid var(--line);
+    font-family: var(--mono); font-size: 10.5px; color: var(--text-mute); }
+  .prose { max-width: 66ch; font-size: var(--fs-sm); color: var(--text-dim); }
+  .prose p { margin: var(--s3) 0 0; }
+  .prose b { color: var(--text); font-weight: 600; }
+
+  /* the demo */
+  .demo { padding: var(--s4); margin-top: var(--s3); }
+  .qrow { display: flex; gap: var(--s2); align-items: center; flex-wrap: wrap; }
+  #dq { flex: 1; min-width: 160px; background: var(--surface-2);
+        color: inherit; border: 1px solid var(--line); border-radius: 8px;
+        padding: 7px 11px; font: inherit; font-size: var(--fs-sm);
+        outline: none; transition: border-color .15s var(--ease); }
+  #dq:hover { border-color: var(--line-strong); }
+  #dq:focus { border-color: var(--accent); }
+  .presets { display: flex; gap: 5px; flex-wrap: wrap; margin-top: var(--s3); }
+  .presets .lbl { font-family: var(--mono); font-size: 10.5px;
+                  color: var(--text-mute); align-self: center; }
+  .presets button { font-family: var(--mono); font-size: var(--fs-xs);
+    padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line);
+    background: var(--surface-2); color: var(--text-mute); cursor: pointer;
+    transition: color .15s var(--ease), border-color .15s var(--ease),
+                background .15s var(--ease); }
+  .presets button:hover:not([aria-pressed="true"]) { color: var(--text);
+    border-color: var(--line-strong); }
+  .presets button[aria-pressed="true"] { color: var(--accent);
+    border-color: #e5ff4440; background: var(--accent-dim); }
+  #bars { display: block; width: 100%; height: auto; margin-top: var(--s4); }
+  #bars .bar { fill: var(--accent); }
+  #bars .bar.weak { fill: #ffffff26; }
+  #bars .axis { stroke: var(--line-strong); stroke-width: 1; }
+  #bars .gridline { stroke: #ffffff0d; stroke-width: 1; }
+  #bars .cut { stroke: var(--accent); stroke-width: 1.2;
+               stroke-dasharray: 4 4; }
+  #bars .cutlab { fill: var(--accent); font: 10px var(--mono); }
+  #bars .tick { fill: var(--text-mute); font: 9.5px var(--mono); }
+  .read { margin: var(--s3) 0 0; font-family: var(--mono); font-size: var(--fs-xs);
+          line-height: 1.7; color: var(--text-mute); overflow-wrap: anywhere; }
+  .read b { color: var(--text); font-weight: 600; }
+  .read .hi { color: var(--accent); }
+  .demonote { margin: var(--s3) 0 0; padding: 6px var(--s3);
+    border: 1px solid var(--line); border-radius: 8px;
+    background: var(--surface-2); font-size: 12px; color: var(--text-mute); }
+  .demonote[hidden] { display: none; }
+  .demonote.bad { border-color: #ff6b6b40; color: #ffb3b3; }
+
+  /* ── 6 · honesty ────────────────────────────────────────────────────── */
+  ul.honest { list-style: none; margin: 0; padding: 0; }
+  ul.honest li { display: flex; gap: var(--s3); align-items: baseline;
+    padding: var(--s3) 0; border-bottom: 1px solid var(--line);
+    font-size: 13px; color: var(--text-dim); }
+  ul.honest li:first-child { padding-top: 0; }
+  ul.honest li:last-child { border-bottom: 0; padding-bottom: 0; }
+  /* a fixed-width icon column, so five different glyphs still leave the
+     sentences on one left edge */
+  ul.honest .ic { flex: none; width: 16px; text-align: center;
+    font-family: var(--mono); font-size: 12px; color: var(--text-mute); }
+  ul.honest .ic.x { color: var(--warn); }
+  ul.honest .ic.w { color: var(--amber); }
+  /* the lead clause of each limit is a sentence a person reads, not a field
+     name — so it is the page's own typeface at the page's own size */
+  ul.honest b { font-weight: 600; color: var(--text); }
+  ul.honest code { font-size: 11px; }
+
+  footer { display: flex; align-items: center; gap: var(--s3); flex-wrap: wrap;
+    border-top: 1px solid var(--line); padding-top: var(--s4);
+    font-family: var(--mono); font-size: var(--fs-xs); color: var(--text-mute); }
+
+  [hidden] { display: none !important; }
+
+  @media (max-width: 560px) {
+    main { padding: var(--s4) var(--s4) 56px; }
+    header { padding: var(--s3) var(--s4); }
+    .bignum { font-size: var(--fs-lg); }
+  }
+</style></head>
+<body>
+  <header>
+    <span class="mark">lens <small>how it works</small></span>
+    <span id="st" aria-live="polite"><i class="dot"></i><span id="sttext">connecting…</span></span>
+    <nav class="pills" id="pills" aria-label="Views">
+      <button type="button" data-nav="photos">Photos</button>
+      <button type="button" data-nav="trips">Trips</button>
+      <button type="button" data-nav="people">People</button>
+      <button type="button" data-nav="explain" class="info" aria-current="page"
+              title="How lens works" aria-label="How it works">ⓘ</button>
+      <button type="button" data-nav="audit"
+              title="Accuracy audit of this library">audit</button>
+    </nav>
+  </header>
+
+<main>
+
+  <!-- ── 0 · the title moment ───────────────────────────────────────────── -->
+  <section id="hero">
+    <h1>Your photos never leave this Mac.</h1>
+    <p>Lens looks at each photo once, remembers what is in it, and finds it
+      when you ask. There is no account, no upload and no internet in any part
+      of that.</p>
+  </section>
+
+  <!-- ── 1 · how it works, in four beats ────────────────────────────────── -->
+  <section id="story">
+    <h2>how it works</h2>
+    <div class="story" id="storystrip">
+      <div class="panel beat">
+        <div class="top"><span class="n">1</span>
+          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none"
+               stroke="#e5ff44" stroke-width="1.5" stroke-linejoin="round">
+            <path d="M3 6.5h6l2 2.2h10V19a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6.5Z"/>
+            <path d="M7 3.6h4l1.4 1.6" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div class="say">You pick which folders it may look in.</div>
+      </div>
+      <div class="panel beat">
+        <div class="top"><span class="n">2</span>
+          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none"
+               stroke="#e5ff44" stroke-width="1.5" stroke-linejoin="round">
+            <rect x="3.2" y="5" width="17.6" height="14" rx="2"/>
+            <path d="M3.4 16l4.4-4.2 3.3 3 3.2-3.4 6.3 6"/>
+            <circle cx="15.6" cy="9.4" r="1.5" fill="#e5ff44" stroke="none"/>
+          </svg>
+        </div>
+        <div class="say">It looks at every photo once — where it was taken,
+          when, and what is in the picture.</div>
+      </div>
+      <div class="panel beat">
+        <div class="top"><span class="n">3</span>
+          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none"
+               stroke="#b4b6bd" stroke-width="1.5" stroke-linecap="round">
+            <path d="M4 4v14a2 2 0 0 0 2 2h5"/>
+            <path d="M4 9h5M4 14h5"/>
+            <path d="M14 6.5h6M14 11h6M14 15.5h4" stroke="#e5ff44"/>
+          </svg>
+        </div>
+        <div class="say">It writes what it learned into a private notebook on
+          your own disk.</div>
+      </div>
+      <div class="panel beat">
+        <div class="top"><span class="n">4</span>
+          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none"
+               stroke="#3fca6b" stroke-width="1.5" stroke-linejoin="round">
+            <path d="M12 3.2 20 6v6.2c0 4.6-3.3 7.2-8 8.6-4.7-1.4-8-4-8-8.6V6l8-2.8Z"/>
+            <path d="M8.6 12.1l2.5 2.5 4.4-4.7" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div class="say">When you search, it reads the notebook — never the
+          internet.</div>
+      </div>
+    </div>
+
+    <div class="scrollx" style="margin-top: var(--s4)">
+      <svg id="pipe" viewBox="0 0 1000 98" role="img"
+           aria-label="Four steps in a row: the folders you picked, looking at
+                       each photo once, a private notebook on your disk, and
+                       your search reading that notebook.">
+        <g class="edges" id="pipeEdges"></g>
+        <g class="hit" data-goto="p-roots" tabindex="0" role="link"
+           aria-label="Jump to the folders lens was pointed at">
+          <rect class="nodebox" x="6" y="20" width="216" height="58" rx="10"/>
+          <text class="keylab" x="22" y="44">your folders</text>
+          <text class="nsub" x="22" y="62" id="pipeRoots">you choose them</text>
+        </g>
+        <g class="hit" data-goto="p-model" tabindex="0" role="link"
+           aria-label="Jump to the AI that looks at your photos">
+          <rect class="nodebox" x="266" y="20" width="216" height="58" rx="10"/>
+          <text class="nlab" x="282" y="44">one look, each photo</text>
+          <text class="nsub" x="282" y="62" id="pipeModel">runs on this Mac</text>
+        </g>
+        <g class="hit" data-goto="numbers" tabindex="0" role="link"
+           aria-label="Jump to what is in the notebook right now">
+          <rect class="nodebox" x="526" y="20" width="216" height="58" rx="10"/>
+          <text class="nlab" x="542" y="44">a private notebook</text>
+          <text class="nsub" x="542" y="62" id="pipeStore">on your disk</text>
+        </g>
+        <g class="hit" data-goto="ranking" tabindex="0" role="link"
+           aria-label="Jump to the search demo">
+          <rect class="nodebox" x="786" y="20" width="208" height="58" rx="10"/>
+          <text class="keylab" x="802" y="44">your search</text>
+          <text class="nsub" x="802" y="62" id="pipeWalk">answered locally</text>
+        </g>
+      </svg>
+    </div>
+    <p class="hint">Each box is a link to the part of this page that proves it.
+      Keyboard: Tab to a box, then Enter.</p>
+
+    <details class="q nerd">
+      <summary>Details for nerds — the seven things step 2 and 3 actually
+        do</summary>
+      <div class="body">
+        <ol class="steps">
+          <li><b>Walk the folders you chose.</b>
+            <span class="tech">POST /roots · caches, app bundles and
+              dot-folders are never walked (indexer.SKIP_DIRS)</span></li>
+          <li><b>Read every EXIF tag, byte for byte.</b>
+            <span class="tech">metadata._dump_exif → every base/Exif/GPS tag,
+              kept verbatim in raw_exif</span></li>
+          <li><b>Render one small thumbnail per file.</b>
+            <span class="tech">thumbs.ensure_thumb → {sha1}-512-v2.webp,
+              written to a temp name and moved into place</span></li>
+          <li><b>Embed that thumbnail with SigLIP2 on the local GPU.</b>
+            <span class="tech">embed.Embedder.embed_images · torch mps when
+              available, else cpu · 1,152 float16 numbers per image</span></li>
+          <li><b>Write the facts to one SQLite file, the vectors to one
+            npz.</b>
+            <span class="tech">catalog.sqlite + embeddings.npz · vectors
+              checkpointed every 128 images, so a kill never loses the
+              run</span></li>
+          <li><b>Answer each query from a local daemon.</b>
+            <span class="tech">one numpy dot product over the stored matrix ·
+              ~45 ms warm on this library · no index server, no network
+              hop</span></li>
+          <li><b>Refuse to talk to anything but this machine.</b>
+            <span class="tech">the daemon binds 127.0.0.1 only, reflects CORS
+              to loopback origins alone, and refuses a non-loopback Host
+              header</span></li>
+        </ol>
+      </div>
+    </details>
+  </section>
+
+  <!-- ── 3 · live proof ─────────────────────────────────────────────────── -->
+  <section id="numbers">
+    <h2>what lens knows about your library
+      <span class="live" id="polled"></span></h2>
+    <p class="lede">These four numbers are read from lens on this Mac every few
+      seconds. Nothing here is typed into the page.</p>
+    <div class="tiles">
+      <div class="panel tile">
+        <span class="k">photos</span>
+        <span class="v" id="tPhotos">—</span>
+        <span class="x" id="tPhotosX">pictures lens can search</span>
+      </div>
+      <div class="panel tile">
+        <span class="k">videos</span>
+        <span class="v" id="tVideos">—</span>
+        <span class="x">searched by a few frames each</span>
+      </div>
+      <div class="panel tile">
+        <span class="k">people</span>
+        <span class="v" id="tPeople">—</span>
+        <span class="x" id="tPeopleX">faces that keep coming back</span>
+      </div>
+      <div class="panel tile">
+        <span class="k">trips</span>
+        <span class="v" id="tTrips">—</span>
+        <span class="x">days away, grouped for you</span>
+      </div>
+    </div>
+    <p class="storedin">All of it lives in one folder you can delete:
+      <code id="cacheDir">—</code>. Delete it and lens forgets everything it
+      learned; your actual photos are never touched.</p>
+
+    <details class="q nerd" id="nerdnumbers">
+      <summary>Details for nerds — the full readout, and how to check it
+        yourself</summary>
+      <div class="body">
+      <div class="cards">
+      <div class="panel card" id="p-images">
+        <header>
+          <h3>Lens has catalogued every still image under your folders.</h3>
+          <span class="src">GET /status · photos</span>
+        </header>
+        <div class="big">
+          <span class="bignum" id="nImages">—</span>
+          <span class="bigunit">images catalogued</span>
+        </div>
+        <p class="note">Counts every file that was walked, including the
+          <b id="nBroken">—</b> lens could not open. Those stay in the catalog
+          and out of search (see the last section).</p>
+      </div>
+
+      <div class="panel card" id="p-scope">
+        <header>
+          <h3>Most images on a computer are not photographs, so lens separates
+            them.</h3>
+          <span class="src">GET /status · photos_scope, videos_scope,
+            all_scope</span>
+        </header>
+        <div class="big">
+          <span class="bignum" id="nPhotos">—</span>
+          <span class="bigunit">photographs and
+            <span id="nVideos">—</span> videos, of
+            <span id="nAll">—</span> searchable</span>
+        </div>
+        <div class="split" aria-hidden="true">
+          <i class="a" id="splitA" style="flex:0"></i>
+          <i class="v" id="splitV" style="flex:0"></i>
+          <i class="b" id="splitB" style="flex:1"></i>
+        </div>
+        <div class="legend">
+          <span><i style="background:var(--accent)"></i>camera photos</span>
+          <span><i style="background:#7fb2ff"></i>videos</span>
+          <span><i style="background:#ffffff26"></i>screenshots, icons, exports</span>
+        </div>
+        <p class="note">Photographs are told from graphics by
+          <b>metadata.is_photo</b>: a camera name or a GPS fix settles it;
+          failing those, a capture format carrying
+          <code>DateTimeOriginal</code>. A video is not either of them — it is
+          <b>metadata.kind</b>, read off the extension — and it has a scope of its
+          own, because a grid where every third tile wants pressing play is not
+          what "photos" promises. The photograph rule is a heuristic, and the last
+          section says where it can be wrong.</p>
+      </div>
+
+      <div class="panel card" id="p-trips">
+        <header>
+          <h3>Photographs that cluster in time and place become a trip.</h3>
+          <span class="src">GET /status · trips</span>
+        </header>
+        <div class="big">
+          <span class="bignum" id="nTrips">—</span>
+          <span class="bigunit">trips found</span>
+        </div>
+        <p class="note">Derived from photographs only. A screenshot saved
+          between two real trips would otherwise bridge the gap and merge
+          them.</p>
+      </div>
+
+      <div class="panel card" id="p-people">
+        <header>
+          <h3>Faces found in the thumbnails become a person once the same one
+            turns up three times.</h3>
+          <span class="src">GET /status · faces</span>
+        </header>
+        <div class="big">
+          <span class="bignum" id="nPeople">—</span>
+          <span class="bigunit">people, out of <span id="nFaces">—</span> faces ·
+            <span id="nNamed">—</span> named</span>
+        </div>
+        <p class="note">Found over <b id="nScanned">—</b> of
+          <b id="nEligible">—</b> indexed images — the denominator that
+          stops a count of people reading as the number of people you know. A
+          face seen once or twice belongs to nobody yet
+          (<code>persons.MIN_CLUSTER</code>): <b id="nLoose">—</b> of these faces
+          are waiting for a third sighting. <span id="facesState"></span></p>
+      </div>
+
+      <div class="panel card" id="p-emb">
+        <header>
+          <h3>Every searchable image has a vector on disk, in one file.</h3>
+          <span class="src">GET /status · embeddings.count × dims</span>
+        </header>
+        <div class="big">
+          <span class="bignum" id="nEmb">—</span>
+          <span class="bigunit">× <span id="nDims">—</span> float16 dimensions</span>
+        </div>
+        <p class="note">Read out of the npz header rather than by loading the
+          matrix, so a 10-second poll stays free. The vectors are
+          L2-normalized at index time, which is what makes the ranking below a
+          plain dot product.</p>
+      </div>
+
+      <div class="panel card" id="p-model">
+        <header>
+          <h3>One open vision-language model does the seeing, locally.</h3>
+          <span class="src">GET /status · model, model_id, model_loaded</span>
+        </header>
+        <div class="big">
+          <span class="bignum sm" id="mName">—</span>
+        </div>
+        <div class="big">
+          <span class="bignum xs" id="mId">—</span>
+        </div>
+        <p class="note">Weights live in your Hugging Face cache. <span
+          id="mLoaded">—</span></p>
+      </div>
+
+      <div class="panel card" id="p-roots">
+        <header>
+          <h3>These are the folders lens was pointed at.</h3>
+          <span class="src">GET /roots</span>
+        </header>
+        <div id="rootlist" class="read">—</div>
+        <p class="note">A folder that is missing right now keeps its photos in
+          the library: nothing was scanned there, so "absent" says nothing
+          about the files.</p>
+      </div>
+
+      <div class="panel card" id="p-perf">
+        <header>
+          <h3>Every index run leaves a measured trail, not a guess.</h3>
+          <span class="src">GET /runs · last 20</span>
+        </header>
+        <div class="big">
+          <span class="bignum sm" id="perfDuration">—</span>
+          <span class="bigunit">last run · <span id="perfRate">—</span> files/s
+            embedding · <span id="perfMem">—</span>GB peak</span>
+        </div>
+        <div id="perfBar" class="split" aria-hidden="true"></div>
+        <div id="perfLegend" class="legend"></div>
+        <p class="note" id="perfNote">Timed inside <code>indexer.index_once</code>
+          itself — walk, metadata, thumbnails, embedding, faces, trips and
+          Apple Photos each get their own clock, and only stages that actually
+          ran this time show a segment. <b id="perfN">—</b> runs of history are
+          kept on disk (<code>runs.jsonl</code>, trimmed to the last 200).</p>
+      </div>
+      </div>
+
+      <h4>check it yourself</h4>
+      <p class="why" style="margin: 0 0 var(--s3)">The page and these commands
+        ask the same local server the same questions. Run them in a terminal and
+        compare.</p>
+      <div id="curls"></div>
+      </div>
+    </details>
+  </section>
+
+  <!-- ── 4 · the search demo ────────────────────────────────────────────── -->
+  <section id="ranking">
+    <h2>try it: watch lens decide</h2>
+    <p class="lede">Type anything. Each bar is one photo, tallest first, and how
+      tall it stands is how strongly lens thinks that photo matches what you
+      typed. The dotted line is where it stops calling something a good match —
+      it sits at half the strength of the best one, so it moves with every
+      search rather than being a fixed number.</p>
+
+    <div class="panel demo" id="demo">
+      <div class="qrow">
+        <input id="dq" type="search" autocomplete="off" spellcheck="false"
+               aria-label="Try a query and see its score distribution"
+               placeholder="type a search…">
+      </div>
+      <div class="presets" id="presets" role="group" aria-label="Example queries">
+        <span class="lbl">try</span>
+      </div>
+
+      <svg id="bars" viewBox="0 0 1000 216" role="img"
+           aria-label="Match strength for the current search"></svg>
+      <p class="read" id="barsread">—</p>
+      <p class="demonote" id="demonote" hidden></p>
+    </div>
+
+    <details class="q nerd">
+      <summary>Details for nerds — the actual ranking, in eight lines</summary>
+      <div class="body">
+    <figure class="srcwrap" style="margin:0">
+      <figcaption>lens/query.py</figcaption>
+      <div class="scrollx"><pre class="src" id="formula">
+<b>RELEVANCE_RATIO</b> = 0.5   <i># a hit must score &gt;= 0.5 x the top score to count</i>
+<b>MIN_KEEP</b> = 12           <i># ...but always offer this many, ranked, so a weak</i>
+                        <i># query degrades to "here are the closest", not nothing</i>
+<b>TEXT_PROMPT</b> = "a photo of a {}"   <i># what the text tower is actually asked to</i>
+                                  <i># encode; a bare noun sits off the caption</i>
+                                  <i># distribution SigLIP was trained on</i>
+
+def <b>confidence_horizon</b>(rows, ratio=RELEVANCE_RATIO):
+    scored = [r for r in rows if r.get("score") is not None]
+    if not scored:
+        return 0, None
+    top = scored[0]["score"]
+    if top &lt;= 0:
+        return 0, None
+    cut = top * ratio
+    return sum(1 for r in scored if r["score"] &gt;= cut), cut</pre></div>
+    </figure>
+
+    <div class="prose">
+      <p>A query is first read for structure — dates, place names, camera names,
+        the word "trip" — and whatever words are left over become the
+        <b>residual</b>. The residual is wrapped in
+        <code>a photo of a {}</code> and pushed through the model's text tower,
+        which returns a vector in the same 1,152-dimensional space as the
+        images.</p>
+      <p>"Cosine similarity" here is nothing more exotic than a
+        <b>dot product</b>: both sides were divided by their own length when
+        they were made (<code>embed._normalize</code>), so the lengths are
+        already 1 and the division in the cosine formula has nothing left to do.
+        The scores are small positive numbers: on this library a real answer for
+        "beach" tops out around <b>0.121</b>, and the plateau of unrelated
+        frames sits near <b>0.039</b>.</p>
+      <p>Because the range depends on the model, no fixed threshold transfers.
+        The cut is a <b>proportion of the best hit</b> instead: half of the top
+        score. Anything above that line is called a match; if fewer than twelve
+        rows clear it, the twelve closest are returned anyway so you can judge
+        rather than be told "nothing".</p>
+    </div>
+
+      <details class="q" style="margin-top: var(--s3)">
+        <summary>the exact request this page sends<button type="button"
+          class="copy" data-copy>Copy</button></summary>
+        <div class="body"><pre id="qurl">—</pre></div>
+      </details>
+      </div>
+    </details>
+  </section>
+
+  <!-- ── 5 · people ─────────────────────────────────────────────────────── -->
+  <section id="people">
+    <h2>who is in your photos</h2>
+    <p class="lede">Lens looks for faces in your pictures and puts the ones that
+      keep coming back together into a person. It never guesses a name — you type
+      it, or it comes across from a name Apple Photos already had. Nobody outside
+      this Mac is ever asked who anyone is.</p>
+
+    <details class="q nerd">
+      <summary>Details for nerds — the two local models, the thresholds and why
+        they are what they are</summary>
+      <div class="body">
+    <figure class="srcwrap" style="margin:0">
+      <figcaption>lens/faces.py · lens/persons.py</figcaption>
+      <div class="scrollx"><pre class="src">
+<b>MIN_PROB</b>    = 0.92   <i># how sure the detector has to be that a thing is a face.</i>
+                       <i># A false positive becomes a vector, and a handful of</i>
+                       <i># door handles cluster together happily as a person</i>
+<b>JOIN</b>        = 0.65   <i># cosine similarity at which two faces are one person</i>
+<b>MIN_CLUSTER</b> = 3      <i># below this many sightings, a face belongs to nobody</i>
+<b>SAME_PERSON</b> = 0.8    <i># how close a fresh cluster's centre must be to a person</i>
+                       <i># lens already knows for it to *be* them — which is what</i>
+                       <i># carries a name and a merge across a re-cluster</i>
+<b>PASSES</b>      = 2      <i># assign, recompute the centres, assign again</i></pre></div>
+    </figure>
+
+    <div class="prose">
+      <p><b>Two models, both local.</b> MTCNN finds the faces — a box and a
+        confidence, and nothing at all about identity. Each box is cropped square
+        and pushed through InceptionResnetV1 with vggface2 weights, which returns
+        a 512-dimensional unit vector: two crops of the same person land close
+        together on that sphere, two different people land apart. That is the
+        whole of "recognition" here — a distance. The detector runs on the CPU
+        whatever else the machine has, because its image pyramid needs an
+        adaptive pool MPS refuses at non-divisible sizes; the embedder does run on
+        MPS, where its input is a fixed 160×160. For a video it is the middle
+        keyframe, already decoded for the thumbnail. The rows land in a
+        <code>faces</code> table and the vectors in
+        <code>cache/faces.npz</code>, checkpointed every 32 photographs.</p>
+
+      <p><b>The grouping is a threshold, and the threshold was measured.</b>
+        Nobody has told lens who these people are, so the groups have to be
+        found: it walks the faces in a fixed order, drops each one into the
+        nearest cluster whose centre it is within <b>0.65</b> of, starts a new
+        cluster when it is not, then recomputes the centres and does it again.
+        Two passes, hand-rolled — <code>sklearn</code>'s agglomerative clustering
+        wants the whole distance matrix in memory (20,000 faces is a 1.6 GB
+        triangle) and 30 MB of dependency for one function.</p>
+
+      <p>The 0.65 was read off this library rather than chosen. At the size it
+        was when the rule was settled — 86 photographs, 67 faces,
+        <b>2,211 pairs</b> — the median similarity of two faces is <b>0.13</b>
+        and the ninetieth percentile <b>0.49</b>, while one person across five
+        years, two file formats and a pair of sunglasses ran <b>0.59 to 1.00</b>
+        (median 0.81 inside a cluster of eleven, checked by eye crop by crop). At
+        0.60 the largest cluster had swallowed a second man and a face-painted
+        stranger along with the eleven who belong together; at 0.65 they stay
+        apart; 0.70 only sheds a sighting. The asymmetry is the whole argument
+        for erring high: joining two people puts a wrong name on somebody's
+        photographs and you have to notice before you can undo it, while
+        splitting one person in two gives you two cards to merge in one
+        press.</p>
+
+      <p><b>A face seen once or twice is not a person.</b> It is a stranger in
+        the background of a street scene — and a card, with a name field, for
+        somebody you have never met. Under three sightings a face keeps its row
+        and its vector and belongs to nobody, and is promoted the moment a third
+        one turns up.</p>
+
+      <p><b>A person stays the same person.</b> Clustering runs again after every
+        index run and recomputes from scratch, but a name you typed and a merge
+        you made are not in the vectors and cannot be recomputed. They are
+        anchored to something that can: the cluster's centre. A fresh cluster
+        whose centre is within <b>0.8</b> of a person lens already knows
+        <em>is</em> that person, and inherits their id, their name and any merge
+        they were part of. Centres barely move — measured drift after two of one
+        person's eleven faces were removed was <b>0.003</b>, against 0.49 between
+        the two closest different people in the library — so that is a wide
+        margin rather than a lucky one. A merged person keeps their row with
+        <code>merged_into</code> set, and it is their centre that makes the merge
+        outlive the recompute.</p>
+
+      <p><b>A name is never invented.</b> Either you typed it, or it came across
+        from a name your Apple Photos library already holds — and then only from
+        photographs with exactly one detected face and exactly one name, only
+        once a cluster has agreed with itself three times, never over a name you
+        typed, and never when two names tie. A group shot's five names against
+        five faces is a permutation problem, not a fact, so it is left alone.
+        Everything else is unnamed and stays unnamed. Nothing is looked up
+        anywhere: there is no identity service, nothing is uploaded, and the two
+        models were downloaded once from HuggingFace and GitHub when lens was
+        installed. Face crops are cut from the thumbnail lens already has and
+        served, like every other byte on this page, over the loopback-only
+        daemon.</p>
+
+      <p><b>Once a person has a name it becomes a word.</b>
+        <code>photos of Ana</code> then means her face rather than a folder
+        called Ana — the parser matches the people you have named before it tries
+        anything else — and two names narrow rather than widen, because a
+        photograph with both of them in it is what "Ana and Ben" asks for.</p>
+
+      <p>None of this is one of the seven steps above. The face pass needs one
+        extra package (see the last section); without it lens indexes and
+        searches exactly as it does now, and the index run says why there are no
+        faces.</p>
+    </div>
+      </div>
+    </details>
+  </section>
+
+  <!-- ── 6 · honesty ────────────────────────────────────────────────────── -->
+  <section id="honesty">
+    <h2>what lens can’t do (yet)</h2>
+    <p class="lede">Every one of these is a decision somebody made on purpose,
+      not a bug waiting to be fixed.</p>
+    <div class="panel card">
+      <ul class="honest">
+        <li><span class="ic w">≈</span><span><b>Your Apple Photos library is left
+          alone unless you switch it on.</b> Switched on, lens reads the
+          originals where they already sit — nothing is copied, nothing is
+          written back. Photos iCloud has moved off this Mac are counted and
+          skipped, never downloaded.</span></li>
+        <li><span class="ic w">≈</span><span><b>A video is judged by a handful of
+          frames.</b> Lens takes six stills spread across the clip and blends
+          them into one impression, so it finds what a video is mostly about and
+          can miss something that flashes past in a second.</span></li>
+        <li><span class="ic x">✕</span><span><b>Lens never guesses who somebody
+          is.</b> All it notices is that the same face keeps turning up. A name
+          exists because you typed it, or because Apple Photos already had it and
+          agreed with itself three times over. A face seen once or twice is
+          deliberately nobody.</span></li>
+        <li><span class="ic w">≈</span><span><b>Faces need one extra piece of
+          software installed.</b> Without it everything else works exactly the
+          same, and lens tells you that is why there are no faces.</span></li>
+        <li><span class="ic x">✕</span><span><b>Some folders are never looked
+          in.</b> System folders, applications, developer caches and anything
+          whose name starts with a dot. Photos parked in one of those are
+          invisible to lens.</span></li>
+        <li><span class="ic w">≈</span><span><b>Lens can’t tell nonsense from a
+          real search.</b> A real word picks out a handful of photos; pure
+          gibberish comes back as a “good match” for most of your library. So
+          lens never claims your words were meaningless — it says when the search
+          failed to separate your photos, and drops the good-match line because
+          there is nothing there to draw it through. Try the gibberish chip
+          above and watch it happen.</span></li>
+        <li><span class="ic w">≈</span><span><b>Telling a real photo from a
+          screenshot is a good guess, not a certainty.</b> A camera name or a
+          location settles it. A photo stripped of both can land on the wrong
+          side, and so can an exported graphic that kept them.</span></li>
+        <li><span class="ic w">≈</span><span><b>A photo with no date borrows the
+          date the file was saved.</b> That is when the file was written, not
+          when the picture was taken — which is one reason trips are built only
+          from real camera photos.</span></li>
+        <li><span class="ic w">≈</span><span><b>A place is the nearest named
+          town, not an address.</b> It is worked out offline from a built-in list
+          of place names, which is why “bali” works and a street name never
+          will.</span></li>
+        <li><span class="ic w">≈</span><span><b>A file lens cannot open still
+          counts.</b> It is included in the size of your library and left out of
+          every search.</span></li>
+        <li><span class="ic">⏱</span><span><b>The very first run is slow,
+          once.</b> It downloads about 3.5 GB for the AI that looks at your
+          photos, then works through your library. After that it only looks at
+          files that have changed.</span></li>
+      </ul>
+    </div>
+
+    <details class="q nerd">
+      <summary>Details for nerds — the constants, file names and exact rules
+        behind those eleven lines</summary>
+      <div class="body">
+        <ul class="honest">
+          <li><span class="ic w">≈</span><span><b>Apple Photos</b> — off by
+            default (<code>apple_photos</code> in the cache's
+            <code>config.json</code>, or the ⚙ panel). The bundle is never
+            walked (<code>indexer.SKIP_SUFFIXES = (".photoslibrary",)</code>):
+            it holds every original <em>and</em> every derivative under
+            <code>Masters/resources</code>, so walking one would index each
+            picture several times over. Switched on, lens reads the library's own
+            database through <code>osxphotos</code> and indexes the originals in
+            place, read-only.</span></li>
+          <li><span class="ic w">≈</span><span><b>Video</b> —
+            <code>.mp4</code>, <code>.mov</code>, <code>.m4v</code> and
+            <code>.webm</code> are indexed (<code>metadata.VIDEO_EXTS</code>);
+            <code>.mkv</code> and <code>.avi</code> are not, because on a real
+            machine those are downloaded films. Six frames sampled evenly across
+            the duration, embedded, and mean-pooled into one vector.
+            Frame-level matching is a later wave.</span></li>
+          <li><span class="ic x">✕</span><span><b>Identity</b> — a face joins a
+            person by distance alone (<code>persons.JOIN = 0.65</code>), and a
+            name only crosses from Apple Photos over single-face photographs
+            whose cluster has agreed three times, never over a name you typed
+            and never when two names tie.</span></li>
+          <li><span class="ic w">≈</span><span><b>The faces package</b> —
+            <code>pip install --no-deps facenet-pytorch</code>. The
+            <code>--no-deps</code> is not a shortcut: its declared pins are two
+            years stale (<code>torch&lt;2.3</code>, <code>numpy&lt;2</code>,
+            <code>Pillow&lt;10.3</code>) and honouring them downgrades all three
+            underneath the rest of lens, after which pillow-heif refuses to load
+            and HEIC photos stop being readable.</span></li>
+          <li><span class="ic x">✕</span><span><b>Skipped directories</b> —
+            <code>Library</code>, <code>Applications</code>,
+            <code>System</code>, <code>node_modules</code>,
+            <code>__pycache__</code>, <code>venv</code> and everything beginning
+            with a dot.</span></li>
+          <li><span class="ic w">≈</span><span><b>Gibberish</b> — measured when
+            this library held 86 photographs, “beach” cleared the bar for 3 of
+            them and “boat” for 4, while <code>asdkjhasd kjhasd</code> cleared it
+            for <b>84 of 86</b>; the demo above is the same experiment against
+            the library as it stands now.
+            The model finds <em>something</em> for any string, and its scores for
+            gibberish are indistinguishable from a real low-signal query like
+            “food”.</span></li>
+          <li><span class="ic w">≈</span><span><b>Photograph versus graphic</b>
+            — a camera name or a GPS fix is conclusive; failing those, a capture
+            format (JPEG/HEIC/AVIF/DNG…) carrying
+            <code>DateTimeOriginal</code> or <code>DateTimeDigitized</code>.
+            <code>DateTime</code> alone is deliberately not trusted, because
+            editors and screenshot tools write it.</span></li>
+          <li><span class="ic w">≈</span><span><b>Undated files</b> — with no
+            <code>DateTimeOriginal</code> and no <code>DateTime</code>,
+            <code>taken_at</code> falls back to the filesystem mtime.</span></li>
+          <li><span class="ic w">≈</span><span><b>Places</b> — reverse geocoding
+            is offline (<code>reverse_geocoder</code>), so a coordinate resolves
+            to the closest populated place and its GeoNames region.</span></li>
+          <li><span class="ic w">≈</span><span><b>Unreadable files</b> — counted
+            in the library's size and excluded from every search
+            (<code>error IS NULL</code>). That is the gap between the two
+            numbers in the first two cards of the readout above.</span></li>
+          <li><span class="ic">⏱</span><span><b>First run</b> — roughly
+            <b>3.5 GB</b> of SigLIP2 weights before a single photo is embedded,
+            then minutes of GPU work. Everything after that is incremental: a
+            file is re-read only when its size or mtime changed.</span></li>
+          <li><span class="ic">⏱</span><span><b>Every query re-reads the
+            matrix</b> — vectors are loaded from <code>embeddings.npz</code> per
+            query rather than pinned in the process, which the operating
+            system's page cache makes cheap (~45 ms warm here) but is not the
+            same as an in-memory index. The first query of a session also pays
+            for the text tower's first forward pass.</span></li>
+        </ul>
+      </div>
+    </details>
+  </section>
+
+  <footer>
+    <span id="foot">lens · every word and number on this page came from this
+      Mac</span>
+  </footer>
+</main>
+
+<script>
+  // ── shared helpers (verbatim from the page chrome) ─────────────────────
+  const RMQ = matchMedia("(prefers-reduced-motion: reduce)");
+
+  const ESC = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+  const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ESC[c]);
+  const num = n => Number(n).toLocaleString("en-US");
+  const pct = n => Math.round(100 * n) + "%";
+  const plural = (n, w) => `${num(n)} ${w}${n === 1 ? "" : "s"}`;
+
+  // Seeded with a query that works on this library, so the panel is showing a
+  // real distribution before anyone types. The gibberish chip is the point of
+  // the whole demo and is one click away on purpose.
+  const DEMO_DEFAULT = "beach";
+  const PRESETS = ["beach", "boat", "food", "asdkjhasd kjhasd"];
+
+  const $ = id => document.getElementById(id);
+
+  // ── page nav ──────────────────────────────────────────────────────────
+  // Four surfaces, three files: Photos and Trips are two states of lens.html,
+  // told apart by the `view` param, and the other two are pages of their own.
+  // `null` for a page that takes no view; "" for the one that wants the param
+  // gone.
+  // Every entry is spelled RELATIVE TO THE APP FOLDER, not as a bare filename:
+  // the four surfaces no longer live in one directory. The entry page is the
+  // app folder's index.html (the marketplace requires exactly one top-level
+  // .html, named that) and this page and the audit stayed in views/.
+  const PAGES = {
+    photos: ["index.html", ""],
+    trips: ["index.html", "trips"],
+    people: ["index.html", "people"],
+    explain: ["views/explain.html", null],
+    audit: ["views/validate.html", null],
+  };
+  // The trailing path to swap. Anchored to the three files we know, so a URL
+  // shaped some other way is left alone rather than rewritten into a guess.
+  //
+  // The optional `views/` prefix is what makes a cross-directory hop a plain
+  // string replace, in both directions and with no path arithmetic:
+  //
+  //   /embed/<root>/views/explain.html  → "index.html"         → /embed/<root>/index.html
+  //   /embed/<root>/index.html          → "views/explain.html" → /embed/<root>/views/explain.html
+  //
+  // JS alternation is greedy, so on the first line the match starts at `views/`
+  // and the whole segment pair is replaced — not just the filename, which
+  // would have left `/views/index.html`. The prefix has to be *adjacent* to one
+  // of the three names to match at all, so an app checked out under a parent
+  // directory that merely happens to be called `views` is unaffected.
+  const NAV_FILES = /(?:views\/)?(?:index|explain|validate)\.html/;
+  // The file this page is, so its own pills are a param write rather than a
+  // navigation: reloading the page to switch tab would throw away the grid, the
+  // scroll position and the daemon's warm text encoder.
+  const SELF = "views/explain.html";
+
+  // The URL in the address bar is not this frame's. A view is rendered inside
+  // the fused-render shell, and the shell's URL is the one that carries
+  // fused.params — so nav has to climb to it, by the same rule the runtime uses
+  // (topmost same-origin ancestor, stopping under a param boundary).
+  function navTarget() {
+    let w = window;
+    try {
+      while (w.parent && w.parent !== w) {
+        void w.parent.location.href;      // throws when cross-origin
+        if (w.parent._fusedParamBoundary) break;
+        w = w.parent;
+      }
+    } catch (err) { /* w is the last ancestor we are allowed to touch */ }
+    return w;
+  }
+
+  // `search` with `view` set, removed, or left alone — carrying every other
+  // param across, because a link between pages should keep what it was showing.
+  //
+  // The runtime always reinserts the raw `_layout=(…)` span last and never
+  // decodes it (it can hold literal `&`), so the search splits cleanly there:
+  // everything before the span is ordinary params, and the span is copied
+  // byte-for-byte rather than re-encoded.
+  function withView(search, view) {
+    const s = (search || "").replace(/^\?/, "");
+    const m = /(^|&)_layout=\(/.exec(s);
+    const head = m ? s.slice(0, m.index) : s;
+    const tail = m ? s.slice(m.index + m[1].length) : "";
+    const p = new URLSearchParams(head);
+    if (view) p.set("view", view); else p.delete("view");
+    // Neither index applies a query, so arriving at one must not leave one
+    // sitting in the search box describing a filter that is not being used — the
+    // same rule lens.html applies when the pill is pressed from inside it. The
+    // ids go with it: a `trip` or `person` carried over from wherever the user
+    // came from describes something the destination knows nothing about.
+    if (view === "trips" || view === "people") {
+      p.delete("q");
+      p.delete("trip");
+      p.delete("person");
+    }
+    const out = [p.toString(), tail].filter(Boolean).join("&");
+    return out ? "?" + out : "";
+  }
+
+  function nav(key) {
+    const page = PAGES[key];
+    if (!page) return;
+    const [file, view] = page;
+    if (file === SELF) {                  // same page, different state
+      if (view !== null) fused.params.set("view", view);
+      return;
+    }
+    const loc = navTarget().location;
+    // /embed/<path>/lens.html — the filename is a path segment
+    if (NAV_FILES.test(loc.pathname)) {
+      loc.href = loc.pathname.replace(NAV_FILES, file)
+                 + (view === null ? loc.search : withView(loc.search, view));
+      return;
+    }
+    // /render?path=<path>/lens.html — opened standalone, so it is a param
+    const u = new URL(loc.href);
+    const p = u.searchParams.get("path");
+    if (!p || !NAV_FILES.test(p)) return;   // a URL we do not recognise
+    u.searchParams.set("path", p.replace(NAV_FILES, file));
+    if (view === "") u.searchParams.delete("view");
+    else if (view) u.searchParams.set("view", view);
+    loc.href = u.toString();
+  }
+
+  document.getElementById("pills").addEventListener("click", e => {
+    const b = e.target.closest("button[data-nav]");
+    if (b && b.getAttribute("aria-current") !== "page") nav(b.dataset.nav);
+  });
+
+  // Which pill is lit. Called once on a static page, and on every param change
+  // on lens.html.
+  function paintPills(current) {
+    for (const b of document.querySelectorAll("#pills button")) {
+      if (b.dataset.nav === current) b.setAttribute("aria-current", "page");
+      else b.removeAttribute("aria-current");
+    }
+  }
+
+  // ── motion ────────────────────────────────────────────────────────────
+  // GSAP is vendored under views/vendor/ — nothing here reaches the network at
+  // runtime. It cannot be a plain relative <script src>: this page is served
+  // from /render?path=…, so "vendor/gsap.min.js" would resolve against /render
+  // rather than against the file's own folder. fused.rawUrl() is the runtime's
+  // answer to that, and it still reads the file off local disk.
+  //
+  // Never awaited before first paint. Every animation below is guarded, so
+  // without GSAP this is the same page with no transitions.
+  let gsap = null;
+  const motion = () => gsap && !RMQ.matches;
+
+  function loadScript(src) {
+    return new Promise((ok, fail) => {
+      const el = document.createElement("script");
+      el.src = src;
+      el.onload = ok;
+      el.onerror = () => fail(new Error("could not load " + src));
+      document.head.appendChild(el);
+    });
+  }
+
+  (async () => {
+    try {
+      await loadScript(fused.rawUrl("./vendor/gsap.min.js"));
+      if (!window.gsap) throw new Error("motion library did not define itself");
+      gsap = window.gsap;
+      // A reduced-motion preference can be turned on mid-session, and a tween
+      // already running must not be left frozen halfway — so the global
+      // timeline is sped through rather than paused, and motion() stops new
+      // ones being started at all.
+      const syncRM = () => gsap.globalTimeline.timeScale(RMQ.matches ? 200 : 1);
+      RMQ.addEventListener("change", syncRM);
+      syncRM();
+      onMotionReady();               // whatever the page wants animated on load
+    } catch (err) {
+      console.warn("lens: motion unavailable —", err.message);
+    }
+  })();
+
+  // The page is complete before this runs and complete if it never does: every
+  // tween below animates *from* an off state to the state already rendered.
+  function onMotionReady() {
+    if (!motion()) return;
+    gsap.from("#storystrip .beat", {
+      opacity: 0, y: 10, duration: 0.42, ease: "power3.out",
+      stagger: 0.045, clearProps: "transform,opacity",
+    });
+    drawEdges();
+    // The bar strip may already be on screen by the time GSAP lands (the
+    // daemon answers in ~45ms), so it gets its entrance retroactively rather
+    // than never.
+    animateBars();
+  }
+
+  // ── the seam ──────────────────────────────────────────────────────────
+  // There used to be a `DAEMON` constant here and a plain `fetch()` at every
+  // call site. lens.html's own "where the data comes from" note has the full
+  // story; this is the same seam, trimmed to the four ops this page actually
+  // asks for: `status`, `roots`, `runs` and `query`. `api()` still speaks the
+  // daemon's old paths, still hands back the daemon's old shapes, and the
+  // error contract is unchanged — lens_api.py's `{error, message}` becomes an
+  // `Error` with `.code`, and a rejection with no `.code` means runPython
+  // itself refused (the subprocess died, the environment is missing) rather
+  // than the store explaining itself.
+  const API = "./lens_api.py";
+  const EMBED_MODEL = "google/siglip2-so400m-patch14-384";
+
+  function endpoint(path) {
+    const [base, qs] = path.split("?");
+    const q = new URLSearchParams(qs || "");
+    const num_ = k => (q.get(k) === null ? undefined : q.get(k));
+    if (base === "/status") return { op: "status" };
+    if (base === "/roots") return { op: "roots" };
+    if (base === "/runs") return { op: "runs", limit: num_("limit") };
+    if (base === "/query") {
+      return { op: "query", q: q.get("q") || "", limit: num_("limit"),
+               scope: num_("scope") };
+    }
+    return null;
+  }
+
+  function strings(params) {
+    const out = {};
+    for (const [k, v] of Object.entries(params)) {
+      if (v === undefined || v === null) continue;
+      out[k] = typeof v === "string" ? v : String(v);
+    }
+    return out;
+  }
+
+  // Vectors this page has already paid for, keyed by the exact sentence that
+  // was embedded — same cache lens.html keeps, so switching between a preset
+  // and typing the same word back in does not pay for a second forward pass.
+  const VECS = new Map();
+
+  async function embedOne(text) {
+    if (VECS.has(text)) return VECS.get(text);
+    const res = await withModel(() =>
+      fused.ai.embed({ texts: [text], model: EMBED_MODEL }));
+    VECS.set(text, res.vectors[0]);
+    return res.vectors[0];
+  }
+
+  // The first embedding on a machine that has never held these weights pulls
+  // ~4.6GB. That is not a failure — the call *started* the download and handed
+  // back its job id — so this waits on it and retries once.
+  async function withModel(call) {
+    try {
+      return await call();
+    } catch (err) {
+      if (err.type !== "model_loading" || !err.jobId) throw asApiError(err);
+      setStatus("busy", "loading the search model…");
+      try {
+        await fused.watchJob(err.jobId).watch(job => {
+          const p = job && job.total ? Math.round(100 * job.done / job.total) : null;
+          setStatus("busy", p === null
+            ? "downloading the search model…" : `downloading the search model… ${p}%`);
+        });
+      } catch (watchErr) { /* the watch is a progress display */ }
+      try {
+        return await call();
+      } catch (again) {
+        throw asApiError(again);
+      }
+    }
+  }
+
+  function asApiError(err) {
+    const out = new Error(err.type === "ai_unavailable"
+      ? "The search model isn’t available on this machine — " + err.message
+      : err.message || "the embedding failed");
+    out.code = err.type || "embed failed";
+    return out;
+  }
+
+  async function api(path) {
+    const spec = endpoint(path);
+    if (!spec) {
+      const err = new Error("No route for " + path);
+      err.code = "not found";
+      throw err;
+    }
+    const call = params => fused.runPython(API, strings(params), { key: null });
+    let data = await call(spec);
+    // /query's residual-word handshake: lens_api.py cannot embed anything
+    // itself, so where it needs a vector it says which sentence to embed and
+    // this asks again with it. A filter-only query ("july 2026") never hits
+    // this branch at all.
+    if (data && data.need_embed) {
+      const vec = await embedOne(data.need_embed);
+      data = await call({ ...spec, vec: JSON.stringify(vec) });
+    }
+    if (data && data.error) {
+      const err = new Error(data.message || data.error);
+      err.code = data.error;
+      throw err;
+    }
+    return data || {};
+  }
+
+  // ── status ────────────────────────────────────────────────────────────
+  const stEl = $("st"), stText = $("sttext");
+
+  // #st is an aria-live region, and it is repainted on every poll. Writing the
+  // same string again is a fresh announcement to a screen reader, so an idle
+  // library used to read its own count aloud forever. Only a genuine change
+  // speaks.
+  function setStatus(cls, text) {
+    if (stEl.className === cls && stText.textContent === text) return;
+    stEl.className = cls;
+    stText.textContent = text;
+  }
+
+  let pollT = null, statusSeq = 0, rootsSeq = 0, runsSeq = 0, online = null,
+      wasIndexing = false;
+
+  function schedulePoll(ms) {
+    clearTimeout(pollT);
+    pollT = setTimeout(poll, ms);
+  }
+
+  // A number that jumps says a number changed; a number that rolls says photos
+  // are arriving. Same information, and only one of them is legible out of the
+  // corner of an eye.
+  const ROLLING = new WeakMap();
+  function rollTo(el, value, fmt = num) {
+    if (!el) return;
+    const target = Number(value);
+    if (!Number.isFinite(target)) { el.textContent = "—"; ROLLING.delete(el); return; }
+    const from = ROLLING.has(el) ? ROLLING.get(el) : target;
+    ROLLING.set(el, target);
+    if (!motion() || from === target) { el.textContent = fmt(target); return; }
+    const box = { n: from };
+    gsap.to(box, {
+      n: target, duration: 0.5, ease: "power2.out", overwrite: "auto",
+      onUpdate: () => { el.textContent = fmt(Math.round(box.n)); },
+      onComplete: () => { el.textContent = fmt(target); },
+    });
+  }
+
+  async function poll() {
+    let delay = 10000;                        // idle cadence, as in lens.html
+    const seq = ++statusSeq;
+    let s;
+    try {
+      s = await api("/status");
+      if (seq !== statusSeq) return;          // a newer poll owns the page
+    } catch (err) {
+      if (seq !== statusSeq) return;
+      daemonDown(err);
+      schedulePoll(3000);                     // retry sooner while down
+      return;
+    }
+    const cameBack = online === false;
+    online = true;
+    document.body.classList.remove("offline");
+    if (s.indexing) {
+      // first run pulls ~3.5GB of weights before a single photo is embedded;
+      // "indexing… 0 images" would read as a hang
+      const p = s.progress;
+      setStatus("busy", s.model_loaded === false ? "warming up…"
+        : (p && p.total > 0
+            ? `looking at your photos… ${num(p.done)} of ${num(p.total)}`
+            : `looking at your photos… ${plural(s.photos, "picture")} so far`));
+      delay = 1200;                           // it is moving; keep up with it
+    } else {
+      const bits = [plural(s.photos, "picture")];
+      if (s.trips) bits.push(plural(s.trips, "trip"));
+      setStatus("", bits.join(" · "));
+    }
+    paintStatus(s);
+    loadRoots();
+    loadRuns();
+    // The demo's numbers are a claim about a library that has just changed
+    // shape, and a query issued while the daemon was down never got an answer.
+    //
+    // Deliberately *not* on every poll of a run in flight: those come every
+    // 1.2s, and each one would put a forward pass through the text tower and a
+    // full scan of the matrix in front of the indexing work it is measuring.
+    // Once, when the run finishes, is when the distribution has actually moved.
+    const doneIndexing = wasIndexing && !s.indexing;
+    wasIndexing = !!s.indexing;
+    if (cameBack || doneIndexing) runDemo();
+    schedulePoll(delay);                      // always keep polling
+  }
+
+  function paintStatus(s) {
+    const emb = s.embeddings || {};
+    rollTo($("nImages"), s.photos);
+    rollTo($("nPhotos"), s.photos_scope);
+    rollTo($("nVideos"), s.videos_scope);
+    rollTo($("nAll"), s.all_scope);
+    rollTo($("nTrips"), s.trips);
+    rollTo($("nEmb"), emb.count);
+    rollTo($("nDims"), emb.dims);
+    // The library's size minus what search can reach: files lens catalogued but
+    // could not open. Named rather than left as an unexplained discrepancy
+    // between two cards.
+    const broken = Number.isFinite(s.photos) && Number.isFinite(s.all_scope)
+      ? Math.max(0, s.photos - s.all_scope) : null;
+    $("nBroken").textContent = broken === null ? "—" : num(broken);
+
+    // Faces and people. A daemon that predates the face pass sends no `faces`
+    // object at all, and rollTo writes "—" for anything that is not a number —
+    // which is the right answer: "0 people" is a claim about a library, and a
+    // daemon that cannot count them is making no claim.
+    const fc = s.faces || {};
+    rollTo($("nPeople"), fc.people);
+    rollTo($("nFaces"), fc.faces);
+    rollTo($("nNamed"), fc.named);
+    rollTo($("nScanned"), fc.scanned);
+    rollTo($("nEligible"), fc.eligible);
+    // `undefined` rather than null for the absent case: rollTo tests the number
+    // it is given, and Number(null) is 0 — which would print a confident nought
+    // for a daemon that reported nothing.
+    rollTo($("nLoose"), Number.isFinite(fc.faces) && Number.isFinite(fc.clustered)
+      ? Math.max(0, fc.faces - fc.clustered) : undefined);
+    $("facesState").textContent = facesState(s, fc);
+
+    // the scope split, as a bar. `flex` is the share, so the two grow against
+    // each other without either needing a percentage computed for it.
+    const ph = Number(s.photos_scope) || 0, all = Number(s.all_scope) || 0;
+    const vid = Number(s.videos_scope) || 0;
+    $("splitA").style.flex = String(ph);
+    $("splitV").style.flex = String(vid);
+    $("splitB").style.flex = String(Math.max(0, all - ph - vid));
+
+    // The four headline numbers, in the words a person would use. "Photos" is
+    // everything searchable that is not a video — screenshots and exports
+    // included, because they are pictures lens can find and pretending otherwise
+    // would make this tile smaller than the grid it describes. How many of them
+    // came out of a camera is the sub-line, not a second tile.
+    const stills = Number.isFinite(s.all_scope) && Number.isFinite(s.videos_scope)
+      ? Math.max(0, s.all_scope - s.videos_scope) : undefined;
+    rollTo($("tPhotos"), stills);
+    rollTo($("tVideos"), s.videos_scope);
+    rollTo($("tPeople"), fc.people);
+    rollTo($("tTrips"), s.trips);
+    $("tPhotosX").textContent = Number.isFinite(s.photos_scope)
+      ? `${num(s.photos_scope)} taken with a camera, rest screenshots & graphics`
+      : "pictures lens can search";
+    $("tPeopleX").textContent = Number.isFinite(fc.named) && fc.named > 0
+      ? `${num(fc.named)} of them you have named`
+      : "faces that keep coming back";
+
+    $("mName").textContent = s.model || "—";
+    $("mId").textContent = s.model_id || "—";
+    $("mLoaded").textContent = s.model_loaded === false
+      ? "Not loaded yet — the first query or index run pulls them in."
+      : "Loaded in this daemon's memory right now.";
+    $("cacheDir").textContent = s.cache || "—";
+
+    // Two of the four boxes carry a live fact. The other two are promises about
+    // where the work happens, and a promise does not have a number.
+    $("pipeStore").textContent = Number.isFinite(emb.count)
+      ? `${num(emb.count)} remembered so far` : "on your disk";
+
+    const t = new Date();
+    const p2 = n => String(n).padStart(2, "0");
+    $("polled").textContent =
+      `· polled ${p2(t.getHours())}:${p2(t.getMinutes())}:${p2(t.getSeconds())}`;
+  }
+
+  // Where the face pass has got to, in one sentence. The states are worth
+  // telling apart because the numbers above cannot: a library nobody has swept
+  // and a library with nobody in it both read zero, and a sweep in flight is a
+  // count that will be wrong in a minute. `stage` is the indexer's own name for
+  // which of the run's two sweeps is running (see indexer.STAGE_FACES).
+  function facesState(s, fc) {
+    if (!Number.isFinite(fc.scanned)) {
+      return "This daemon does not report a face pass.";
+    }
+    if (s.indexing && s.progress && s.progress.stage === "faces") {
+      return "The face pass is running right now, so these numbers are still climbing.";
+    }
+    if (!fc.scanned) {
+      return "Nothing has been swept for faces yet, which is not the same as "
+             + "finding nobody.";
+    }
+    if (Number.isFinite(fc.eligible) && fc.scanned < fc.eligible) {
+      return `${plural(fc.eligible - fc.scanned, "image")} still to sweep.`;
+    }
+    return "Every indexed image has been swept.";
+  }
+
+  // The store cannot be read — no library on this machine yet, or a catalog
+  // that will not open — so this says so and keeps retrying. Never blank the
+  // page: an explanation of how lens works is still true when there is
+  // nothing to measure, so the prose stays and only the numbers stand down.
+  function daemonDown(err) {
+    if (online !== false) {
+      for (const id of ["nImages", "nPhotos", "nAll", "nTrips", "nEmb", "nDims",
+                        "nPeople", "nFaces", "nNamed", "nScanned", "nEligible",
+                        "nLoose", "tPhotos", "tVideos", "tPeople", "tTrips"]) {
+        $(id).textContent = "—";
+        ROLLING.delete($(id));
+      }
+      $("nBroken").textContent = "—";
+      $("facesState").textContent = "";
+      $("mName").textContent = $("mId").textContent = "—";
+      $("cacheDir").textContent = "—";
+      $("mLoaded").textContent = "";
+      $("splitA").style.flex = "0";
+      $("splitB").style.flex = "1";
+      $("perfDuration").textContent = "—";
+      $("perfRate").textContent = $("perfMem").textContent = "—";
+      $("perfBar").innerHTML = "";
+      $("perfLegend").innerHTML = "";
+      $("perfNote").innerHTML = PERF_NOTE_HTML;
+      $("perfN").textContent = "0";
+      $("polled").textContent = "· not answering";
+      $("rootlist").innerHTML =
+        `<span style="color:var(--text-mute)">nothing is answering</span>`;
+      demoOffline(err);
+    }
+    online = false;
+    document.body.classList.add("offline");
+    setStatus("off", "library unavailable");
+  }
+
+  // ── roots ─────────────────────────────────────────────────────────────
+  // Every path here was typed by a person and read off a disk, so it is
+  // untrusted input like any other and goes through esc().
+  async function loadRoots() {
+    const seq = ++rootsSeq;
+    let data;
+    try {
+      data = await api("/roots");
+      if (seq !== rootsSeq) return;
+    } catch (err) {
+      if (seq !== rootsSeq) return;
+      $("rootlist").innerHTML =
+        `<span style="color:var(--text-mute)">could not read the folder list</span>`;
+      return;
+    }
+    const roots = data.roots || [];
+    // The Photos library is a source like a folder is, so it belongs in the same
+    // list — and when it is off, saying so is the point of the card.
+    const a = data.apple;
+    const apple = !a ? "" : `<div><b>Apple Photos</b> ${
+      a.enabled
+        ? `<br><span style="color:var(--text-mute)">${num(a.rows)} indexed${
+            a.last && a.last.offloaded
+              ? ` · ${num(a.last.offloaded)} originals in iCloud, not on this Mac`
+              : ""}${a.last && a.last.error ? " · blocked by macOS" : ""}</span>`
+        : `<span style="color:var(--text-mute)">not read</span>`}</div>`;
+    $("rootlist").innerHTML = (roots.length
+      ? roots.map(r => {
+          const n = Number.isFinite(r.photos)
+            ? `${num(r.photos)} photo${r.photos === 1 ? "" : "s"} · ${num(r.images)} indexed`
+            : "";
+          return `<div><b>${esc(r.path)}</b>` +
+                 (r.exists ? "" : ` <span style="color:var(--amber)">missing</span>`) +
+                 (n ? `<br><span style="color:var(--text-mute)">${esc(n)}</span>` : "") +
+                 `</div>`;
+        }).join("")
+      : `<span style="color:var(--text-mute)">no folders configured yet</span>`) + apple;
+    $("pipeRoots").textContent = roots.length
+      ? (roots.length === 1 ? roots[0].path.split("/").pop() || roots[0].path
+                            : `${roots.length} folders`)
+      : "your choice";
+  }
+
+  // ── performance ───────────────────────────────────────────────────────
+  // Same colours as the settings panel's stage bar in lens.html (see
+  // STAGE_INFO there) — two pages drawing the same seven stages in two
+  // different colours would read as two different facts.
+  const STAGE_INFO = {
+    walk_s: ["walk", "#7c7f88"], metadata_s: ["metadata", "#7fb2ff"],
+    thumbs_s: ["thumbs", "#c792ea"], embed_s: ["embed", "var(--accent)"],
+    faces_s: ["faces", "#ff8a5b"], trips_s: ["trips", "#9bd48c"],
+    apple_s: ["apple", "#ffffff26"],
+  };
+
+  function fmtRunDuration(sec) {
+    if (sec == null) return "—";
+    if (sec < 60) return sec.toFixed(1) + "s";
+    const m = Math.floor(sec / 60), r = Math.round(sec % 60);
+    return `${m}m ${r}s`;
+  }
+
+  // Captured once, before anything ever overwrites it: the note's prose
+  // (with the run-count span already inside it) is what a run with no error
+  // shows, and a later run that *is* clean must put this back rather than
+  // leaving an earlier failure's sentence standing forever.
+  const PERF_NOTE_HTML = $("perfNote").innerHTML;
+
+  // The last 20 runs, read straight off runs.jsonl rather than kept in this
+  // page's memory — a reload shows the same numbers `op=runs` in the "check
+  // it yourself" panel below would, which is the whole point of this section.
+  async function loadRuns() {
+    const seq = ++runsSeq;
+    let data;
+    try {
+      data = await api("/runs?limit=20");
+      if (seq !== runsSeq) return;
+    } catch (err) {
+      if (seq !== runsSeq) return;
+      $("perfDuration").textContent = "—";
+      $("perfRate").textContent = $("perfMem").textContent = "—";
+      $("perfBar").innerHTML = "";
+      $("perfLegend").innerHTML = "";
+      $("perfNote").innerHTML = PERF_NOTE_HTML;
+      $("perfN").textContent = "0";
+      return;
+    }
+    const runs = data.runs || [];
+    const last = runs[runs.length - 1];
+    if (!last || last.duration_s == null) {
+      $("perfDuration").textContent = "no run yet";
+      $("perfRate").textContent = $("perfMem").textContent = "—";
+      $("perfBar").innerHTML = "";
+      $("perfLegend").innerHTML = "";
+      $("perfNote").innerHTML = PERF_NOTE_HTML;
+      $("perfN").textContent = num(runs.length);
+      return;
+    }
+    $("perfDuration").textContent = fmtRunDuration(last.duration_s);
+    $("perfRate").textContent = last.rate != null ? num(last.rate) : "—";
+    $("perfMem").textContent = last.mem_peak_gb != null ? num(last.mem_peak_gb) : "—";
+    const stages = last.stages || {};
+    const total = Object.keys(STAGE_INFO)
+      .reduce((sum, k) => sum + (stages[k] || 0), 0) || 1;
+    const keys = Object.keys(STAGE_INFO).filter(k => stages[k] > 0);
+    $("perfBar").innerHTML = keys.map(k => {
+      const [, colour] = STAGE_INFO[k];
+      const pct = (stages[k] / total * 100).toFixed(1);
+      return `<i style="flex:${pct};background:${colour}"
+                title="${esc(STAGE_INFO[k][0])} · ${esc(stages[k].toFixed(1))}s"></i>`;
+    }).join("") || `<i class="b" style="flex:1"></i>`;
+    $("perfLegend").innerHTML = keys.map(k => {
+      const [label, colour] = STAGE_INFO[k];
+      return `<span><i style="background:${colour}"></i>${esc(label)} ·
+        ${esc(stages[k].toFixed(1))}s</span>`;
+    }).join("");
+    // A run that failed on purpose (the memory guard aborting it) says so
+    // here in its own words; a clean run puts the static prose — with the
+    // run-count span inside it — back, rather than leaving an earlier
+    // failure's sentence standing after the library has moved past it.
+    $("perfNote").innerHTML = last.error
+      ? `<b style="color:var(--amber)">${esc(last.error)}</b>`
+      : PERF_NOTE_HTML;
+    $("perfN").textContent = num(runs.length);
+  }
+
+  // ── check it yourself ─────────────────────────────────────────────────
+  // Shown as text to copy, never run from here: these are the same calls the
+  // page makes through lens_api.py's `main(op=…)`, spelled as a one-line
+  // `python3 -c` so you can run them without fused-render at all. There is no
+  // longer a process to curl — each of these opens the catalog, answers, and
+  // exits — which is also why there is no "start it first" step any more.
+  const PY_PREFIX =
+    "python3 -c \"import sys; sys.path.insert(0, 'projects/lens/views'); "
+    + "import lens_api, json; print(json.dumps(lens_api.main(";
+  const CHECKS = [
+    ["op=status — every number in the cards above",
+     "The library's size, the scope split, the model id, the matrix shape and the cache directory.",
+     `${PY_PREFIX}op='status'), indent=2))"`],
+    ["op=roots — the folders, and what each contributed",
+     "One row per folder you added, with how many of its files are photographs.",
+     `${PY_PREFIX}op='roots'), indent=2))"`],
+    ["op=query — a ranking, minus the embedding step this page does for you",
+     "A filter-only query answers straight away; a word like “beach” instead comes back asking to be embedded first (`need_embed`), which is the handshake `api()` runs on the page's behalf.",
+     `${PY_PREFIX}op='query', q='bali', limit='200', scope='photos'), indent=2))"`],
+    ["op=validate — lens auditing itself",
+     "Re-reads EXIF off disk for a sample and compares it to the catalog, re-runs known-answer searches, checks every vector's norm and its thumbnail, and holds every face against its vector and every person against the faces they are made of.",
+     `${PY_PREFIX}op='validate'), indent=2))"`],
+    ["op=runs — the last 20 index runs' own measurements",
+     "Duration, per-stage timings, embed rate and peak memory for each run, read off runs.jsonl rather than kept in this page.",
+     `${PY_PREFIX}op='runs', limit='20'), indent=2))"`],
+  ];
+
+  $("curls").innerHTML = CHECKS.map(([title, why, cmd]) => `
+    <details class="q">
+      <summary>${esc(title)}<button type="button" class="copy"
+        data-copy>Copy</button></summary>
+      <div class="body">
+        <p class="why">${esc(why)}</p>
+        <pre>${esc(cmd)}</pre>
+      </div>
+    </details>`).join("");
+
+  // One handler for every Copy button on the page. The text comes from the
+  // <pre> the button's own <details> holds, so there is one copy of each
+  // command rather than one for display and one for the clipboard.
+  document.addEventListener("click", e => {
+    const btn = e.target.closest("button[data-copy]");
+    if (!btn) return;
+    e.preventDefault();                  // it lives in a <summary>: do not toggle
+    const box = btn.closest("details");
+    const pre = box && box.querySelector("pre");
+    if (!pre) return;
+    navigator.clipboard.writeText(pre.textContent).then(
+      () => { btn.textContent = "Copied"; },
+      () => { btn.textContent = "Select it"; });
+    setTimeout(() => { btn.textContent = "Copy"; }, 1600);
+  });
+
+  // ── the pipeline diagram ──────────────────────────────────────────────
+  const pipe = $("pipe");
+
+  // Each edge is drawn twice: a solid hairline that says the connection
+  // exists, and a dashed one on top that says data moves along it. Reduced
+  // motion stops the dashes (the global rule in the stylesheet) and leaves the
+  // hairline, rather than leaving an empty gap between two boxes.
+  (function buildEdges() {
+    const curve = (x1, y1, x2, y2) => {
+      const mx = (x1 + x2) / 2;
+      return `M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`;
+    };
+    // Four boxes, three edges — one per gap in the story above. The old diagram
+    // drew the seven-step pipeline with a "per file" brace and a fan of eight
+    // curves, which is a truthful picture of the code and a second thing to
+    // learn for anybody reading the four sentences beside it. The detail did not
+    // go away: it is the numbered list in this section's disclosure.
+    const paths = [
+      curve(222, 49, 266, 49),        // your folders → one look, each photo
+      curve(482, 49, 526, 49),        // one look → the notebook
+      curve(742, 49, 786, 49),        // the notebook → your search
+    ];
+    $("pipeEdges").innerHTML = paths.map(d =>
+      `<path class="base" d="${d}"></path><path class="flow" d="${d}"></path>`
+    ).join("");
+  })();
+
+  // The edges draw themselves once, on load: the diagram should assemble in
+  // the direction the data flows rather than appear all at once. Uses each
+  // path's own length, because a dash offset in the wrong units either
+  // over-runs (invisible) or under-runs (a stub that never closes).
+  function drawEdges() {
+    if (!motion()) return;
+    const base = [...pipe.querySelectorAll(".base")];
+    for (const p of base) {
+      const len = p.getTotalLength();
+      gsap.fromTo(p, { strokeDasharray: len, strokeDashoffset: len },
+        { strokeDashoffset: 0, duration: 0.5, ease: "power2.inOut",
+          clearProps: "strokeDasharray,strokeDashoffset" });
+    }
+    gsap.from(pipe.querySelectorAll(".flow"), {
+      opacity: 0, duration: 0.4, delay: 0.35, ease: "none", stagger: 0.03 });
+    gsap.from(pipe.querySelectorAll(".nodebox"), {
+      opacity: 0, duration: 0.35, ease: "power2.out", stagger: 0.04 });
+  }
+
+  // A box in the diagram is a link to the section that proves it. Delegated,
+  // because the boxes are markup rather than generated, and Space as well as
+  // Enter because the role says "link" to a screen reader but the element is
+  // still a <g> the browser will scroll with Space otherwise.
+  function jump(id) {
+    const el = $(id);
+    if (!el) return;
+    // Most of the page's depth now lives inside closed disclosures, and
+    // scrolling to something a <details> is hiding lands the reader on the
+    // summary that hides it. Open every ancestor first, outermost last so each
+    // one's height is settled before the next measures.
+    for (let d = el.closest("details"); d; d = d.parentElement.closest("details")) {
+      d.open = true;
+    }
+    el.scrollIntoView({
+      block: "start",
+      behavior: RMQ.matches ? "auto" : "smooth",
+    });
+  }
+  pipe.addEventListener("click", e => {
+    const g = e.target.closest("g[data-goto]");
+    if (g) jump(g.dataset.goto);
+  });
+  pipe.addEventListener("keydown", e => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    const g = e.target.closest("g[data-goto]");
+    if (!g) return;
+    e.preventDefault();
+    jump(g.dataset.goto);
+  });
+
+  // ── the score-distribution demo ───────────────────────────────────────
+  // One thin bar per scored row the daemon returned, tallest first, with the
+  // cutoff it measured drawn across them. This is the one thing a paragraph
+  // cannot do: the difference between "beach" (three bars above the line, a
+  // steep drop) and gibberish (eighty-four bars all above it, flat) is a
+  // picture, not a sentence.
+  const dqEl = $("dq"), barsEl = $("bars"), readEl = $("barsread"),
+        noteEl = $("demonote"), presetsEl = $("presets");
+  const BW = 1000, BH = 216, BL = 56, BR = 16, BT = 18, BB = 32;
+  let demoSeq = 0, demoT = null, lastDemo = null;
+
+  presetsEl.insertAdjacentHTML("beforeend", PRESETS.map(p =>
+    `<button type="button" data-preset="${esc(p)}">${esc(p)}</button>`).join(""));
+
+  function currentDemoQ() {
+    const v = fused.params.get("dq");
+    // An empty string is a real state — the user cleared the box — and must not
+    // be replaced by the seed, or the field would refill itself as they delete.
+    return v === null || v === undefined ? DEMO_DEFAULT : v;
+  }
+
+  function paintPresets(q) {
+    for (const b of presetsEl.querySelectorAll("button[data-preset]")) {
+      b.setAttribute("aria-pressed", String(b.dataset.preset === q));
+    }
+  }
+
+  function setNote(text, bad) {
+    noteEl.hidden = !text;
+    noteEl.textContent = text || "";
+    noteEl.classList.toggle("bad", !!bad);
+  }
+
+  function clearBars(msg) {
+    barsEl.innerHTML = "";
+    barsEl.setAttribute("aria-label", msg || "No scores to draw");
+    readEl.innerHTML = "—";
+  }
+
+  function demoOffline(err) {
+    clearBars("The library isn’t available, so there is nothing to draw.");
+    setNote((err && err.message) || "No lens library could be read on this "
+            + "Mac — this panel fills in on its own once one can be.", true);
+  }
+
+  // Redrawn wholesale from an array of SVG strings on every result. There is no
+  // per-bar state worth reconciling (a different query is a different
+  // distribution, not a moved one), and one innerHTML write is cheaper than
+  // eighty-five element updates.
+  function drawBars(scores, cut) {
+    const inner = BW - BL - BR, floor = BH - BB;
+    const n = scores.length;
+    const top = scores[0];
+    // The scale is the top score, never a fixed range: these numbers are model
+    // dependent and 0.12 out of a nominal 1.0 would be a strip of invisible
+    // stubs. A non-positive top has no proportion to take, so the strip falls
+    // back to the largest magnitude present and the caption says so.
+    const scale = Math.max(top, Math.abs(scores[n - 1]), 1e-6);
+    const y = v => BT + (1 - Math.max(0, v) / scale) * (floor - BT);
+    const step = inner / n;
+    const w = Math.max(1, Math.min(16, step - Math.min(2.5, step * 0.3)));
+    const g = [];
+
+    // gridlines first, so bars sit on top of them
+    for (const frac of [0, 0.5, 1]) {
+      const v = scale * frac;
+      g.push(`<line class="gridline" x1="${BL}" y1="${y(v).toFixed(1)}" `
+        + `x2="${BW - BR}" y2="${y(v).toFixed(1)}"></line>`);
+      g.push(`<text class="tick" x="${BL - 8}" y="${(y(v) + 3.5).toFixed(1)}" `
+        + `text-anchor="end">${v.toFixed(3)}</text>`);
+    }
+    scores.forEach((v, i) => {
+      const yy = y(v), h = Math.max(1, floor - yy);
+      const weak = cut !== null && v < cut;
+      g.push(`<rect class="bar${weak ? " weak" : ""}" `
+        + `x="${(BL + i * step + (step - w) / 2).toFixed(2)}" y="${yy.toFixed(2)}" `
+        + `width="${w.toFixed(2)}" height="${h.toFixed(2)}" rx="1"></rect>`);
+    });
+    g.push(`<line class="axis" x1="${BL}" y1="${floor}" x2="${BW - BR}" y2="${floor}"></line>`);
+    if (cut !== null && cut > 0 && cut <= scale) {
+      const cy = y(cut).toFixed(1);
+      // Drawn at full width here, and tweened *from* a collapsed x2 below.
+      // Rendering it collapsed for GSAP to extend would leave the boundary —
+      // the whole point of the panel — invisible whenever motion is off.
+      g.push(`<line class="cut" x1="${BL}" y1="${cy}" x2="${BW - BR}" y2="${cy}"></line>`);
+      g.push(`<text class="cutlab" x="${BW - BR}" y="${(y(cut) - 7).toFixed(1)}" `
+        + `text-anchor="end">good match line</text>`);
+    }
+    // The axis is labelled in the words the section uses, not "score": the
+    // numbers beside the gridlines are already there for anybody who wants them.
+    g.push(`<text class="tick" x="${BL + 2}" y="${BT - 7}" text-anchor="start">`
+      + `match strength · one bar per photo</text>`);
+    g.push(`<text class="tick" x="${BL}" y="${BH - 10}" text-anchor="start">`
+      + `best match</text>`);
+    g.push(`<text class="tick" x="${BW - BR}" y="${BH - 10}" text-anchor="end">`
+      + `${n === 1 ? "" : "weakest one shown"}</text>`);
+    barsEl.innerHTML = g.join("");
+    animateBars();
+  }
+
+  // The strip grows out of its own baseline, and the cutoff draws across it
+  // afterwards — so the eye reads the bars first and the boundary second, which
+  // is the order the ranking applies them in. Called again from onMotionReady
+  // in case the first result beat GSAP to the page.
+  function animateBars() {
+    if (!motion()) return;
+    const bars = barsEl.querySelectorAll(".bar");
+    if (!bars.length) return;
+    gsap.from(bars, {
+      scaleY: 0, transformOrigin: "50% 100%", duration: 0.4,
+      ease: "power2.out", overwrite: "auto",
+      // capped: eighty-five bars at a comfortable stagger is two seconds of
+      // nothing happening at the right-hand end
+      stagger: Math.min(0.012, 0.5 / bars.length),
+      clearProps: "transform",
+    });
+    const cut = barsEl.querySelector(".cut");
+    if (!cut) return;
+    gsap.from(cut, {
+      attr: { x2: BL }, duration: 0.45, delay: 0.2,
+      ease: "power2.inOut", overwrite: "auto",
+      // the attribute is left exactly as the markup declared it, so a tween
+      // interrupted by a newer query cannot strand a half-drawn line
+      clearProps: "attr",
+    });
+    gsap.from(barsEl.querySelector(".cutlab"),
+      { opacity: 0, duration: 0.3, delay: 0.5, ease: "none" });
+  }
+
+  async function runDemo() {
+    const q = currentDemoQ();
+    // Sync the box from the URL (a deep link, back/forward) — but never while
+    // the user is in it, or a slow round trip would write the old param back
+    // over what they are typing.
+    if (dqEl.value !== q && document.activeElement !== dqEl) dqEl.value = q;
+    paintPresets(q);
+    const path = "/query?q=" + encodeURIComponent(q) + "&limit=200&scope=photos";
+    // There is no URL to curl any more — the call is a subprocess, not a
+    // socket — so this shows the op and params `api()` is about to send
+    // instead of the daemon path it used to be.
+    $("qurl").textContent =
+      `fused.runPython("./lens_api.py", {op: "query", q: ${JSON.stringify(q)}, `
+      + `limit: "200", scope: "photos"})`;
+
+    if (!q.trim()) {
+      clearBars("Nothing typed, so nothing to score.");
+      setNote("An empty box is not a search: every photo comes back, newest "
+              + "first, and lens does not have to look at anything.");
+      return;
+    }
+
+    const seq = ++demoSeq;
+    let data;
+    try {
+      data = await api(path);
+    } catch (err) {
+      if (seq !== demoSeq) return;
+      if (err.code === "not found" || err.code === "no library"
+          || err.code === "store error") {
+        clearBars("The library isn’t available.");
+        setNote(err.message, true);
+      } else {
+        clearBars("This query was refused.");
+        setNote(err.message || "lens_api.py refused this query.", true);
+      }
+      return;
+    }
+    // Re-check after the await: reading the response is a second point where
+    // a newer query can overtake this one.
+    if (seq !== demoSeq) return;
+    renderDemo(q, data);
+  }
+
+  function renderDemo(q, data) {
+    lastDemo = data;
+    const parsed = data.parsed || {};
+    const scores = [];
+    for (const grp of data.groups || []) {
+      for (const it of grp.items || []) {
+        if (typeof it.score === "number") scores.push(it.score);
+      }
+    }
+    const searched = Number.isFinite(data.searched) ? data.searched : null;
+    const strong = Number.isFinite(data.strong) ? data.strong : null;
+    const cut = typeof data.strong_cutoff === "number" ? data.strong_cutoff : null;
+    const total = Number.isFinite(data.total) ? data.total : 0;
+
+    // A query the parser consumed entirely — "july 2026", "trips" — never
+    // reaches the model, so there is no score to draw. That is not a failure
+    // and must not be rendered as an empty chart.
+    if (!parsed.residual) {
+      clearBars("This is a narrowing-down, not a search: nothing had to be scored.");
+      const bits = [];
+      if (parsed.date_from) bits.push("dates");
+      if ((parsed.places || []).length) bits.push("place " + parsed.places.join(", "));
+      if ((parsed.cameras || []).length) bits.push("camera " + parsed.cameras.join(", "));
+      if (parsed.trip_mode) bits.push("trips only");
+      readEl.innerHTML = `<b>${esc(total)}</b> photo${total === 1 ? "" : "s"} `
+        + `match <b>${esc(q)}</b>.`;
+      setNote("Every word you typed was something lens could look up directly"
+        + (bits.length ? " (" + bits.join(" · ") + ")" : "")
+        + ", so it never had to judge what the pictures look like. There are no "
+        + "match strengths here because each photo simply does or does not "
+        + "qualify.");
+      return;
+    }
+
+    if (!scores.length) {
+      clearBars("Nothing matched, so there is nothing to draw.");
+      readEl.innerHTML = `<b>0</b> of `
+        + `<b>${esc(searched === null ? "—" : num(searched))}</b> photos matched.`;
+      setNote(total
+        ? "Some photos fit the words you typed, but lens has not looked at them "
+          + "yet — so they are “not ready”, not “not relevant”."
+        : `Nothing in your library matches “${q}” at all.`);
+      return;
+    }
+
+    drawBars(scores, cut);
+
+    const top = scores[0];
+    const shown = scores.length;
+    const bar = strong === null ? "—" : num(strong);
+    readEl.innerHTML =
+      `<b>${esc(bar)}</b> of <b>${esc(searched === null ? shown : num(searched))}</b> `
+      + `photos are a good match for <b>${esc(q)}</b> · `
+      + `strongest <span class="hi">${top.toFixed(3)}</span> · `
+      + `the line sits at <span class="hi">${cut === null ? "none" : cut.toFixed(3)}</span>`
+      + `${cut === null ? "" : ", half of the strongest"} · `
+      + `${shown} bar${shown === 1 ? "" : "s"} drawn`;
+
+    // Three things worth saying about a distribution, and only ever one of
+    // them at a time.
+    const broad = strong !== null && searched > 0 && strong / searched >= 0.5;
+    if (top <= 0) {
+      setNote("Not one photo here looks even slightly like what you typed, so "
+        + "there is no best match to measure the others against and no line to "
+        + "draw. This is the honest “nothing here” answer.");
+    } else if (broad) {
+      setNote(`${num(strong)} of the ${num(searched)} photos lens looked at came `
+        + `out about equally strong, which means this search did not really tell `
+        + `them apart. Keeping ${pct(strong / searched)} of your library is not `
+        + `an answer, and the Photos view says so rather than pretending `
+        + `otherwise.`);
+    } else if (strong !== null && shown > strong) {
+      setNote(`Only ${plural(strong, "photo")} came out above the line. The `
+        + `other ${shown - strong} are the next closest, shown anyway so you can `
+        + `judge for yourself — drawn faintly here, and tucked below a divider `
+        + `in the Photos view.`);
+    } else {
+      setNote("");
+    }
+  }
+
+  // 260ms coalesces the keystrokes between words. Enter says the query is
+  // finished and answers at once.
+  function pushDemoQ(v) {
+    if (currentDemoQ() === v) return;         // no redundant refetch
+    fused.params.set("dq", v);
+  }
+  dqEl.addEventListener("input", () => {
+    clearTimeout(demoT);
+    demoT = setTimeout(() => pushDemoQ(dqEl.value), 260);
+  });
+  dqEl.addEventListener("keydown", e => {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    clearTimeout(demoT);
+    pushDemoQ(dqEl.value);
+  });
+  presetsEl.addEventListener("click", e => {
+    const b = e.target.closest("button[data-preset]");
+    if (!b) return;
+    clearTimeout(demoT);
+    dqEl.value = b.dataset.preset;
+    pushDemoQ(b.dataset.preset);
+  });
+
+  // ── boot ──────────────────────────────────────────────────────────────
+  paintPills("explain");
+  dqEl.value = currentDemoQ();
+  paintPresets(dqEl.value);
+  // The only param this page owns is the demo query; a change to it is a new
+  // distribution to draw, not a page to rebuild.
+  fused.params.onChange(runDemo);
+  runDemo();
+  poll();
+</script>
+</body>
+</html>

@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "name": "Photo Lens",
+  "description": "Search your own photos and videos by describing them \u2014 a local vision index with trips, faces, places and cameras. Nothing is uploaded.",
+  "author": {
+    "name": "Akshil Thumar",
+    "github": "akshilthumar"
+  },
+  "tags": [
+    "local-ai",
+    "photos",
+    "search",
+    "embeddings",
+    "faces"
+  ],
+  "category": "local-ai",
+  "version": "1.0.0",
+  "min_fused_render": "0.4.45",
+  "requires_python": true
+}

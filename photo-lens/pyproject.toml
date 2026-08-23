@@ -1,0 +1,76 @@
+[project]
+name = "lens"
+version = "0.1.0"
+description = "Local vision search for photo folders (fused-render companion)"
+requires-python = ">=3.11"
+# **What the APP needs, and nothing more.** Every heavy import in `lens/` is
+# lazy — inside the function that uses it — so this list is the set a search,
+# an index run and the three views actually reach for. The model is no longer
+# among them: embedding goes through fused-render's `/api/ai/embed`
+# (`lens/embed.py:ApiEmbedder`), so a machine running the app never installs
+# torch at all.
+#
+# That is not a tidy-up, it is the difference between working and not. Everything
+# below used to carry `torch`, `transformers`, `torchvision` and `osxphotos`,
+# and on a teammate's fresh checkout the build died in `osxphotos` ->
+# `bitmath`, whose sdist does not declare its own build dependency
+# (`ModuleNotFoundError: No module named 'jaraco.text'`). One unbuildable
+# transitive sdist took the whole environment — and therefore the whole app —
+# down, on a package the app only needs to read an Apple Photos library.
+dependencies = [
+    "numpy",
+    "pillow",
+    # HEIC/HEIF, which is what an iPhone shoots by default and plain Pillow
+    # cannot open at all (thumbnails and video posters both go through PIL).
+    "pillow-heif",
+    # Offline reverse geocoding for the place names on a photo (lens/metadata.py).
+    "reverse_geocoder",
+    # Reads video containers and decodes frames out of them (lens/video.py). The
+    # wheel bundles its own ffmpeg libraries, so indexing a movie needs no
+    # `ffmpeg` on PATH and spawns no subprocess. Imported lazily, inside the
+    # functions that decode: it pulls in ~18MB of shared objects, and a library
+    # of nothing but photographs never pays for it.
+    "av",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "piexif"]
+# Reads the Apple Photos library's own database, so lens can index the
+# originals in a .photoslibrary bundle in place instead of walking it (see
+# lens/apple_photos.py). AN EXTRA rather than a dependency, for two reasons:
+# it is macOS-only, and its own transitive `bitmath` fails to build under a
+# modern setuptools — so requiring it meant no environment at all on a fresh
+# machine. `enumerate_library` already answers a missing osxphotos with an
+# empty list and a status line ("osxphotos is not installed"), so a run
+# without this extra scans folders exactly as before and says why Photos was
+# skipped.
+apple = ["osxphotos; sys_platform == 'darwin'"]
+# The LOCAL model path: `lens/embed.py:Embedder` and the `scripts/lens.py`
+# CLI, for indexing from a terminal without fused-render. The app itself does
+# not use it — `ApiEmbedder` calls fused-render's embeddings capability
+# instead — so this is ~2GB nobody running the views has to download.
+# `memguard`'s MPS probe reports 0.0 when torch is absent, deliberately.
+torch = ["torch", "transformers"]
+# Face detection and recognition (lens/faces.py). Needs the `torch` extra too:
+# MTCNN reaches for torchvision's NMS to pick between overlapping face boxes.
+#
+# Installed with --no-deps, for one specific reason: facenet-pytorch declares
+# pins that are two years stale — torch<2.3, numpy<2, Pillow<10.3 — and
+# honouring them downgrades all three underneath the rest of lens, at which
+# point pillow-heif refuses to load and every HEIC photo becomes unreadable.
+# Its code runs fine on current torch (verified on torch 2.13 / numpy 2.5 /
+# Pillow 12, MPS + CPU).
+#
+#     pip install --no-deps facenet-pytorch
+#
+# Without it lens indexes and searches exactly as before; the People view is
+# empty and the index run says why (see faces.INSTALL_HINT).
+faces = ["facenet-pytorch", "torchvision"]
+
+# **Not a distribution.** `views/lens_api.py` and `scripts/index_worker.py`
+# reach the `lens` package by putting the repo root on `sys.path`, never by
+# importing an installed wheel — so there is nothing here to build, and asking
+# uv to build one is a build step that can fail (it did: `Building lens @
+# file:///...` ran ahead of the failure above) for no benefit.
+[tool.uv]
+package = false
