@@ -22,9 +22,12 @@ import math
 import os
 import sys
 
-# Pinned Overture release (do not float "latest": keeps cache + results stable).
-OVERTURE_RELEASE = "2026-06-17.0"
-_COLLECTIONS = f"https://stac.overturemaps.org/{OVERTURE_RELEASE}/collections.parquet"
+# Preferred Overture release. Overture serves only a rolling window of releases
+# from its STAC catalog, so a hard pin eventually 404s; _resolve_release() falls
+# back to the newest release the catalog still serves when this one is gone.
+OVERTURE_RELEASE = "2026-08-19.0"
+_STAC = "https://stac.overturemaps.org"
+_CATALOG = f"{_STAC}/catalog.json"
 
 _HERE = (os.path.dirname(os.path.abspath(__file__)) if "__file__" in globals()
          else os.path.abspath(sys.path[0]))
@@ -66,6 +69,47 @@ def disk_cache(fn):
     return wrapper
 
 
+# ── Release resolution ──────────────────────────────────────────────────────
+
+
+def _collections_url(release):
+    return f"{_STAC}/{release}/collections.parquet"
+
+
+def _url_ok(url):
+    import requests
+
+    try:
+        return requests.head(url, timeout=10, allow_redirects=True).status_code == 200
+    except requests.RequestException:
+        return False
+
+
+def _available_releases():
+    """Releases the STAC catalog currently serves, newest first."""
+    import requests
+
+    cat = requests.get(_CATALOG, timeout=10).json()
+    rels = [link["href"].rstrip("/").split("/")[-2]
+            for link in cat.get("links", []) if link.get("rel") == "child"]
+    latest = cat.get("latest")
+    if latest:
+        rels = [latest] + [r for r in rels if r != latest]
+    return rels
+
+
+@functools.lru_cache(maxsize=1)
+def _resolve_release():
+    """A release whose collections.parquet is reachable: the pinned one if it
+    still exists, else the newest the catalog serves. Cached per process."""
+    if _url_ok(_collections_url(OVERTURE_RELEASE)):
+        return OVERTURE_RELEASE
+    for rel in _available_releases():
+        if rel != OVERTURE_RELEASE and _url_ok(_collections_url(rel)):
+            return rel
+    raise RuntimeError("no reachable Overture STAC release found")
+
+
 # ── DuckDB ────────────────────────────────────────────────────────────────
 
 
@@ -85,13 +129,13 @@ def _sq(s: str) -> str:
 
 
 @disk_cache
-def _matching_files(type_name, w, s, e, n):
-    """S3 parquet files of the pinned release whose bbox intersects ours."""
+def _matching_files(type_name, release, w, s, e, n):
+    """S3 parquet files of the given release whose bbox intersects ours."""
     con = _connect()
     rows = con.execute(
         f"""
         SELECT assets.aws.alternate.s3.href AS href
-        FROM '{_COLLECTIONS}'
+        FROM '{_collections_url(release)}'
         WHERE collection = '{type_name}'
           AND bbox.xmax >= {w} AND bbox.xmin <= {e}
           AND bbox.ymax >= {s} AND bbox.ymin <= {n}
@@ -141,10 +185,10 @@ def _where(theme, category, search, w, s, e, n):
 
 
 @disk_cache
-def _count(theme, category, search, w, s, e, n):
+def _count(theme, category, search, release, w, s, e, n):
     """Exact feature count for the filter (no geometry decode) — its own
     runPython call so count + fetch each stay inside the 30 s budget."""
-    files = _matching_files(_THEMES[theme][1], w, s, e, n)
+    files = _matching_files(_THEMES[theme][1], release, w, s, e, n)
     if not files:
         return {"total": 0}
     file_list = ", ".join(f"'{f}'" for f in files)
@@ -156,10 +200,10 @@ def _count(theme, category, search, w, s, e, n):
 
 
 @disk_cache
-def _fetch(theme, category, search, w, s, e, n, k):
+def _fetch(theme, category, search, release, w, s, e, n, k):
     """Fetch features, uniformly thinned by hash(id) % k when k > 1 — avoids
     the spatial bias of a bare LIMIT and the full-sort cost of ORDER BY."""
-    files = _matching_files(_THEMES[theme][1], w, s, e, n)
+    files = _matching_files(_THEMES[theme][1], release, w, s, e, n)
     if not files:
         return {"features": []}
     file_list = ", ".join(f"'{f}'" for f in files)
@@ -184,12 +228,12 @@ def _fetch(theme, category, search, w, s, e, n, k):
     return {"features": feats}
 
 
-def _run_query(theme, category, search, w, s, e, n):
+def _run_query(theme, category, search, release, w, s, e, n):
     """count + fetch in one process (used by the story action, where the
     layers are expected to be disk-cache warm from prior count/fetch calls)."""
-    total = _count(theme, category, search, w, s, e, n)["total"]
+    total = _count(theme, category, search, release, w, s, e, n)["total"]
     k = max(1, -(-total // _LIMITS[theme]))
-    feats = _fetch(theme, category, search, w, s, e, n, k)["features"]
+    feats = _fetch(theme, category, search, release, w, s, e, n, k)["features"]
     return {"features": feats, "capped": total > len(feats), "total": total}
 
 
@@ -237,17 +281,19 @@ def _norm_bbox(theme, w, s, e, n):
 
 def _do_count(theme, category, search, w, s, e, n):
     w, s, e, n, clamped = _norm_bbox(theme, w, s, e, n)
-    total = _count(theme, category or "", search or "", w, s, e, n)["total"]
+    release = _resolve_release()
+    total = _count(theme, category or "", search or "", release, w, s, e, n)["total"]
     k = max(1, -(-total // _LIMITS[theme]))
     print(f"count theme={theme} cat={category!r} search={search!r} "
           f"bbox=({w},{s},{e},{n}) -> total={total} k={k}")
     return {"ok": True, "total": total, "k": k, "clamped": clamped,
-            "release": OVERTURE_RELEASE}
+            "release": release}
 
 
 def _do_fetch(theme, category, search, w, s, e, n, k):
     w, s, e, n, _ = _norm_bbox(theme, w, s, e, n)
-    feats = _fetch(theme, category or "", search or "", w, s, e, n, k)["features"]
+    release = _resolve_release()
+    feats = _fetch(theme, category or "", search or "", release, w, s, e, n, k)["features"]
 
     # Top categories / classes among returned features.
     counts = {}
@@ -261,7 +307,7 @@ def _do_fetch(theme, category, search, w, s, e, n, k):
           f"bbox=({w},{s},{e},{n}) k={k} -> {len(feats)} feats")
     return {
         "ok": True,
-        "release": OVERTURE_RELEASE,
+        "release": release,
         "theme": theme,
         "count": len(feats),
         "bbox": [w, s, e, n],
@@ -271,12 +317,12 @@ def _do_fetch(theme, category, search, w, s, e, n, k):
 
 
 @disk_cache
-def _story(w, s, e, n):
+def _story(release, w, s, e, n):
     from shapely.geometry import shape
     from shapely.ops import unary_union
 
-    cafes = _run_query("places", "cafe", "", w, s, e, n)["features"]
-    bikes = _run_query("transportation", "cycleway", "", w, s, e, n)["features"]
+    cafes = _run_query("places", "cafe", "", release, w, s, e, n)["features"]
+    bikes = _run_query("transportation", "cycleway", "", release, w, s, e, n)["features"]
     near = 0
     if cafes and bikes:
         # Buffer cycleways by ~100 m in local-meter approximation.
@@ -301,7 +347,7 @@ def _story(w, s, e, n):
           f"cycleways={len(bikes)} near={near} ({pct}%)")
     return {
         "ok": True,
-        "release": OVERTURE_RELEASE,
+        "release": release,
         "cafes": {"type": "FeatureCollection", "features": cafes},
         "bikes": {"type": "FeatureCollection", "features": bikes},
         "n_cafes": len(cafes),
@@ -333,7 +379,7 @@ def main(
         return _geocode(place.strip())
     if action == "story":
         w, s, e, n, _ = _norm_bbox("places", west, south, east, north)
-        return _story(w, s, e, n)
+        return _story(_resolve_release(), w, s, e, n)
     if action in ("count", "fetch"):
         if theme not in _THEMES:
             raise ValueError(f"theme must be one of {sorted(_THEMES)}, got {theme!r}")
