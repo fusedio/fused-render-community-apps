@@ -214,10 +214,11 @@
   }
   #source:focus { border: 0; }
   .drop-hint {
+    display: block; width: 100%; text-align: left; font: inherit; background: transparent;
     border: 1px dashed var(--line); border-radius: 12px; padding: 14px;
-    font-size: 12.5px; color: var(--faint); margin-bottom: 12px;
+    font-size: 12.5px; color: var(--faint); margin-bottom: 12px; cursor: pointer;
   }
-  body.dragging .drop-hint { border-color: var(--accent); color: var(--accent); }
+  .drop-hint:hover, body.dragging .drop-hint { border-color: var(--accent); color: var(--accent); }
 
   .empty { color: var(--muted); font-size: 13.5px; padding: 14vh 8px 40px; text-align: center; }
   .empty b {
@@ -461,7 +462,8 @@
           <span class="stat" id="srcStat"></span>
         </header>
         <div class="body stack">
-          <div class="drop-hint" id="dropHint">Paste text here, load a file, or drop one anywhere on this page.</div>
+          <button type="button" class="drop-hint" id="dropHint">Click to choose a file, paste text here, or drop one anywhere on this page.</button>
+          <input type="file" id="dropPick" hidden />
           <textarea id="source" placeholder="Paste the text to summarize…" spellcheck="false"></textarea>
         </div>
       </section>
@@ -1495,9 +1497,44 @@ async function loadSource() {
   }
 }
 
-/* Drop a file anywhere on the page. The browser gives the page the file's TEXT,
-   not its path, so this is a paste with a nicer gesture — the sidebar's Load is
-   still the way to name a path the app can remember in the URL. */
+/* Read a File the browser handed us — dropped on the page, or chosen in the
+   picker the dotted hint opens. Either way the browser gives us the file's TEXT
+   and name, never its path, so this is a paste with a nicer gesture — the
+   sidebar's Load is still the way to name a path the app can remember in the URL. */
+async function ingestFile(file, how) {
+  try {
+    const text = await file.text();
+    if (text.slice(0, 4096).includes("\u0000")) {
+      notice(file.name + " looks binary, not text.", "error", "drop");
+      return;
+    }
+    notice("", "error", "drop");
+    $("source").value = text;
+    $("srcNote").textContent = file.name + " · " + bytes(file.size) + " · " + how;
+    result = null;
+    openSaved = null;
+    savedMtime = null;
+    paintSourceStat();
+    paintOut();
+    syncEnabled();
+    saveSession();
+  } catch (err) {
+    notice("Could not read " + file.name + ": " + err.message, "error", "drop");
+  }
+}
+
+/* The dotted hint is a button: clicking it opens the OS file picker. */
+function wirePick() {
+  const input = $("dropPick");
+  $("dropHint").addEventListener("click", () => input.click());
+  input.addEventListener("change", () => {
+    const file = input.files && input.files[0];
+    input.value = "";  /* so picking the same file twice still fires change */
+    if (file) ingestFile(file, "chosen");
+  });
+}
+
+/* Drop a file anywhere on the page. */
 function wireDrop() {
   const stop = (e) => { e.preventDefault(); e.stopPropagation(); };
   ["dragenter", "dragover"].forEach((name) => document.addEventListener(name, (e) => {
@@ -1508,28 +1545,9 @@ function wireDrop() {
     stop(e);
     document.body.classList.remove("dragging");
   }));
-  document.addEventListener("drop", async (e) => {
+  document.addEventListener("drop", (e) => {
     const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-    if (!file) return;
-    try {
-      const text = await file.text();
-      if (text.slice(0, 4096).includes("\u0000")) {
-        notice(file.name + " looks binary, not text.", "error", "drop");
-        return;
-      }
-      notice("", "error", "drop");
-      $("source").value = text;
-      $("srcNote").textContent = file.name + " · " + bytes(file.size) + " · dropped";
-      result = null;
-      openSaved = null;
-      savedMtime = null;
-      paintSourceStat();
-      paintOut();
-      syncEnabled();
-      saveSession();
-    } catch (err) {
-      notice("Could not read " + file.name + ": " + err.message, "error", "drop");
-    }
+    if (file) ingestFile(file, "dropped");
   });
 }
 
@@ -1932,6 +1950,7 @@ document.addEventListener("keydown", (e) => {
 });
 
 wireDrop();
+wirePick();
 
 /* ---------- boot ---------- */
 if (!IS_LOCAL) {
