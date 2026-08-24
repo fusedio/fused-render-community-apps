@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "name": "Summarize",
+  "description": "Summarize any text with any text-generation model on your machine — streamed, with map-reduce over long documents and summaries saved as markdown.",
+  "author": { "name": "Vasu" },
+  "tags": ["local-ai", "llm", "summarization", "streaming"],
+  "category": "local-ai",
+  "version": "1.0.0",
+  "requires_python": true,
+  "ai_capabilities": ["text-generation"],
+  "ai_model_param": "sumModel"
+}

@@ -1,0 +1,1932 @@
+<!DOCTYPE html>
+<html data-fused-theme="shell">
+<head>
+<meta charset="utf-8" />
+<!-- Declares this page a fused app's entry — keep it near the top of <head>
+     (detection reads only the first 4 KiB). -->
+<meta name="fused-app" />
+<title>Summarize — text summarization on this machine</title>
+<style>
+  /* Two :root blocks, ONE token set, no colour literal anywhere else — the
+     shell writes data-theme on <html> before this stylesheet parses. */
+  :root {
+    color-scheme: dark;
+    --bg: #0f1012;
+    --sidebar: #161719;
+    --panel: #1c1e22;
+    --panel-2: #24272d;
+    --text: #ececf1;
+    --muted: #9aa1ac;
+    --faint: #6d747f;
+    --line: #2b2f36;
+    --line-soft: #212429;
+    --accent: #59b3a9;
+    --accent-ink: #0c1413;
+    --accent-soft: #17302d;
+    --ok: #55c47b;
+    --err: #f07171;
+    --warn: #e0b050;
+    --hover: #23262c;
+    --shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --bg: #ffffff;
+    --sidebar: #f7f7f8;
+    --panel: #ffffff;
+    --panel-2: #f1f2f4;
+    --text: #1e2126;
+    --muted: #5d626b;
+    --faint: #8b909a;
+    --line: #e3e5e9;
+    --line-soft: #eceef1;
+    --accent: #1f7d72;
+    --accent-ink: #ffffff;
+    --accent-soft: #e2f2f0;
+    --ok: #2e8b4f;
+    --err: #c33b3b;
+    --warn: #9a6b12;
+    --hover: #ececee;
+    --shadow: 0 8px 30px rgba(16, 20, 28, 0.09);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 15px;
+    line-height: 1.6;
+    color: var(--text);
+    background: var(--bg);
+    display: flex;
+    flex-direction: column;
+    -webkit-font-smoothing: antialiased;
+  }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb {
+    background: var(--line); border-radius: 6px;
+    border: 3px solid transparent; background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover { background: var(--faint); background-clip: content-box; }
+  ::-webkit-scrollbar-track { background: transparent; }
+
+  /* ---------- layout ---------- */
+  .layout { flex: 1; display: grid; grid-template-columns: 268px 1fr; min-height: 0; }
+  aside {
+    background: var(--sidebar); border-right: 1px solid var(--line-soft);
+    display: flex; flex-direction: column; min-height: 0;
+  }
+  .side-head { padding: 14px 12px 8px; display: flex; flex-direction: column; gap: 12px; }
+  .brand { display: flex; align-items: center; gap: 9px; padding: 0 4px; }
+  .brand .mark {
+    width: 24px; height: 24px; border-radius: 7px; flex: none;
+    background: linear-gradient(140deg, var(--accent), var(--ok));
+  }
+  .brand b { font-size: 14px; font-weight: 600; letter-spacing: -0.01em; }
+  .side-scroll { flex: 1; overflow: auto; padding: 4px 12px 12px; min-height: 0; }
+  .side-foot { border-top: 1px solid var(--line-soft); padding: 8px 12px 12px; }
+  main { min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+
+  /* ---------- top bar ---------- */
+  .topbar {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 16px; border-bottom: 1px solid var(--line-soft);
+  }
+  .topbar .spacer { flex: 1; }
+  #model {
+    width: auto; max-width: 360px; font-size: 14px; font-weight: 500;
+    background: transparent; border: 1px solid transparent; border-radius: 8px;
+    padding: 5px 8px; cursor: pointer;
+  }
+  #model:hover { background: var(--hover); }
+  #strip { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); }
+  #strip .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); flex: none; }
+  #strip.on .dot { background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 22%, transparent); }
+  #strip.off .dot { background: var(--err); box-shadow: 0 0 0 3px color-mix(in srgb, var(--err) 22%, transparent); }
+
+  /* ---------- form controls ---------- */
+  .group { margin-bottom: 16px; }
+  .group > h2 {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em;
+    color: var(--faint); margin: 0 0 8px 4px; font-weight: 600;
+  }
+  label.field { display: block; margin-bottom: 12px; font-size: 12px; color: var(--muted); }
+  label.field > span.lab { display: flex; justify-content: space-between; margin-bottom: 5px; }
+  label.field > span.lab b { color: var(--text); font-weight: 500; font-variant-numeric: tabular-nums; }
+  input[type="text"], input[type="number"], textarea, select {
+    width: 100%; font: inherit; font-size: 13px; color: var(--text);
+    background: var(--panel-2); border: 1px solid transparent; border-radius: 9px;
+    padding: 7px 10px;
+  }
+  textarea { resize: none; line-height: 1.5; }
+  input[type="range"] { width: 100%; accent-color: var(--accent); height: 18px; }
+  input:focus, textarea:focus, select:focus { outline: none; border-color: var(--accent); }
+  .hint { font-size: 11px; color: var(--faint); margin-top: 5px; line-height: 1.45; }
+
+  .search { position: relative; margin-bottom: 10px; }
+  .search input { padding-left: 30px; border-radius: 10px; }
+  .search::before {
+    content: "⌕"; position: absolute; left: 10px; top: 50%; transform: translateY(-52%);
+    color: var(--faint); font-size: 15px; pointer-events: none;
+  }
+
+  button.btn {
+    appearance: none; cursor: pointer; font: inherit; font-size: 13px;
+    background: var(--panel-2); color: var(--text);
+    border: 1px solid transparent; border-radius: 9px; padding: 6px 12px;
+    transition: background 0.12s, color 0.12s, border-color 0.12s, opacity 0.12s;
+  }
+  button.btn:hover:not(:disabled) { background: var(--hover); border-color: var(--line); }
+  button.btn:disabled { opacity: 0.4; cursor: default; }
+  button.btn.primary {
+    background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 500;
+  }
+  button.btn.primary:hover:not(:disabled) { background: var(--accent); filter: brightness(1.08); }
+  button.btn.ghost { background: transparent; }
+  button.btn.ghost:hover:not(:disabled) { background: var(--hover); border-color: transparent; }
+  button.btn.wide { padding: 6px 16px; }
+  .row { display: flex; gap: 6px; flex-wrap: wrap; }
+
+  .new-doc {
+    display: flex; align-items: center; gap: 8px; width: 100%;
+    justify-content: flex-start; font-size: 13.5px; font-weight: 500;
+    background: var(--panel-2); border: 1px solid var(--line); border-radius: 11px; padding: 9px 12px;
+  }
+  .new-doc .plus { font-size: 15px; line-height: 1; color: var(--accent); }
+
+  details.settings > summary {
+    cursor: pointer; list-style: none; display: flex; align-items: center; gap: 7px;
+    font-size: 12.5px; color: var(--muted); padding: 7px 8px; border-radius: 9px;
+  }
+  details.settings > summary::-webkit-details-marker { display: none; }
+  details.settings > summary::before { content: "⚙"; font-size: 13px; }
+  details.settings > summary::after { content: "▸"; margin-left: auto; font-size: 9px; color: var(--faint); }
+  details.settings[open] > summary::after { content: "▾"; }
+  details.settings > summary:hover { background: var(--hover); color: var(--text); }
+  details.settings .inner { padding: 10px 8px 2px; max-height: 46vh; overflow: auto; }
+
+  /* ---------- notices ---------- */
+  #notices { padding: 10px 16px 0; width: 100%; }
+  #notices:empty { padding: 0; }
+  .notice {
+    border: 1px solid var(--line); border-left-width: 3px; border-radius: 10px;
+    padding: 9px 12px; margin-bottom: 8px; font-size: 12.5px; color: var(--muted);
+    background: var(--panel);
+  }
+  .notice.warn { border-left-color: var(--warn); }
+  .notice.error { border-left-color: var(--err); color: var(--text); }
+  .notice.info { border-left-color: var(--accent); }
+
+  /* ---------- the ask bar ---------- */
+  .ask {
+    display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap;
+    padding: 11px 16px; border-bottom: 1px solid var(--line-soft);
+  }
+  .ask label.field { margin: 0; flex: none; }
+  .ask label.field select { width: auto; min-width: 118px; }
+  .ask label.focus { flex: 1; min-width: 190px; }
+  .ask .go { display: flex; gap: 6px; align-items: center; }
+
+  /* ---------- the two panes ---------- */
+  .work { flex: 1; display: grid; grid-template-columns: 1fr 1fr; min-height: 0; }
+  .pane { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+  .pane + .pane { border-left: 1px solid var(--line-soft); }
+  .pane > header {
+    display: flex; align-items: center; gap: 8px; padding: 9px 16px 7px;
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em;
+    color: var(--faint); font-weight: 600;
+  }
+  .pane > header .spacer { flex: 1; }
+  .pane > header .stat {
+    text-transform: none; letter-spacing: 0; font-weight: 400; font-size: 11.5px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  .pane > header button.btn { font-size: 11.5px; padding: 3px 9px; text-transform: none; letter-spacing: 0; }
+  .body { flex: 1; overflow: auto; padding: 4px 16px 16px; min-height: 0; }
+  .body.stack { display: flex; flex-direction: column; overflow: hidden; }
+  #source {
+    width: 100%; flex: 1; min-height: 120px; resize: none; font-size: 13.5px;
+    line-height: 1.6; background: transparent; border: 0; padding: 0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  #source:focus { border: 0; }
+  .drop-hint {
+    border: 1px dashed var(--line); border-radius: 12px; padding: 14px;
+    font-size: 12.5px; color: var(--faint); margin-bottom: 12px;
+  }
+  body.dragging .drop-hint { border-color: var(--accent); color: var(--accent); }
+
+  .empty { color: var(--muted); font-size: 13.5px; padding: 14vh 8px 40px; text-align: center; }
+  .empty b {
+    color: var(--text); display: block; margin-bottom: 8px; font-weight: 600;
+    font-size: 20px; letter-spacing: -0.02em; line-height: 1.3;
+  }
+  .meta {
+    font-size: 11px; color: var(--faint); margin-top: 14px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+
+  /* ---------- progress ---------- */
+  .progress {
+    display: flex; align-items: center; gap: 10px; font-size: 12px;
+    color: var(--muted); margin: 2px 0 14px;
+  }
+  .track { flex: 1; height: 4px; border-radius: 2px; background: var(--panel-2); overflow: hidden; }
+  .track > i { display: block; height: 100%; background: var(--accent); width: 0; transition: width 0.3s; }
+  .track.indeterminate > i { width: 35%; animation: slide 1.3s ease-in-out infinite; }
+  @keyframes slide { 0% { margin-left: -35%; } 100% { margin-left: 100%; } }
+
+  /* ---------- sections (the map pass) ---------- */
+  details.sections { margin: 0 0 16px; border-left: 2px solid var(--line); padding-left: 12px; }
+  details.sections > summary {
+    cursor: pointer; list-style: none; display: flex; align-items: center; gap: 6px;
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--faint);
+  }
+  details.sections > summary::-webkit-details-marker { display: none; }
+  details.sections > summary::before { content: "▸"; font-size: 9px; line-height: 1; }
+  details.sections[open] > summary::before { content: "▾"; }
+  details.sections > summary:hover { color: var(--muted); }
+  details.sections.live { border-left-color: var(--accent); }
+  details.sections.live > summary { color: var(--accent); animation: pulse 1.4s ease-in-out infinite; }
+  .section { margin-top: 11px; }
+  .section > .n {
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.07em;
+    color: var(--faint); margin-bottom: 3px;
+  }
+  .section > .md { color: var(--muted); font-size: 12.5px; }
+
+  /* ---------- thinking ---------- */
+  details.think { margin: 0 0 13px; border-left: 2px solid var(--line); padding-left: 12px; }
+  details.think > summary {
+    cursor: pointer; list-style: none; display: flex; align-items: center; gap: 6px;
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--faint);
+  }
+  details.think > summary::-webkit-details-marker { display: none; }
+  details.think > summary::before { content: "▸"; font-size: 9px; line-height: 1; }
+  details.think[open] > summary::before { content: "▾"; }
+  details.think > summary:hover { color: var(--muted); }
+  details.think.live { border-left-color: var(--accent); }
+  details.think.live > summary { color: var(--accent); animation: pulse 1.4s ease-in-out infinite; }
+  details.think .body { color: var(--muted); font-size: 12.5px; margin-top: 7px; padding: 0; overflow: visible; }
+  .think-inline {
+    border-left: 2px solid var(--line); padding-left: 11px;
+    color: var(--muted); font-size: 12.5px; margin-bottom: 11px;
+  }
+  @keyframes pulse { 50% { opacity: 0.45; } }
+  .cursor::after { content: "▍"; color: var(--accent); animation: blink 1s steps(2) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* ---------- rendered markdown ---------- */
+  .md > :first-child { margin-top: 0; }
+  .md > :last-child { margin-bottom: 0; }
+  .md p { margin: 0 0 0.7em; }
+  .md h1, .md h2, .md h3, .md h4, .md h5, .md h6 {
+    margin: 1.15em 0 0.45em; line-height: 1.3; font-weight: 600; letter-spacing: -0.01em;
+  }
+  .md h1 { font-size: 1.3em; }
+  .md h2 { font-size: 1.16em; }
+  .md h3 { font-size: 1.05em; }
+  .md h4, .md h5, .md h6 { font-size: 1em; color: var(--muted); }
+  .md ul, .md ol { margin: 0 0 0.7em; padding-left: 1.4em; }
+  .md li { margin: 0.15em 0; }
+  .md li > ul, .md li > ol { margin: 0.15em 0 0.2em; }
+  .md blockquote {
+    margin: 0 0 0.7em; padding-left: 0.85em;
+    border-left: 2px solid var(--line); color: var(--muted);
+  }
+  .md hr { border: 0; border-top: 1px solid var(--line); margin: 1.1em 0; }
+  .md a { color: var(--accent); }
+  .md code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.88em; background: var(--panel-2); border: 1px solid var(--line);
+    border-radius: 4px; padding: 0.08em 0.32em;
+  }
+  .md pre {
+    margin: 0 0 0.7em; padding: 9px 11px; overflow-x: auto; white-space: pre;
+    background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px;
+  }
+  .md pre code { background: none; border: 0; padding: 0; font-size: 12.5px; line-height: 1.5; }
+  .md pre[data-lang]::before {
+    content: attr(data-lang); display: block; margin-bottom: 6px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--faint);
+  }
+  .md table {
+    border-collapse: collapse; margin: 0 0 0.7em; font-size: 0.95em;
+    display: block; overflow-x: auto; max-width: 100%;
+  }
+  .md th, .md td { border: 1px solid var(--line); padding: 4px 9px; text-align: left; }
+  .md th { background: var(--panel-2); font-weight: 600; }
+
+  /* ---------- saved summaries (in the aside) ---------- */
+  .item {
+    padding: 8px 10px; border-radius: 9px; margin-bottom: 2px;
+    cursor: pointer; transition: background 0.12s;
+  }
+  .item:hover { background: var(--hover); }
+  .item[aria-current="true"] { background: var(--accent-soft); }
+  .item .title { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .item .sub { font-size: 11px; color: var(--faint); margin-top: 1px; }
+  .item .acts { display: none; gap: 6px; margin-top: 6px; }
+  .item:hover .acts, .item[aria-current="true"] .acts { display: flex; }
+  .item .acts button { font-size: 11px; padding: 2px 8px; }
+  .item.bad { cursor: default; color: var(--muted); }
+  .count { font-size: 11px; color: var(--faint); margin: 0 0 6px 4px; }
+  .empty.small { padding: 18px 0; font-size: 12.5px; }
+  .empty.small b { font-size: 13px; margin-bottom: 6px; }
+
+  @media (max-width: 1000px) {
+    .work { grid-template-columns: 1fr; grid-template-rows: minmax(0, 2fr) minmax(0, 3fr); }
+    .pane + .pane { border-left: 0; border-top: 1px solid var(--line-soft); }
+  }
+  @media (max-width: 860px) {
+    .layout { grid-template-columns: 1fr; }
+    aside { border-right: 0; border-bottom: 1px solid var(--line); max-height: 38vh; }
+  }
+</style>
+</head>
+<body>
+
+<div class="layout">
+  <aside>
+    <div class="side-head">
+      <div class="brand"><span class="mark"></span><b>Summarize</b></div>
+      <button class="btn new-doc" id="clear"><span class="plus">＋</span>New summary</button>
+    </div>
+
+    <div class="side-scroll">
+      <div class="group">
+        <h2>Load a file</h2>
+        <label class="field">
+          <input type="text" id="src" placeholder="~/notes/meeting.txt" spellcheck="false" />
+        </label>
+        <div class="row">
+          <button class="btn" id="load">Load</button>
+        </div>
+        <div class="hint" id="srcNote">Any text file — notes, a transcript, a log, a markdown doc. Or drop one on the page.</div>
+      </div>
+
+      <div class="group">
+        <h2>Saved summaries</h2>
+        <div class="search">
+          <input type="text" id="find" placeholder="Search summaries" spellcheck="false" />
+        </div>
+        <div class="count" id="libCount"></div>
+        <div id="libList"></div>
+      </div>
+    </div>
+
+    <div class="side-foot">
+      <details class="settings">
+        <summary>Settings</summary>
+        <div class="inner">
+          <div class="group">
+            <h2>Model</h2>
+            <div class="hint" id="modelNote"></div>
+            <div class="row" style="margin-top:8px">
+              <button class="btn" id="preload">Preload</button>
+              <button class="btn" id="unload">Unload</button>
+            </div>
+          </div>
+
+          <div class="group">
+            <h2>Sampling</h2>
+            <label class="field">
+              <span class="lab">Temperature <b id="tempV">0.30</b></span>
+              <input type="range" id="temp" min="0" max="1.5" step="0.05" />
+            </label>
+            <label class="field">
+              <span class="lab">Max tokens <b id="maxtokV">1024</b></span>
+              <input type="range" id="maxtok" min="128" max="8192" step="128" />
+            </label>
+            <div class="hint" id="samplingNote"></div>
+          </div>
+
+          <div class="group">
+            <h2>Long documents</h2>
+            <label class="field">
+              <span class="lab">Section size <b id="budgetV">3000</b></span>
+              <input type="range" id="budget" min="500" max="12000" step="250" />
+            </label>
+            <div class="hint">Text longer than one section is summarized section by
+              section, then those digests are summarized into the final answer.</div>
+            <label class="field" style="display:flex;gap:7px;align-items:center;margin-top:10px">
+              <input type="checkbox" id="think" style="width:auto" />
+              <span>Collapse thinking blocks</span>
+            </label>
+          </div>
+
+          <div class="hint" id="libDir"></div>
+        </div>
+      </details>
+    </div>
+  </aside>
+
+  <main>
+    <div class="topbar">
+      <select id="model"></select>
+      <span class="spacer"></span>
+      <span id="strip"><span class="dot"></span><span id="stripText">reading runtime…</span></span>
+    </div>
+
+    <div id="notices"></div>
+
+    <div class="ask">
+      <label class="field">
+        <span class="lab">Length</span>
+        <select id="len"></select>
+      </label>
+      <label class="field">
+        <span class="lab">Shape</span>
+        <select id="fmt"></select>
+      </label>
+      <label class="field focus">
+        <span class="lab">Focus <span id="focusHint" style="color:var(--faint)">optional</span></span>
+        <input type="text" id="focus" placeholder="e.g. only the decisions and who owns them" />
+      </label>
+      <div class="go">
+        <button class="btn primary wide" id="run">Summarize</button>
+        <button class="btn" id="stop" hidden>Stop</button>
+      </div>
+    </div>
+
+    <div class="work">
+      <section class="pane">
+        <header>
+          Source
+          <span class="spacer"></span>
+          <span class="stat" id="srcStat"></span>
+        </header>
+        <div class="body stack">
+          <div class="drop-hint" id="dropHint">Paste text here, load a file, or drop one anywhere on this page.</div>
+          <textarea id="source" placeholder="Paste the text to summarize…" spellcheck="false"></textarea>
+        </div>
+      </section>
+
+      <section class="pane">
+        <header>
+          Summary
+          <span class="spacer"></span>
+          <button class="btn ghost" id="copy">Copy</button>
+          <button class="btn ghost" id="save">Save</button>
+        </header>
+        <div class="body" id="out"></div>
+      </section>
+    </div>
+  </main>
+</div>
+
+<script>
+"use strict";
+/* ===================================================================
+   Summarize — one entry page, one fused.ai call site.
+
+   Shape of the app, in the order the code below is written:
+     params are the settings   → `P`
+     the runtime + model strip → refreshRuntime()
+     the one AI call           → generate()
+     the prompts              → PROMPTS / instruction()
+     the run                   → summarize()  (single pass, or map → reduce)
+     markdown + thinking       → mdHtml() / splitThinking()
+     the library               → ./saved.py + fused.writeFile
+     the single re-render path → draw(), which NEVER writes a param
+   =================================================================== */
+
+const IS_LOCAL = fused.env === "local";
+const CAP = "text-generation";
+
+/* WHERE SUMMARIES GO, and why not next to this page.
+
+   An installed app folder can be read-only, and `fused.writeFile` does not
+   create a missing parent — so writing to a `./summaries/` that had never been
+   created failed outright with "parent directory does not exist". Summaries live
+   in the machine's own per-app drawer instead:
+
+       <fused-render home>/cache/<app slug>/
+
+   `saved.py` owns that path (it reads `FUSED_RENDER_HOME_DIR` rather than
+   guessing) and its `dir` action is the one call that CREATES the folder. This
+   page therefore never builds a storage path itself: it asks once, keeps the
+   absolute answer, and hands that to `writeFile`/`stat`/`readFile`.
+
+   Absolute matters. `readFile`/`rawUrl` resolve a relative path page-relative,
+   but `stat` and `writeFile` send it bare and the server resolves it against its
+   own working directory — so a relative path succeeds in one and 404s in the
+   next, which reads as a missing file rather than as a resolution difference. */
+let cacheDir = null;
+const cacheReady = (async () => {
+  try {
+    cacheDir = (await fused.runPython("./saved.py", { action: "dir" })).dir;
+  } catch (err) {
+    /* Nothing can be saved without it, but everything else on the page still
+       works — so this is a notice, not a dead app. */
+    notice("The summaries folder could not be created: "
+      + (err && err.message ? err.message : String(err))
+      + " — summaries cannot be saved this session.", "error", "cachedir");
+  }
+  return cacheDir;
+})();
+/* Every write and stat goes through here, so none of them can run before the
+   folder exists. */
+async function stored(name) {
+  const dir = cacheDir || await cacheReady;
+  if (!dir) throw typed("bad_request", "the summaries folder is not available");
+  return dir + "/" + name;
+}
+
+/* ---------- params ---------- */
+const DEFAULTS = {
+  model: "", len: "short", fmt: "bullets", focus: "",
+  temp: "0.3", maxtok: "1024", budget: "3000",
+  think: "1", find: "", src: "", saved: "",
+};
+/* `model` in the URL clashes with the fused-render shell's own sidebar param of
+   the same name, so this one is namespaced `sumModel` at the P layer — and that
+   is the name metadata.json declares as `ai_model_param`, so a handoff from the
+   AI Playground lands here. Every call site still says P.raw("model"). */
+const PARAM_ALIAS = { model: "sumModel" };
+const P = {
+  get: (k) => { const v = fused.params.get(PARAM_ALIAS[k] || k); return v === undefined || v === "" ? DEFAULTS[k] : v; },
+  raw: (k) => fused.params.get(PARAM_ALIAS[k] || k) || "",
+  num: (k) => parseFloat(P.get(k)),
+  int: (k) => parseInt(P.get(k), 10),
+  set: (k, v) => fused.params.set(PARAM_ALIAS[k] || k, String(v)),
+};
+
+/* ---------- state (not params: too big, or not worth a URL) ---------- */
+let result = null;        // {summary, sections[], meta} — what the Summary pane shows
+let openSaved = null;     // which ./summaries/ file `result` came from
+let savedMtime = null;    // for the optimistic lock on re-save
+let catalogModels = [];   // [{id, label, size_gb, note, downloaded, loaded, …}]
+let runner = null;        // the text-generation runner entry
+let resident = null;      // the loaded[] entry for our capability, or null
+let busy = false;         // the app-wide generation lock
+let stopRequested = false;
+let shownFind = null;     // the `find` the saved list was last built for
+
+const $ = (id) => document.getElementById(id);
+const el = (tag, cls, text) => {
+  const node = document.createElement(tag);
+  if (cls) node.className = cls;
+  if (text !== undefined) node.textContent = text;
+  return node;
+};
+const typed = (type, message) => Object.assign(new Error(message), { type });
+const gb = (n) => (n >= 1 ? n.toFixed(1) + " GB" : Math.round(n * 1024) + " MB");
+const bytes = (n) => {
+  if (!n) return "";
+  const u = ["B", "KB", "MB", "GB"];
+  let i = 0, v = n;
+  while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+  return (i > 1 ? v.toFixed(1) : Math.round(v)) + " " + u[i];
+};
+const num = (n) => n.toLocaleString();
+const words = (text) => (text.trim() ? text.trim().split(/\s+/).length : 0);
+/* Same four-characters-to-a-token heuristic `source.py` uses, so the header the
+   reader sees and the split the model gets can never disagree. */
+const estTokens = (text) => Math.ceil(text.length / 4);
+
+/* ===================================================================
+   Which destination a model id names.
+
+   The bridge decides by the id and by nothing else: an id containing a `/` (a
+   Hugging Face repo) or ending `.gguf` (llama.cpp's curated ids are the GGUF's
+   own filename, with no slash at all) runs in a worker on this machine.
+   Anything else goes to the local `claude` CLI. Half the options exist on only
+   one of those paths, so this predicate gates four things — the options sent,
+   the Stop button, Preload/Unload, and what a failure is likely to mean.
+   =================================================================== */
+const isLocalModel = (id) => !!id && (id.includes("/") || /\.gguf$/i.test(id));
+
+/* The CLI is not a catalog — it has no list to ask, so these three aliases are
+   the app's own. They are ALIASES, never pinned ids: the CLI resolves each to
+   whatever it currently points at, and `res.model` reports what actually ran.
+   They exist so the app is useful on a machine with nothing downloaded yet. */
+const CLI_MODELS = [
+  { id: "haiku", label: "Claude Haiku", note: "Fastest of the three, and enough for most summaries.", cli: true },
+  { id: "sonnet", label: "Claude Sonnet", note: "A better summary of a difficult document.", cli: true },
+  { id: "opus", label: "Claude Opus", note: "The most capable, and the slowest.", cli: true },
+];
+
+const labelFor = (id) => {
+  const hit = catalogModels.find((m) => m.id === id);
+  return hit ? hit.label : (id || "unknown model");
+};
+
+/* ---------- notices ---------- */
+function notice(text, kind, cause) {
+  const key = cause || kind || "warn";
+  const box = $("notices");
+  const prior = box.querySelector('[data-cause="' + key + '"]');
+  if (prior) prior.remove();
+  if (!text) return;
+  const node = el("div", "notice " + (kind || "warn"));
+  node.dataset.cause = key;
+  node.textContent = text;
+  box.appendChild(node);
+}
+function routeError(err, cause) {
+  const type = err && err.type;
+  if (type === "ai_unavailable") refreshRuntime();
+  const message = (err && err.message) ? err.message : String(err);
+  /* `ai_unavailable` on the CLI path means the `claude` binary is not installed
+     or not on PATH — a machine fact, not a bug in this page, and the message
+     upstream already names what to do. Said plainly here so the reader does not
+     read it as a broken app. */
+  notice((type ? type + ": " : "") + message, "error", cause);
+}
+
+/* ===================================================================
+   Runtime + model strip
+   =================================================================== */
+async function refreshRuntime() {
+  if (!IS_LOCAL) {
+    setStrip("off", "hosted copy — summarizing needs the fused-render app");
+    catalogModels = [];
+    fillModels();
+    syncEnabled();
+    return;
+  }
+  let list = null, catalog = null;
+  /* Every dotted `fused.ai.*` call is gated on IS_LOCAL by hand: the exporter's
+     check only matches the literal `fused.ai(`, so these would export cleanly
+     and then fail at the reader. */
+  try { list = await fused.ai.models.list(); } catch (err) { /* the strip says so below */ }
+  try { catalog = await fused.ai.models.catalog(); } catch (err) { /* ditto */ }
+
+  runner = list ? (list.runners || []).find((r) => r.capability === CAP && r.available)
+                || (list.runners || []).find((r) => r.capability === CAP) : null;
+  resident = list ? (list.loaded || []).find((l) => l.capability === CAP) || null : null;
+
+  const block = catalog ? (catalog.capabilities || []).find((c) => c.capability === CAP) : null;
+  /* EVERY entry the catalog reports, not just the curated ones — a `source:
+     "cached"` row is a model the user deliberately downloaded from the AI Models
+     page, and filtering it out is how a picker ends up missing the one model
+     that is already on the disk. */
+  let local = (block && block.models) ? block.models.slice() : [];
+  if (!local.length) {
+    notice("The model catalog could not be read — only the models already resident are listed.",
+      "warn", "catalog");
+  } else {
+    notice("", "warn", "catalog");
+  }
+  /* Whatever is resident belongs in the picker whether or not the catalog
+     mentions it. `catalog()` already carries what is on this disk, so this is
+     the narrow remaining case: a repo loaded from the AI Models page that the
+     catalog has not caught up with. Without it the strip says a model is
+     resident and the dropdown cannot select it. */
+  if (resident && !local.some((m) => m.id === resident.model)) {
+    local.push({
+      id: resident.model, label: resident.model, size_gb: 0,
+      note: "Loaded from elsewhere.", downloaded: true, loaded: true,
+    });
+  }
+  catalogModels = local.concat(CLI_MODELS);
+
+  const want = P.raw("model");
+  if (!want || !catalogModels.some((m) => m.id === want)) {
+    /* `default` is the catalog's own recommendation and is read, never
+       `models[0]` — cached rows are appended after the curated ones and an
+       engine with no shortlist reports `default: null`. With no local model at
+       all the CLI is the honest default: it needs no download. */
+    P.set("model", (block && block.default) || (local[0] && local[0].id) || CLI_MODELS[0].id);
+  }
+
+  if (!runner || !runner.available) {
+    const why = (runner && runner.reason) || "no text-generation runner is available on this machine";
+    /* Not fatal any more: the CLI path needs no runner, so this is a warning
+       about half the picker rather than an app that cannot work. */
+    setStrip(isLocalModel(P.raw("model")) ? "off" : "on", why);
+    notice(why + " — the Claude Code models still work.", "warn", "runner");
+  } else {
+    notice("", "warn", "runner");
+    setStrip("on", stripText());
+  }
+  fillModels();
+  syncEnabled();
+}
+
+function stripText() {
+  const id = P.raw("model");
+  if (!isLocalModel(id)) {
+    return "Claude Code CLI · " + labelFor(id) + " — no download, no local weights";
+  }
+  const label = runner ? runner.shortLabel || runner.label : "local runner";
+  if (resident && resident.state && resident.state !== "ready") {
+    return label + " · " + labelFor(resident.model) + " " + resident.state + "…";
+  }
+  if (resident) {
+    return label + " · " + labelFor(resident.model) + " resident"
+      + (resident.residentBytes ? " (" + bytes(resident.residentBytes) + ")" : "");
+  }
+  /* Nothing resident — so say what the first run will actually cost, which is a
+     load off disk for a model already downloaded and a multi-GB fetch for one
+     that is not. That is the difference between "a moment" and "ten minutes". */
+  const chosen = catalogModels.find((m) => m.id === id) || {};
+  return label + " · " + (chosen.downloaded
+    ? "first run loads " + chosen.label + " from disk"
+    : "first run downloads " + (chosen.size_gb ? gb(chosen.size_gb) : "the model"));
+}
+
+function setStrip(kind, text) {
+  $("strip").className = kind;
+  $("stripText").textContent = text;
+}
+
+/* What picking this row would COST — the one thing a size alone cannot say.
+   `loaded` comes from `resident` rather than the catalog's own flag, because
+   `list()` is read in the same refresh and is the authoritative answer to what a
+   worker is holding right now. */
+function stateOf(m) {
+  if (m.cli) return "via Claude Code";
+  if (resident && resident.model === m.id) return "resident";
+  if (m.downloaded) return "on disk";
+  return m.size_gb ? gb(m.size_gb) + " download" : "downloads on first use";
+}
+
+function fillModels() {
+  const sel = $("model");
+  const want = P.raw("model");
+  sel.innerHTML = "";
+  const groups = [
+    ["On this machine", catalogModels.filter((m) => !m.cli)],
+    ["Claude Code CLI", catalogModels.filter((m) => m.cli)],
+  ];
+  groups.forEach(([name, rows]) => {
+    if (!rows.length) return;
+    const g = document.createElement("optgroup");
+    g.label = name;
+    rows.forEach((m) => {
+      const size = m.params ? " " + m.params : "";
+      const opt = el("option", null,
+        m.label + size + "  ·  " + stateOf(m) + (m.recommended ? "  ★" : ""));
+      opt.value = m.id;
+      g.appendChild(opt);
+    });
+    sel.appendChild(g);
+  });
+  sel.value = want;
+
+  const chosen = catalogModels.find((m) => m.id === sel.value) || {};
+  $("modelNote").textContent = chosen.note || "";
+  const size = chosen.size_gb ? gb(chosen.size_gb) : "";
+  $("preload").textContent = resident && resident.model === sel.value
+    ? "Resident" : "Preload" + (size ? " " + size : "");
+  /* Named by what is ACTUALLY resident, not by what the dropdown shows. */
+  $("unload").textContent = resident ? "Unload " + labelFor(resident.model) : "Unload";
+  syncEnabled();
+}
+
+async function preload() {
+  const id = P.raw("model");
+  if (!isLocalModel(id)) return;
+  try {
+    setBusy(true);
+    const started = await fused.ai.models.load(id, { capability: CAP });
+    notice("Loading " + labelFor(id) + "…", "warn", "load");
+    await fused.watchJob(started.jobId).watch((job) => {
+      const done = job.total ? " " + bytes(job.done) + " / " + bytes(job.total) : "";
+      notice("Loading " + labelFor(id) + "…" + done, "warn", "load");
+    });
+    notice("", "warn", "load");
+  } catch (err) {
+    routeError(err, "load");
+  } finally {
+    setBusy(false);
+    await refreshRuntime();
+  }
+}
+
+async function unload() {
+  try {
+    /* By capability, never by id — the resident model may not be the one the
+       dropdown shows, and unloading by id would then be a silent no-op. */
+    await fused.ai.models.unload({ capability: CAP });
+  } catch (err) {
+    routeError(err, "load");
+  }
+  await refreshRuntime();
+}
+
+/* ===================================================================
+   generate() — the ONE fused.ai call site
+   =================================================================== */
+function setBusy(value) {
+  busy = value;
+  syncEnabled();
+}
+
+function syncEnabled() {
+  const id = P.raw("model");
+  const local = isLocalModel(id);
+  const usable = IS_LOCAL && catalogModels.length && (!local || (runner && runner.available));
+  $("run").disabled = busy || !usable || !$("source").value.trim();
+  /* Stop cancels a LOCAL generation. `fused.ai.cancel()` has no reach into the
+     CLI path at all, so the button is hidden rather than offered and inert. */
+  $("stop").hidden = !busy || !local;
+  $("preload").disabled = !IS_LOCAL || busy || !local || !!(resident && resident.model === id);
+  $("unload").disabled = !IS_LOCAL || busy || !resident;
+  $("save").disabled = busy || !(result && result.summary && result.summary.trim());
+  $("copy").disabled = !(result && result.summary && result.summary.trim());
+  $("load").disabled = busy || !$("src").value.trim();
+  ["temp", "maxtok"].forEach((k) => { $(k).disabled = !local; });
+  $("samplingNote").textContent = local
+    ? "Sent to the local worker. A low temperature keeps a summary close to the text."
+    : "The Claude Code path takes no sampling controls — the bridge refuses them "
+      + "rather than dropping them quietly, so they are not sent.";
+}
+
+async function generate(spec) {
+  if (!IS_LOCAL) throw typed("ai_unavailable", "summarizing needs the fused-render app, not an exported copy");
+  const id = P.raw("model");
+  const local = isLocalModel(id);
+
+  const opts = { model: id };
+  if (spec.system) opts.systemPrompt = spec.system;
+  if (local) {
+    /* Local only. On the CLI path the bridge answers 400 for each of these
+       rather than ignoring them, so they are branched, not defaulted. */
+    opts.temperature = P.num("temp");
+    opts.maxTokens = spec.maxTokens || P.int("maxtok");
+  } else {
+    /* The CLI path's one knob. A summary is not a reasoning task, so low —
+       except a long detailed summary, which is worth thinking about. */
+    opts.effort = P.get("len") === "detailed" ? "medium" : "low";
+  }
+  if (spec.onChunk) opts.onChunk = spec.onChunk;
+
+  let clock = performance.now();
+  let cold = false;
+  let res;
+  try {
+    res = await fused.ai(spec.prompt, opts);
+  } catch (err) {
+    /* Text fails FAST on a cold local model, having already started the load,
+       and hands back the job. Watch it, then retry exactly ONCE — a second
+       `model_loading` means something evicted the model between the two calls,
+       and looping would hide that. `model_loading` never fires on the CLI path,
+       so this costs nothing there. */
+    if (err.type !== "model_loading") throw err;
+    cold = true;
+    if (spec.onLoading) spec.onLoading(null);
+    await fused.watchJob(err.jobId).watch((job) => { if (spec.onLoading) spec.onLoading(job); });
+    if (spec.onLoading) spec.onLoading(undefined);
+    clock = performance.now();   // a download is not generation; keep it out of tok/s
+    res = await fused.ai(spec.prompt, opts);
+  } finally {
+    if (cold) refreshRuntime();
+  }
+
+  /* `usage` is not the same shape on the two paths. Measured against the
+     running server rather than read off a doc: the local relay returned
+     `{input_tokens, output_tokens, seconds}` and the CLI `{input_tokens,
+     output_tokens}` with no `seconds`. `output_tokens` is the one field both
+     have carried in every observation, so it is the only one read here — and
+     the page keeps its OWN clock regardless, because `seconds` is absent on a
+     cancelled run, which is exactly the run a reader is most likely to stop. */
+  const usage = res.usage || {};
+  return {
+    text: res.text || "",
+    model: res.model || id,
+    tokens: typeof usage.output_tokens === "number" ? usage.output_tokens : null,
+    seconds: (performance.now() - clock) / 1000,
+    cold: cold,
+  };
+}
+
+async function stopGenerating() {
+  stopRequested = true;
+  try {
+    /* Argless: the default capability IS text-generation. Resolving `false`
+       (nothing was generating) is not an error — a Stop pressed as the last
+       token lands is a no-op. */
+    await fused.ai.cancel();
+  } catch (err) {
+    routeError(err, "run");
+  }
+}
+
+/* ===================================================================
+   The prompts
+
+   Kept here, together and in plain sight, because they ARE the app: everything
+   else is plumbing around three strings.
+   =================================================================== */
+const LENGTHS = {
+  brief: { label: "Brief", ask: "about 40 words", tokens: 260 },
+  short: { label: "Short", ask: "about 120 words", tokens: 480 },
+  medium: { label: "Medium", ask: "about 300 words", tokens: 900 },
+  detailed: { label: "Detailed", ask: "about 700 words, covering every distinct point", tokens: 1800 },
+};
+const FORMATS = {
+  bullets: { label: "Bullets", ask: "a flat list of markdown bullets, one idea each" },
+  prose: { label: "Prose", ask: "flowing prose paragraphs, no bullets and no headings" },
+  outline: { label: "Outline", ask: "a nested markdown outline under short bold headings" },
+  tldr: { label: "TL;DR", ask: "one tight paragraph, then a final line beginning **Takeaway:**" },
+  keypoints: { label: "Key points", ask: "a numbered list of the key points, most important first" },
+  actions: {
+    label: "Actions", ask: "a markdown list of the concrete decisions and action items, each "
+      + "starting with a verb and naming an owner where the text names one. If the text "
+      + "contains no decisions or actions, say exactly that in one line instead of inventing any",
+  },
+  questions: {
+    label: "Open questions", ask: "a markdown list of the questions the text leaves open or "
+      + "explicitly defers. If it leaves none, say exactly that in one line",
+  },
+};
+
+/* The rules that make a summary a summary rather than an essay about one. The
+   "no preamble" line earns its place: without it most models open with "Here is
+   a summary of the text", which is a line the reader has to skip every time. */
+const GROUND_RULES =
+  "You are a careful summarizer. Work only from the text you are given: never add "
+  + "facts, context, opinions or conclusions that are not in it, and never guess at "
+  + "what it 'probably' means. Keep the author's own terminology, names and figures "
+  + "exactly as written. If the text is truncated, incoherent or too short to "
+  + "summarize, say so in one line instead of padding. Reply with the summary itself "
+  + "and nothing else — no preamble, no 'here is', no closing remark about the task.";
+
+const DIGEST_RULES =
+  "You are compressing one section of a longer document so that another pass can "
+  + "summarize the whole. Work only from the section you are given. Keep every "
+  + "distinct claim, decision, name, figure and date, in the section's own words, as "
+  + "short markdown bullets. Do not summarize the document as a whole, do not "
+  + "speculate about the sections you cannot see, and write no preamble.";
+
+/* What the reader asked for, as one sentence the model can follow. */
+function instruction() {
+  const len = LENGTHS[P.get("len")] || LENGTHS.short;
+  const fmt = FORMATS[P.get("fmt")] || FORMATS.bullets;
+  /* Two sentences, not one clause: several shapes end in a conditional ("if the
+     text contains none, say so"), and appending a length to that produced
+     "…instead of inventing any, about 700 words." — a sentence whose two halves
+     argue with each other. */
+  let ask = "Write " + fmt.ask + ". Aim for " + len.ask + ".";
+  const focus = P.get("focus").trim();
+  if (focus) {
+    /* The reader's own words, quoted and subordinated to the ground rules above
+       — a focus is a lens on the text, not licence to answer from outside it. */
+    ask += " Focus specifically on: " + focus
+      + ". Cover only what the text says about that; if it says nothing, say so.";
+  }
+  return ask;
+}
+
+const singlePrompt = (text) =>
+  instruction() + "\n\n--- TEXT ---\n" + text;
+
+const digestPrompt = (chunk, i, n) =>
+  "Section " + i + " of " + n + " of a longer document.\n\n--- SECTION ---\n" + chunk;
+
+const reducePrompt = (digests) =>
+  "Below are ordered digests of the " + digests.length + " sections of one document, "
+  + "in the document's own order. Write the summary of the WHOLE document from them: "
+  + "merge what repeats, keep what only appears once, and never mention sections, "
+  + "digests or that the document was split.\n\n"
+  + instruction() + "\n\n--- SECTION DIGESTS ---\n"
+  + digests.map((d, i) => "## Section " + (i + 1) + "\n" + d).join("\n\n");
+
+/* ===================================================================
+   The run: one pass for text that fits, map → reduce for text that does not
+   =================================================================== */
+async function summarize() {
+  const text = $("source").value;
+  if (!text.trim() || busy) return;
+
+  stopRequested = false;
+  setBusy(true);
+  openSaved = null;          // a fresh summary is not the file that was open
+  savedMtime = null;
+  if (P.raw("saved")) P.set("saved", "");
+
+  const out = $("out");
+  out.innerHTML = "";
+  const progress = el("div", "progress");
+  const progressText = el("span", null, "measuring the text…");
+  const track = el("div", "track indeterminate");
+  track.appendChild(el("i"));
+  progress.appendChild(progressText);
+  progress.appendChild(track);
+  out.appendChild(progress);
+
+  const started = performance.now();
+  let tokens = 0;
+  let model = P.raw("model");
+  let cold = false;
+  const digests = [];
+
+  try {
+    /* One round trip decides both questions — how long is this, and where do the
+       section boundaries fall — so the header and the split cannot disagree. */
+    const cut = await fused.runPython("./source.py", {
+      action: "chunk", text: text, budget: P.get("budget"),
+    });
+    paintSourceStat();
+    if (!cut.chunks.length) throw typed("bad_request", "there is nothing to summarize");
+    if (cut.dropped) {
+      notice("This text is " + num(cut.total + cut.dropped) + " sections long and only the "
+        + "first " + num(cut.total) + " were summarized — raise the section size in "
+        + "Settings, or summarize the rest separately.", "warn", "dropped");
+    } else {
+      notice("", "warn", "dropped");
+    }
+
+    let sectionsBox = null, sectionsWrap = null;
+    if (cut.chunks.length > 1) {
+      sectionsBox = el("details", "sections live");
+      sectionsBox.open = true;
+      sectionsBox.appendChild(el("summary", null,
+        "section digests (" + cut.chunks.length + ")"));
+      sectionsWrap = el("div");
+      sectionsBox.appendChild(sectionsWrap);
+      out.appendChild(sectionsBox);
+    }
+
+    const body = el("div", "md");
+    out.appendChild(body);
+
+    /* ---- map: one call per section, strictly sequential ----
+       Skipped entirely for text that fits in one section: a lone digest pass
+       would spend a whole generation compressing text the final pass is about
+       to read anyway, and lose the author's own words on the way.
+
+       Local generations serialize on one worker with no queue message on their
+       row, so firing these in parallel would read as a single stalled run and
+       finish no sooner. */
+    for (let i = 0; sectionsWrap && i < cut.chunks.length; i++) {
+      if (stopRequested) break;
+      const chunk = cut.chunks[i];
+      progressText.textContent = "section " + chunk.index + " of " + cut.chunks.length
+        + " · " + num(chunk.words) + " words";
+      track.className = "track";
+      track.firstChild.style.width = Math.round((i / cut.chunks.length) * 100) + "%";
+
+      const node = el("div", "section");
+      node.appendChild(el("div", "n", "Section " + chunk.index));
+      const bubble = el("div", "md");
+      node.appendChild(bubble);
+      sectionsWrap.appendChild(node);
+
+      let acc = "";
+      const res = await generate({
+        prompt: digestPrompt(chunk.text, chunk.index, cut.chunks.length),
+        system: DIGEST_RULES,
+        /* Digests are deliberately capped well below the final answer's budget:
+           they all have to fit in ONE reduce prompt afterwards, and a small
+           local model's context is the binding constraint. */
+        maxTokens: Math.min(P.int("maxtok"), 512),
+        onChunk: (piece) => { acc += piece; renderInto(bubble, acc, true); },
+        onLoading: (job) => paintLoading(progressText, track, job),
+      });
+      renderInto(bubble, res.text || acc, false);
+      /* Thinking goes no further than the pane it was rendered in. It was the
+         model's workings on the way to the digest, not the digest, and left in
+         it would be most of the reduce prompt on a reasoning model. */
+      /* A digest that is ALL unclosed thinking has no digest in it — the section
+         ran out of tokens mid-thought. Passing the monologue on would put
+         exactly what this strip exists to remove into the reduce prompt, so the
+         section is marked instead: the reduce pass is told the gap is there
+         rather than being handed a gap it cannot see. */
+      const answer = splitThinking(res.text || acc).answer.trim();
+      digests.push(answer || "(this section produced no digest — it ran out of "
+        + "tokens before finishing. Nothing from it is summarized below.)");
+      tokens += res.tokens || 0;
+      model = res.model;
+      cold = cold || res.cold;
+    }
+
+    if (sectionsBox) {
+      sectionsBox.className = "sections";
+      sectionsBox.open = false;
+    }
+
+    /* ---- reduce (or the single pass) ---- */
+    let summary = "";
+    if (stopRequested && cut.chunks.length > 1) {
+      /* Stopped mid-map. The digests that finished are real work the reader
+         watched arrive, so they are kept and shown — but they are not a summary
+         of the document, and this does not pretend otherwise. */
+      if (sectionsBox) sectionsBox.open = true;
+      progress.remove();
+      result = {
+        summary: "", sections: digests,
+        meta: { model, tokens, seconds: (performance.now() - started) / 1000,
+                stopped: true, partial: true, sections: digests.length,
+                totalSections: cut.chunks.length, cold: cold, srcWords: cut.words },
+      };
+      body.remove();
+      out.appendChild(el("div", "meta", metaLine(result.meta)));
+      return;
+    }
+
+    const single = cut.chunks.length === 1;
+    progressText.textContent = single
+      ? "summarizing · " + num(cut.words) + " words"
+      : "combining " + digests.length + " section digests";
+    track.className = "track indeterminate";
+
+    const finalRes = await generate({
+      prompt: single ? singlePrompt(cut.chunks[0].text) : reducePrompt(digests),
+      system: GROUND_RULES,
+      /* The length the reader picked owns the budget until they move the slider
+         themselves: a Detailed summary held to the default 1024 stops
+         mid-sentence, and on a reasoning model part of that went on thinking.
+         Once `maxtok` IS in the URL it is a real ceiling and wins. */
+      maxTokens: P.raw("maxtok")
+        ? Math.min(P.int("maxtok"), (LENGTHS[P.get("len")] || LENGTHS.short).tokens)
+        : (LENGTHS[P.get("len")] || LENGTHS.short).tokens,
+      onChunk: (piece) => { summary += piece; renderInto(body, summary, true); },
+      onLoading: (job) => paintLoading(progressText, track, job),
+    });
+    progress.remove();
+    summary = finalRes.text || summary;
+    renderInto(body, summary, false);
+    tokens += finalRes.tokens || 0;
+    model = finalRes.model;
+    cold = cold || finalRes.cold;
+
+    result = {
+      summary: summary,
+      sections: digests,
+      meta: {
+        model: model, tokens: tokens || null,
+        seconds: (performance.now() - started) / 1000,
+        /* Stop RESOLVES on the text path with the partial text — there is no
+           `cancelled` rejection at all — so a stopped summary is KEPT and only
+           the meta line says it is short. */
+        stopped: stopRequested, partial: false,
+        sections: single ? 0 : digests.length,
+        totalSections: single ? 0 : cut.chunks.length,
+        cold: cold, srcWords: cut.words, sumWords: words(summary),
+      },
+    };
+    out.appendChild(el("div", "meta", metaLine(result.meta)));
+  } catch (err) {
+    progress.remove();
+    /* A run that produced digests and then died still produced them. Kept, with
+       a meta line that says the summary is missing, rather than thrown away to
+       show an error in their place. */
+    if (digests.length) {
+      result = {
+        summary: "", sections: digests,
+        meta: { model, tokens: tokens || null, seconds: (performance.now() - started) / 1000,
+                failed: true, partial: true, sections: digests.length, cold: cold },
+      };
+      out.appendChild(el("div", "meta", metaLine(result.meta)));
+    } else {
+      result = null;
+      paintOut();
+    }
+    routeError(err, "run");
+  } finally {
+    stopRequested = false;
+    setBusy(false);
+    saveSession();
+  }
+}
+
+function paintLoading(textNode, track, job) {
+  if (job === undefined) { track.className = "track indeterminate"; return; }
+  const label = labelFor(P.raw("model"));
+  if (job && job.total) {
+    track.className = "track";
+    track.firstChild.style.width = Math.round((job.done / job.total) * 100) + "%";
+    /* A model download's ticks are BYTES, not tokens and not sections. */
+    textNode.textContent = "loading " + label + " — " + bytes(job.done) + " / " + bytes(job.total);
+  } else {
+    track.className = "track indeterminate";
+    textNode.textContent = "loading " + label + "…";
+  }
+}
+
+function metaLine(meta) {
+  if (!meta) return "";
+  const bits = [labelFor(meta.model)];
+  if (meta.sections) {
+    bits.push(meta.totalSections && meta.sections < meta.totalSections
+      ? meta.sections + " of " + meta.totalSections + " sections"
+      : meta.sections + " sections");
+  }
+  if (typeof meta.tokens === "number" && meta.tokens) bits.push(num(meta.tokens) + " tokens");
+  if (typeof meta.seconds === "number") bits.push(meta.seconds.toFixed(1) + " s");
+  if (meta.tokens && meta.seconds > 0.05) bits.push((meta.tokens / meta.seconds).toFixed(1) + " tok/s");
+  if (meta.srcWords && meta.sumWords) {
+    bits.push(num(meta.srcWords) + " → " + num(meta.sumWords) + " words ("
+      + Math.round((1 - meta.sumWords / meta.srcWords) * 100) + "% shorter)");
+  }
+  if (meta.stopped) bits.push(meta.partial ? "stopped before the sections were combined" : "stopped");
+  if (meta.failed) bits.push("the run failed — only the section digests are kept");
+  if (meta.cold) {
+    const size = (catalogModels.find((m) => m.id === meta.model) || {}).size_gb;
+    bits.push("after a " + (size ? gb(size) : "cold") + " load");
+  }
+  return bits.join(" · ");
+}
+
+/* ===================================================================
+   Thinking blocks
+   =================================================================== */
+function splitThinking(text) {
+  const open = text.indexOf("<think>");
+  if (open === -1) {
+    /* Some runners never emit the opening tag — the reasoning IS the start of
+       the stream and only its end is marked. Until "</think>" shows up there is
+       no way to tell that apart from a model with no thinking at all, so it
+       renders as a plain answer until then. */
+    const bare = text.indexOf("</think>");
+    if (bare === -1) return { thinking: "", answer: text };
+    return { thinking: text.slice(0, bare), answer: text.slice(bare + 8).trim() };
+  }
+  const close = text.indexOf("</think>", open);
+  if (close === -1) return { thinking: text.slice(open + 7), answer: text.slice(0, open) };
+  return {
+    thinking: text.slice(open + 7, close),
+    answer: (text.slice(0, open) + text.slice(close + 8)).trim(),
+  };
+}
+
+/* ===================================================================
+   Markdown — enough of it for what a model emits, and no more. Runs on
+   every streamed chunk, so it stays one pass over the lines with no
+   library behind it (there is no network here anyway).
+   =================================================================== */
+const ESCAPES = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" };
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ESCAPES[c]);
+
+function inlineMd(src) {
+  // Code spans come out first so no emphasis rule can reach inside them.
+  const spans = [];
+  let s = String(src).replace(/`([^`\n]+)`/g, (_, code) => {
+    spans.push(code);
+    return "\u0000" + (spans.length - 1) + "\u0000";
+  });
+  s = esc(s)
+    .replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g,
+             '<a href="$2" target="_blank" rel="noreferrer">$1</a>')
+    .replace(/(\*\*|__)(?=\S)([\s\S]*?\S)\1/g, "<strong>$2</strong>")
+    .replace(/(^|[\s(])([*_])(?=\S)([^*_\n]*?\S)\2/g, "$1<em>$3</em>")
+    .replace(/~~(?=\S)([\s\S]*?\S)~~/g, "<del>$1</del>");
+  return s.replace(/\u0000(\d+)\u0000/g, (_, i) => "<code>" + esc(spans[+i]) + "</code>");
+}
+
+const BLOCK_START = /^\s*(?:```|#{1,6}\s|>|[-*+]\s|\d+[.)]\s|(?:[-*_]\s*){3,}$)/;
+const LIST_ITEM = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/;
+const TABLE_RULE = /^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$/;
+const cells = (line) => line.replace(/^\s*\|/, "").replace(/\|\s*$/, "").split("|").map((c) => c.trim());
+
+function mdHtml(src) {
+  const lines = String(src || "").replace(/\r\n?/g, "\n").split("\n");
+  const out = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    // fenced code — an unterminated fence is normal mid-stream, so EOF closes it
+    const fence = /^\s*```(.*)$/.exec(line);
+    if (fence) {
+      const lang = fence[1].trim();
+      const buf = [];
+      i++;
+      while (i < lines.length && !/^\s*```/.test(lines[i])) buf.push(lines[i++]);
+      i++;
+      out.push("<pre" + (lang ? ' data-lang="' + esc(lang) + '"' : "")
+        + "><code>" + esc(buf.join("\n")) + "</code></pre>");
+      continue;
+    }
+
+    if (!line.trim()) { i++; continue; }
+
+    const head = /^\s*(#{1,6})\s+(.*?)\s*#*$/.exec(line);
+    if (head) {
+      const n = head[1].length;
+      out.push("<h" + n + ">" + inlineMd(head[2]) + "</h" + n + ">");
+      i++;
+      continue;
+    }
+
+    if (/^\s*(?:[-*_]\s*){3,}$/.test(line)) { out.push("<hr />"); i++; continue; }
+
+    // pipe table — only when the row under the header is the |---|---| rule
+    if (line.includes("|") && i + 1 < lines.length
+        && lines[i + 1].includes("-") && TABLE_RULE.test(lines[i + 1])) {
+      const heads = cells(line);
+      i += 2;
+      const rows = [];
+      while (i < lines.length && lines[i].includes("|") && lines[i].trim()) rows.push(cells(lines[i++]));
+      out.push("<table><thead><tr>"
+        + heads.map((c) => "<th>" + inlineMd(c) + "</th>").join("")
+        + "</tr></thead><tbody>"
+        + rows.map((r) => "<tr>" + heads.map((_, c) => "<td>" + inlineMd(r[c] || "") + "</td>").join("") + "</tr>").join("")
+        + "</tbody></table>");
+      continue;
+    }
+
+    if (/^\s*>/.test(line)) {
+      const buf = [];
+      while (i < lines.length && (/^\s*>/.test(lines[i]) || (buf.length && lines[i].trim()))) {
+        buf.push(lines[i++].replace(/^\s*>\s?/, ""));
+      }
+      out.push("<blockquote>" + mdHtml(buf.join("\n")) + "</blockquote>");
+      continue;
+    }
+
+    const item = LIST_ITEM.exec(line);
+    if (item) {
+      const ordered = /\d/.test(item[2]);
+      const base = item[1].length;
+      const parts = [];
+      while (i < lines.length) {
+        const next = LIST_ITEM.exec(lines[i]);
+        if (next && next[1].length <= base) {
+          if (/\d/.test(next[2]) !== ordered) break;   // a different list starts here
+          parts.push([next[3]]);
+          i++;
+          continue;
+        }
+        // deeper indent, or a plain wrapped line: it belongs to the open item
+        if (parts.length && lines[i].trim() && (next || /^\s\s+\S/.test(lines[i]))) {
+          parts[parts.length - 1].push(lines[i].slice(Math.min(base + 2, lines[i].search(/\S/))));
+          i++;
+          continue;
+        }
+        break;
+      }
+      const tag = ordered ? "ol" : "ul";
+      const start = ordered ? parseInt(item[2], 10) : 1;
+      out.push("<" + tag + (start > 1 ? ' start="' + start + '"' : "") + ">"
+        + parts.map((p) => "<li>" + (p.length > 1 ? mdHtml(p.join("\n")) : inlineMd(p[0])) + "</li>").join("")
+        + "</" + tag + ">");
+      continue;
+    }
+
+    // paragraph — a single newline inside one stays a line break, because a
+    // model's own line structure is often the point
+    const para = [];
+    while (i < lines.length && lines[i].trim() && !BLOCK_START.test(lines[i])) para.push(lines[i++]);
+    out.push("<p>" + para.map(inlineMd).join("<br />") + "</p>");
+  }
+  return out.join("");
+}
+
+/* One `<li>` whose only child is a `<p>` reads as a stray blank line. */
+function mdInto(node, text) {
+  node.innerHTML = mdHtml(text).replace(/<li><p>([\s\S]*?)<\/p>(?=<\/li>|<[uo]l)/g, "<li>$1");
+  return node;
+}
+
+function renderInto(into, text, streaming) {
+  into.innerHTML = "";
+  const parts = splitThinking(text);
+  const thinking = parts.thinking.trim();
+  const answer = parts.answer.trim();
+  const live = streaming && !!thinking && !answer;
+
+  if (thinking) {
+    if (P.get("think") === "1") {
+      const box = el("details", "think" + (live ? " live" : ""));
+      /* Open while it is being written, shut once the answer starts — unless the
+         reader has said otherwise on this node, which wins either way. */
+      const choice = into.dataset.thinkOpen;
+      box.open = choice === undefined ? live : choice === "1";
+      const n = thinking.split(/\s+/).length;
+      const summary = el("summary", null,
+        live ? "thinking…" : "thought for " + n + " word" + (n === 1 ? "" : "s"));
+      /* Recorded on the click, not on `toggle`: a programmatic open above fires
+         `toggle` too, and would forge a choice the reader never made. */
+      summary.addEventListener("click", () => { into.dataset.thinkOpen = box.open ? "0" : "1"; });
+      box.appendChild(summary);
+      box.appendChild(mdInto(el("div", "body md"), thinking));
+      into.appendChild(box);
+    } else {
+      into.appendChild(mdInto(el("div", "think-inline md"), thinking));
+    }
+  }
+
+  const body = mdInto(el("div", "md"), parts.answer);
+  into.appendChild(body);
+  if (streaming) {
+    const tail = live
+      ? into.querySelector("details.think .md > :last-child, .think-inline > :last-child")
+      : body.lastElementChild;
+    (tail || body).classList.add("cursor");
+  }
+}
+
+/* ===================================================================
+   The two panes
+   =================================================================== */
+function paintSourceStat() {
+  const text = $("source").value;
+  if (!text.trim()) { $("srcStat").textContent = ""; return; }
+  const w = words(text);
+  const t = estTokens(text);
+  const budget = P.int("budget");
+  const sections = Math.max(1, Math.ceil(t / budget));
+  $("srcStat").textContent = num(w) + " words · ~" + num(t) + " tokens"
+    + (sections > 1 ? " · " + sections + " sections" : "");
+}
+
+function paintOut() {
+  const out = $("out");
+  /* No `busy` guard here. `draw()` is the only caller that can fire mid-stream
+     and it guards itself; the callers that run WHILE busy — a failed run
+     clearing the dead streaming skeleton, a freshly loaded file clearing the
+     previous summary — are the ones that need this repaint most. */
+  out.innerHTML = "";
+  if (!result || (!result.summary && !(result.sections || []).length)) {
+    const empty = el("div", "empty");
+    empty.appendChild(el("b", null, "Nothing summarized yet"));
+    empty.appendChild(document.createTextNode($("source").value.trim()
+      ? "Pick a length and a shape, then press Summarize."
+      : "Paste some text, load a file, or drop one on the page."));
+    out.appendChild(empty);
+    return;
+  }
+  if ((result.sections || []).length) {
+    const box = el("details", "sections");
+    box.open = !result.summary;
+    box.appendChild(el("summary", null, "section digests (" + result.sections.length + ")"));
+    result.sections.forEach((d, i) => {
+      const node = el("div", "section");
+      node.appendChild(el("div", "n", "Section " + (i + 1)));
+      node.appendChild(mdInto(el("div", "md"), d));
+      box.appendChild(node);
+    });
+    out.appendChild(box);
+  }
+  if (result.summary) out.appendChild(mdInto(el("div", "md"), result.summary));
+  if (result.meta) out.appendChild(el("div", "meta", metaLine(result.meta)));
+}
+
+/* ===================================================================
+   Loading a source file
+   =================================================================== */
+async function loadSource() {
+  const path = $("src").value.trim();
+  if (!path) return;
+  try {
+    setBusy(true);
+    notice("", "error", "load-src");
+    const data = await fused.runPython("./source.py", { action: "load", path: path });
+    $("source").value = data.text;
+    paintSourceStat();
+    result = null;
+    openSaved = null;
+    savedMtime = null;
+    paintOut();
+    $("srcNote").textContent = data.name + " · " + bytes(data.bytes) + " · "
+      + num(data.words) + " words";
+    if (data.truncated) {
+      notice("Only the first " + bytes(data.read_bytes) + " of " + bytes(data.bytes)
+        + " was read — the rest of " + data.name + " is not in this summary.", "warn", "truncated");
+    } else {
+      notice("", "warn", "truncated");
+    }
+    if (path !== P.raw("src")) P.set("src", path);
+    saveSession();
+  } catch (err) {
+    routeError(err, "load-src");
+  } finally {
+    setBusy(false);
+  }
+}
+
+/* Drop a file anywhere on the page. The browser gives the page the file's TEXT,
+   not its path, so this is a paste with a nicer gesture — the sidebar's Load is
+   still the way to name a path the app can remember in the URL. */
+function wireDrop() {
+  const stop = (e) => { e.preventDefault(); e.stopPropagation(); };
+  ["dragenter", "dragover"].forEach((name) => document.addEventListener(name, (e) => {
+    stop(e);
+    document.body.classList.add("dragging");
+  }));
+  ["dragleave", "drop"].forEach((name) => document.addEventListener(name, (e) => {
+    stop(e);
+    document.body.classList.remove("dragging");
+  }));
+  document.addEventListener("drop", async (e) => {
+    const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      if (text.slice(0, 4096).includes("\u0000")) {
+        notice(file.name + " looks binary, not text.", "error", "drop");
+        return;
+      }
+      notice("", "error", "drop");
+      $("source").value = text;
+      $("srcNote").textContent = file.name + " · " + bytes(file.size) + " · dropped";
+      result = null;
+      openSaved = null;
+      savedMtime = null;
+      paintSourceStat();
+      paintOut();
+      syncEnabled();
+      saveSession();
+    } catch (err) {
+      notice("Could not read " + file.name + ": " + err.message, "error", "drop");
+    }
+  });
+}
+
+/* ===================================================================
+   The library: ./summaries/*.md
+   =================================================================== */
+function slugFor(text) {
+  const slug = text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
+  return slug || "summary";
+}
+function stamp() {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, "0");
+  return d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate())
+    + "-" + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds());
+}
+function isoish() {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, "0");
+  return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate())
+    + " " + p(d.getHours()) + ":" + p(d.getMinutes()) + ":" + p(d.getSeconds());
+}
+
+/* The saved file is markdown first: a `---` header this app writes, then the
+   summary itself. It opens and reads correctly in any markdown viewer with this
+   app nowhere in the picture, which is the point — the summary outlives the app.
+   `:` in a value would break the header's own parser, so values are flattened. */
+function headerValue(text) {
+  return String(text == null ? "" : text).replace(/[\r\n]+/g, " ").replace(/:/g, " -").trim();
+}
+
+function fileFor() {
+  const meta = (result && result.meta) || {};
+  const head = [
+    ["saved", isoish()],
+    ["model", meta.model || P.raw("model")],
+    ["length", (LENGTHS[P.get("len")] || {}).label || P.get("len")],
+    ["format", (FORMATS[P.get("fmt")] || {}).label || P.get("fmt")],
+    ["focus", P.get("focus")],
+    ["source", $("src").value.trim() || "pasted text"],
+    ["source_words", meta.srcWords || words($("source").value)],
+    ["summary_words", meta.sumWords || words((result && result.summary) || "")],
+    ["sections", meta.sections || 0],
+    ["seconds", typeof meta.seconds === "number" ? meta.seconds.toFixed(1) : ""],
+    ["tokens", meta.tokens || ""],
+  ];
+  const body = [
+    "---",
+    ...head.map(([k, v]) => k + ": " + headerValue(v)),
+    "---",
+    "",
+    (result && result.summary ? result.summary.trim() : ""),
+    "",
+  ];
+  /* The section digests ride along under a heading. They are the only record of
+     what each part of a long document actually said, and a reader who wants to
+     check the summary against the document goes to them first. */
+  if (result && (result.sections || []).length) {
+    body.push("", "## Section digests", "");
+    result.sections.forEach((d, i) => body.push("### Section " + (i + 1), "", d.trim(), ""));
+  }
+  return body.join("\n");
+}
+
+async function saveSummary() {
+  if (!result || !(result.summary || (result.sections || []).length)) return;
+  const content = fileFor();
+  try {
+    if (openSaved) {
+      /* Re-saving the file that is open: armed with the mtime it was read at, so
+         an edit from elsewhere is a conflict rather than a silent clobber. */
+      /* The lock is OMITTED, never passed as null. `savedMtime` is deliberately
+         null in two places — after a session restore, and after a conflict the
+         reader chose to overwrite — and both mean "write unconditionally", which
+         the contract spells as leaving the field out. An explicit
+         `expectedMtime: null` is a different thing to ask, and if the bridge
+         validates the field rather than ignoring a null it fails every re-save
+         on the commonest path there is. */
+      const lock = savedMtime != null ? { expectedMtime: savedMtime } : undefined;
+      const fresh = await fused.writeFile(await stored(openSaved), content, lock);
+      savedMtime = fresh.mtime;
+      notice("Saved over " + openSaved + ".", "info", "save");
+    } else {
+      const first = (result.summary || result.sections[0] || "").split("\n")
+        .map((l) => l.replace(/^[#*\->+\s]+/, "").trim()).find((l) => l) || "";
+      const base = slugFor(first.slice(0, 60));
+      const name = stamp() + "-" + base + ".md";
+      /* `create: true` rather than stat-then-write: a stat that fails for any
+         reason other than absence would otherwise read as "go ahead". */
+      const fresh = await fused.writeFile(await stored(name), content, { create: true });
+      openSaved = name;
+      savedMtime = fresh.mtime;
+      notice("Saved as " + name + ".", "info", "save");
+      P.set("saved", name);
+    }
+    await libraryLoad();
+  } catch (err) {
+    if (err.type === "conflict") {
+      notice(openSaved + " changed on disk since it was opened. Press Save again to "
+        + "overwrite it, or open it from the list to see the newer version.", "error", "save");
+      savedMtime = null;   // the next Save is unconditional, which is what was offered
+    } else if (err.type === "exists") {
+      notice("A summary with that name already exists — try Save again.", "error", "save");
+    } else if (err.type === "readonly") {
+      notice("This app folder is read-only, so summaries cannot be saved here.", "error", "save");
+    } else {
+      routeError(err, "save");
+    }
+  }
+}
+
+/* The autosave: whatever is on screen right now, so closing the tab mid-thought
+   is not how yesterday's work is lost. A dotfile, so `saved.py` skips it — it is
+   the page's bookkeeping, not a saved summary. */
+const SESSION = ".session.json";
+let sessionTimer = null;
+
+function sessionRecord() {
+  return JSON.stringify({
+    version: 1,
+    saved: isoish(),
+    src: $("src").value,
+    source: $("source").value,
+    result: result,
+    openSaved: openSaved,
+  }, null, 1);
+}
+
+function saveSession() {
+  clearTimeout(sessionTimer);
+  sessionTimer = setTimeout(() => {
+    stored(SESSION).then((p) => fused.writeFile(p, sessionRecord())).catch(() => {
+      /* A folder that cannot be written to is not worth a banner on every
+         keystroke — Save says so properly when the reader asks for it. */
+    });
+  }, 900);
+}
+
+async function restoreSession() {
+  let record;
+  try {
+    record = JSON.parse(await fused.readFile(await stored(SESSION)));
+  } catch (err) {
+    return;   // no session yet, or it is unreadable — a fresh page is the answer
+  }
+  if (!record || record.version !== 1) return;
+  if ($("source").value.trim() || (result && result.summary)) return;   // the URL already won
+  if (record.src && !$("src").value) $("src").value = record.src;
+  $("source").value = record.source || "";
+  result = record.result || null;
+  openSaved = record.openSaved || null;
+  savedMtime = null;   // unknown now: the next Save re-arms it via `conflict`
+  paintSourceStat();
+  paintOut();
+  syncEnabled();
+}
+
+async function openSummary(name) {
+  try {
+    const st = await fused.stat(await stored(name));
+    const data = await fused.runPython("./saved.py", { action: "read", name: name });
+    openSaved = name;
+    savedMtime = st.mtime;
+    const head = data.head || {};
+    /* `(?:^|\n)` on both, not `\n`: the heading match consumes the blank line
+       after it, so the FIRST `### Section 1` sits at position 0 of what is left
+       and a leading-newline-only pattern silently keeps its own heading inside
+       the digest. A summary-less file (a run that failed after the digests) puts
+       `## Section digests` at position 0 for the same reason. */
+    const split = data.body.split(/(?:^|\n)##\s+Section digests\s*\n/);
+    const sections = split.length > 1
+      ? split[1].split(/(?:^|\n)###\s+Section \d+\s*\n/).map((s) => s.trim()).filter(Boolean)
+      : [];
+    result = {
+      summary: split[0].trim(),
+      sections: sections,
+      meta: {
+        model: head.model || "",
+        sections: parseInt(head.sections, 10) || 0,
+        tokens: parseInt(head.tokens, 10) || null,
+        seconds: head.seconds ? parseFloat(head.seconds) : undefined,
+        srcWords: parseInt(head.source_words, 10) || 0,
+        sumWords: parseInt(head.summary_words, 10) || 0,
+      },
+    };
+    paintOut();
+    syncEnabled();
+    markOpen();
+  } catch (err) {
+    routeError(err, "open");
+    openSaved = null;
+  }
+}
+
+async function libraryLoad() {
+  const find = P.get("find");
+  shownFind = find;
+  try {
+    const data = await fused.runPython("./saved.py", { action: "list", find: find });
+    paintLibrary(data);
+  } catch (err) {
+    $("libList").innerHTML = "";
+    routeError(err, "library");
+  }
+}
+
+function paintLibrary(data) {
+  const list = $("libList");
+  list.innerHTML = "";
+  $("libDir").textContent = data.dir ? "Saved in " + data.dir : "";
+  $("libCount").textContent = data.total
+    ? data.total + " summar" + (data.total === 1 ? "y" : "ies")
+      + (data.bytes ? " · " + bytes(data.bytes) : "")
+    : "";
+
+  if (!data.summaries.length) {
+    const empty = el("div", "empty small");
+    empty.appendChild(el("b", null, P.get("find") ? "No match" : "Nothing saved yet"));
+    empty.appendChild(document.createTextNode(P.get("find")
+      ? "No saved summary mentions that."
+      : "Press Save on a summary and it lands here as markdown."));
+    list.appendChild(empty);
+    return;
+  }
+
+  data.summaries.forEach((row) => {
+    const item = el("div", "item" + (row.ok ? "" : " bad"));
+    item.dataset.name = row.name;
+    if (!row.ok) {
+      item.appendChild(el("div", "title", row.name));
+      item.appendChild(el("div", "sub", "unreadable — " + row.error));
+      list.appendChild(item);
+      return;
+    }
+    item.appendChild(el("div", "title", row.preview || row.name));
+    const sub = [row.saved ? row.saved.slice(0, 16) : "", row.format, row.model, row.source]
+      .map((s) => String(s || "").trim()).filter(Boolean);
+    item.appendChild(el("div", "sub", sub.join(" · ")));
+    const acts = el("div", "acts");
+    const del = el("button", "btn ghost", "Delete");
+    del.addEventListener("click", (e) => { e.stopPropagation(); deleteSummary(row.name); });
+    acts.appendChild(del);
+    item.appendChild(acts);
+    item.addEventListener("click", () => P.set("saved", row.name));
+    list.appendChild(item);
+  });
+  markOpen();
+}
+
+function markOpen() {
+  $("libList").querySelectorAll(".item").forEach((node) => {
+    if (node.dataset.name === openSaved) node.setAttribute("aria-current", "true");
+    else node.removeAttribute("aria-current");
+  });
+}
+
+async function deleteSummary(name) {
+  try {
+    await fused.runPython("./saved.py", { action: "delete", name: name });
+    if (openSaved === name) {
+      openSaved = null;
+      savedMtime = null;
+      if (P.raw("saved")) P.set("saved", "");
+    }
+    notice("", "error", "open");
+    await libraryLoad();
+  } catch (err) {
+    routeError(err, "library");
+  }
+}
+
+/* ===================================================================
+   draw() — the single re-render path. It reads params and never writes one.
+   =================================================================== */
+function fillSelect(id, table) {
+  const sel = $(id);
+  sel.innerHTML = "";
+  Object.keys(table).forEach((key) => {
+    const opt = el("option", null, table[key].label);
+    opt.value = key;
+    sel.appendChild(opt);
+  });
+}
+
+function draw() {
+  $("model").value = P.raw("model");
+  $("len").value = P.get("len");
+  $("fmt").value = P.get("fmt");
+  $("focus").value = P.get("focus");
+  $("src").value = P.get("src");
+  $("temp").value = P.get("temp");
+  $("maxtok").value = P.get("maxtok");
+  $("budget").value = P.get("budget");
+  $("tempV").textContent = P.num("temp").toFixed(2);
+  $("maxtokV").textContent = P.int("maxtok");
+  $("budgetV").textContent = P.int("budget");
+  $("think").checked = P.get("think") === "1";
+  $("find").value = P.get("find");
+
+  paintSourceStat();
+  if (!busy) paintOut();
+  syncEnabled();
+
+  // Reads, not writes: opening the saved summary the URL names.
+  const wanted = P.raw("saved");
+  if (wanted && wanted !== openSaved) openSummary(wanted);
+  if (!wanted && openSaved) { openSaved = null; savedMtime = null; markOpen(); }
+
+  /* The list is a `runPython` round trip, so it is rebuilt only when the search
+     it was built for actually changed — not on every temperature nudge. Save and
+     Delete call `libraryLoad()` themselves. */
+  if (P.get("find") !== shownFind) libraryLoad(); else markOpen();
+}
+
+/* ---------- wiring: a control writes its param and nothing else ---------- */
+fillSelect("len", LENGTHS);
+fillSelect("fmt", FORMATS);
+
+$("model").addEventListener("change", () => {
+  P.set("model", $("model").value);
+  fillModels();
+  if (runner && runner.available) setStrip("on", stripText());
+});
+$("len").addEventListener("change", () => P.set("len", $("len").value));
+$("fmt").addEventListener("change", () => P.set("fmt", $("fmt").value));
+$("focus").addEventListener("change", () => P.set("focus", $("focus").value));
+["temp", "maxtok", "budget"].forEach((k) => {
+  $(k).addEventListener("input", () => P.set(k, $(k).value));
+});
+$("think").addEventListener("change", () => P.set("think", $("think").checked ? "1" : "0"));
+
+let findTimer = null;
+$("find").addEventListener("input", () => {
+  clearTimeout(findTimer);
+  const value = $("find").value;
+  findTimer = setTimeout(() => P.set("find", value), 200);
+});
+
+$("src").addEventListener("input", syncEnabled);
+$("src").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); loadSource(); } });
+$("load").addEventListener("click", loadSource);
+
+/* The source textarea is NOT a param — it is far too big for a URL — so it is
+   mirrored to the session file instead, debounced. */
+$("source").addEventListener("input", () => {
+  paintSourceStat();
+  syncEnabled();
+  saveSession();
+});
+
+$("run").addEventListener("click", summarize);
+$("stop").addEventListener("click", stopGenerating);
+$("preload").addEventListener("click", preload);
+$("unload").addEventListener("click", unload);
+$("save").addEventListener("click", saveSummary);
+$("copy").addEventListener("click", async () => {
+  if (!result || !result.summary) return;
+  try {
+    await navigator.clipboard.writeText(result.summary);
+    notice("Summary copied.", "info", "copy");
+    setTimeout(() => notice("", "info", "copy"), 1800);
+  } catch (err) {
+    notice("Could not reach the clipboard: " + err.message, "error", "copy");
+  }
+});
+$("clear").addEventListener("click", () => {
+  $("source").value = "";
+  $("srcNote").textContent = "Any text file — notes, a transcript, a log, a markdown doc. "
+    + "Or drop one on the page.";
+  result = null;
+  openSaved = null;
+  savedMtime = null;
+  ["save", "open", "truncated", "dropped", "run", "copy"].forEach((c) => notice("", "info", c));
+  saveSession();
+  if (P.raw("saved")) P.set("saved", ""); else { paintSourceStat(); paintOut(); syncEnabled(); }
+});
+/* ⌘/Ctrl + Enter runs it from anywhere on the page — Enter alone belongs to the
+   textarea the reader is typing a document into. */
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); summarize(); }
+});
+
+wireDrop();
+
+/* ---------- boot ---------- */
+if (!IS_LOCAL) {
+  notice("This is a hosted copy. Summarizing needs the fused-render app — the local "
+    + "model runner and the Claude Code CLI both live on the machine.", "error", "env");
+}
+/* Opened FOR a file (a preview template's read-only param): summarize that. */
+const HANDED = fused.params.get("_file");
+if (HANDED && !P.raw("src")) P.set("src", HANDED);
+
+fused.params.onChange(draw);
+draw();
+if (P.raw("src") && !$("source").value.trim()) loadSource(); else restoreSession();
+refreshRuntime();
+</script>
+</body>
+</html>

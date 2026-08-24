@@ -1,0 +1,5 @@
+*.html.json
+.claude-split.json
+.venv/
+# Saved summaries are NOT kept in this folder — they live in the machine's
+# per-app cache drawer, <fused-render home>/cache/<app slug>/ (saved.py._root).
