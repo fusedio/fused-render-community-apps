@@ -25,6 +25,13 @@ dependencies = [
     "pillow-heif",
     # Offline reverse geocoding for the place names on a photo (lens/metadata.py).
     "reverse_geocoder",
+    # The memory guard reads this machine's RAM and this process's footprint to
+    # decide when an index run must pause (lens/memguard.py). Imported at MODULE
+    # level there, so it is not optional the way torch is — and it used to arrive
+    # transitively through torch/osxphotos, which is exactly how it went missing
+    # when those became extras: the index worker died on
+    # `ModuleNotFoundError: No module named 'psutil'` before it read a file.
+    "psutil",
     # Reads video containers and decodes frames out of them (lens/video.py). The
     # wheel bundles its own ffmpeg libraries, so indexing a movie needs no
     # `ffmpeg` on PATH and spawns no subprocess. Imported lazily, inside the
