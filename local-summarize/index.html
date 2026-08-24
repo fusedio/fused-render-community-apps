@@ -1634,7 +1634,9 @@ async function saveSummary() {
     } else if (err.type === "exists") {
       notice("A summary with that name already exists — try Save again.", "error", "save");
     } else if (err.type === "readonly") {
-      notice("This app folder is read-only, so summaries cannot be saved here.", "error", "save");
+      notice("The summaries folder"
+        + (cacheDir ? " (" + cacheDir + ")" : "")
+        + " is read-only, so summaries cannot be saved there.", "error", "save");
     } else {
       routeError(err, "save");
     }
@@ -1676,8 +1678,12 @@ async function restoreSession() {
     return;   // no session yet, or it is unreadable — a fresh page is the answer
   }
   if (!record || record.version !== 1) return;
-  if ($("source").value.trim() || (result && result.summary)) return;   // the URL already won
-  if (record.src && !$("src").value) $("src").value = record.src;
+  /* The URL already won. `saved` counts even though the `openSummary` it started
+     may not have landed yet — without it a restore races an in-flight open and
+     one of the two wins at random. */
+  if (P.raw("saved") || $("source").value.trim() || (result && result.summary)) return;
+  const src = record.src && !P.raw("src") ? record.src : "";
+  if (src) $("src").value = src;
   $("source").value = record.source || "";
   result = record.result || null;
   openSaved = record.openSaved || null;
@@ -1685,6 +1691,19 @@ async function restoreSession() {
   paintSourceStat();
   paintOut();
   syncEnabled();
+  markOpen();
+  /* `src` and `saved` are params, and `draw()` rebuilds both from params on
+     every later re-render — so restoring them in memory alone lasts exactly
+     until the next settings nudge, which blanks the restored path and turns the
+     next Save into a new file instead of an overwrite. Writing the params AFTER
+     the in-memory state means the re-render `P.set` triggers finds
+     `wanted === openSaved` and leaves the restored summary alone rather than
+     re-reading it from disk. `saved` goes FIRST: if the bridge dispatches
+     `onChange` synchronously, a `src` write on its own would re-render while
+     `saved` is still empty, and that re-render clears `openSaved` — the very bug
+     this is fixing, back again and silent. */
+  if (openSaved) P.set("saved", openSaved);
+  if (src) P.set("src", src);
 }
 
 async function openSummary(name) {
