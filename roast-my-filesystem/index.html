@@ -1,0 +1,1238 @@
+<!DOCTYPE html>
+<html data-fused-theme="shell">
+<head>
+<meta charset="utf-8" />
+<!-- Declares this page a fused app's entry — keep it near the top of <head>
+     (detection reads only the first 4 KiB). -->
+<meta name="fused-app" />
+<title>Roast My Filesystem — SQL over your disk, then a model with opinions</title>
+<style>
+  /* One token set, two :root blocks, no colour literal below this point.
+     The shell writes data-theme before this parses. */
+  :root {
+    color-scheme: dark;
+    --bg: #0d0e11;
+    --stage: #14161b;
+    --panel: #1a1d23;
+    --panel-2: #21252c;
+    --text: #efe9e3;
+    --muted: #9aa0ab;
+    --faint: #6b7280;
+    --line: #2a2e36;
+    --line-soft: #202429;
+    --accent: #ffb347;          /* spotlight */
+    --accent-ink: #1a1206;
+    --accent-soft: #2c2115;
+    --ok: #5cc47f;
+    --err: #f07171;
+    --warn: #e0b050;
+    --hover: #23272e;
+    --shadow: 0 10px 34px rgba(0, 0, 0, 0.4);
+    --glow: radial-gradient(80% 120% at 50% -20%, rgba(255, 179, 71, 0.16), transparent 70%);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --bg: #fbf9f7;
+    --stage: #ffffff;
+    --panel: #ffffff;
+    --panel-2: #f4f2ef;
+    --text: #1d1f24;
+    --muted: #5d626b;
+    --faint: #8b909a;
+    --line: #e4e1dc;
+    --line-soft: #eeebe7;
+    --accent: #b5651d;
+    --accent-ink: #ffffff;
+    --accent-soft: #fbeedd;
+    --ok: #2e8b4f;
+    --err: #c33b3b;
+    --warn: #9a6b12;
+    --hover: #f0ede9;
+    --shadow: 0 10px 30px rgba(20, 16, 12, 0.08);
+    --glow: radial-gradient(80% 120% at 50% -20%, rgba(181, 101, 29, 0.10), transparent 70%);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 15px;
+    line-height: 1.5;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 0 20px 80px; }
+
+  /* ---------- stage (header) ---------- */
+  .stage {
+    position: relative;
+    margin: 0 -20px 28px;
+    padding: 44px 20px 26px;
+    background: var(--glow), var(--stage);
+    border-bottom: 1px solid var(--line);
+    text-align: center;
+  }
+  h1 {
+    margin: 0;
+    font-size: 30px;
+    letter-spacing: -0.02em;
+    font-weight: 650;
+  }
+  .tagline { margin: 8px auto 0; max-width: 52ch; color: var(--muted); }
+  .totals {
+    margin: 20px 0 0;
+    font-variant-numeric: tabular-nums;
+    font-size: 14px;
+    color: var(--muted);
+  }
+  .totals b { color: var(--text); font-weight: 600; }
+  .controls {
+    margin: 20px 0 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    justify-content: center;
+    align-items: center;
+  }
+  .privacy {
+    margin: 14px auto 0;
+    max-width: 62ch;
+    font-size: 12.5px;
+    color: var(--faint);
+  }
+
+  /* ---------- controls ---------- */
+  button {
+    font: inherit;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background: var(--panel);
+    color: var(--text);
+    padding: 8px 14px;
+    cursor: pointer;
+  }
+  button:hover:not(:disabled) { background: var(--hover); }
+  button:disabled { opacity: 0.45; cursor: default; }
+  button.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-ink);
+    font-weight: 600;
+  }
+  button.primary:hover:not(:disabled) { filter: brightness(1.07); background: var(--accent); }
+  select {
+    font: inherit;
+    color: var(--text);
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 8px 10px;
+    max-width: 260px;
+  }
+
+  /* ---------- banners and notices ---------- */
+  .banner, .notice {
+    margin: 0 0 14px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background: var(--panel);
+    font-size: 13.5px;
+    color: var(--muted);
+  }
+  .banner:empty, #notices:empty { display: none; margin: 0; padding: 0; border: 0; }
+  .notice.error { border-color: var(--err); color: var(--err); }
+  .notice.warn { border-color: var(--warn); color: var(--warn); }
+
+  /* ---------- bits ---------- */
+  .bit {
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--panel);
+    padding: 20px 22px;
+    margin: 0 0 16px;
+    box-shadow: var(--shadow);
+  }
+  .bit.pending { opacity: 0.55; }
+  .bit-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .stat {
+    font-size: 40px;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    line-height: 1;
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+  }
+  .stat-label { font-size: 15px; color: var(--text); }
+  .bit-title {
+    margin: 0 0 2px;
+    font-size: 11.5px;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--faint);
+  }
+  .facts {
+    margin: 14px 0 0;
+    padding: 0;
+    list-style: none;
+    font-size: 13.5px;
+    color: var(--muted);
+  }
+  .facts li {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 4px 0;
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .facts li:last-child { border-bottom: 0; }
+  .facts .k {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12.5px;
+    color: var(--text);
+    overflow-wrap: anywhere;
+  }
+  .facts .v { font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--faint); }
+  .facts .path { color: var(--faint); font-size: 12px; }
+  .punchline {
+    margin: 16px 0 0;
+    padding: 14px 16px;
+    border-left: 3px solid var(--accent);
+    background: var(--accent-soft);
+    border-radius: 0 8px 8px 0;
+    white-space: pre-wrap;
+    min-height: 1.5em;
+  }
+  .punchline:empty { display: none; }
+  .punchline.thinking { color: var(--faint); font-style: italic; }
+  .cursor::after {
+    content: "▍";
+    color: var(--accent);
+    animation: blink 1s steps(2, start) infinite;
+  }
+  @keyframes blink { to { visibility: hidden; } }
+  @media (prefers-reduced-motion: reduce) { .cursor::after { animation: none; } }
+
+  /* ---------- footer ---------- */
+  details.how {
+    margin: 28px 0 0;
+    border-top: 1px solid var(--line);
+    padding-top: 18px;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  details.how summary { cursor: pointer; color: var(--text); }
+  details.how pre {
+    overflow-x: auto;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 12px;
+    font-size: 12px;
+  }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+
+<div class="stage">
+  <h1>Roast My Filesystem</h1>
+  <p class="tagline">
+    SQL over your disk, no scan. Then a model on this machine roasts you for
+    what it found.
+  </p>
+  <p class="totals" id="totals">Reading the index…</p>
+  <div class="controls">
+    <select id="model" aria-label="Model"></select>
+    <button class="primary" id="roast" disabled>Roast me</button>
+    <button id="harder" disabled>Roast harder</button>
+    <button id="stop" hidden>Stop</button>
+  </div>
+  <p class="privacy" id="privacy"></p>
+</div>
+
+<div class="wrap">
+  <div class="banner" id="banner"></div>
+  <div id="notices"></div>
+  <div id="bits"></div>
+
+  <details class="how">
+    <summary>How this works, and what it deliberately ignores</summary>
+    <p>
+      Every number on this page comes from fused-render's file index — a parquet
+      table of your filesystem that a background scan already built. Nothing
+      here walks your disk, stats a file, or reads a byte of content. Each bit
+      is one <code>SELECT</code>, run read-only inside the index's own guarded
+      DuckDB session.
+    </p>
+    <p>
+      95% of the index is not yours: caches, app support, dependency trees. A
+      roast built on all of it is a roast about software you never chose to
+      install, so every query here is screened by four clauses:
+    </p>
+    <pre id="screen-sql"></pre>
+    <p>
+      Which means the totals above disagree on purpose, and the smaller one is
+      the honest one. <code>node_modules</code> gets no joke of its own: the
+      scanner never descends into it, so there is no data behind one.
+    </p>
+  </details>
+</div>
+
+<script>
+/* ===================================================================
+   Roast My Filesystem
+
+   Two halves. The numbers come from `fused.fileIndex.query()` — one
+   read-only statement each, no scan, no filesystem walk. The jokes come
+   from `fused.ai`, one call per bit, each handed only that bit's rows.
+
+   The screen below is the load-bearing part of the whole app. fused-render
+   has proper screens of its own (`junk_path`, `MountGuard`) but both are
+   Python-only with no endpoint, so a page has to write its own list. Without
+   it, the biggest number on the machine is a browser cache and every joke
+   lands on software the user never chose.
+   =================================================================== */
+
+const IS_LOCAL = (typeof fused !== "undefined") && fused.env === "local";
+const CAP = "text-generation";
+
+/* Screened to what is plausibly the user's own work. `files` keys on `path`,
+   `dirs` keys on `dir`, so the same idea needs two spellings — and a dir row
+   carries no trailing slash, which is why `'%/.%/%'` alone does NOT reject a
+   dotdir that IS the row (`/Users/x/.bun`). Hence the extra clause. */
+const SCREEN_FILES = [
+  "path NOT LIKE '%/Library/%'",        // caches, app support: the 95%
+  "path NOT LIKE '%/.%/%'",             // inside a dotdir: .bun, .cursor, .colima
+  "path NOT LIKE '%/node_modules/%'",
+  "path NOT LIKE '%/site-packages/%'",
+].join(" AND ");
+
+const SCREEN_DIRS = [
+  "dir NOT LIKE '%/Library/%'",
+  "dir NOT LIKE '%/.%/%'",
+  "dir NOT LIKE '%/.%'",                // the dotdir itself, not just its children
+  "dir NOT LIKE '%/node_modules/%'",
+  "dir NOT LIKE '%/site-packages/%'",
+].join(" AND ");
+
+/* Build output is not a habit, it is a compiler. Measured: without this, the
+   folder-name bits fill up with `.../Index.noindex/DataStore/v5/records/V7`
+   and read as a personality flaw rather than Xcode doing its job. */
+const SCREEN_BUILD = [
+  "dir NOT LIKE '%/build/%'",
+  "dir NOT LIKE '%/dist/%'",
+  "dir NOT LIKE '%/coverage/%'",
+  "dir NOT LIKE '%.noindex%'",
+  "dir NOT LIKE '%/target/%'",
+  "dir NOT LIKE '%/vendor/%'",
+  "dir NOT LIKE '%/Pods/%'",
+].join(" AND ");
+
+/* 2000-01-01. Files unpacked from an archive carry the archive's own dates —
+   this index holds 31 files claiming 1979 — so an unfloored "your oldest file"
+   is a bug report, not a joke. */
+const MTIME_FLOOR = 946684800;
+const DAY = 86400;
+
+/* ===================================================================
+   Prompts — the app is three strings and some plumbing
+   =================================================================== */
+const SYSTEM = [
+  "You are on a roast dais and the subject is one person's hard drive. Their disk, their fault.",
+  "Mean is the point. A polite observation is a failed joke here, and so is a joke that could have",
+  "been written about anybody — this is about the specific files in front of you.",
+  "",
+  "HOW TO BE MEAN WELL:",
+  "- Aim at the gap between the person their files say they meant to be and what they actually did.",
+  "- Name the file. A named file is an exhibit; a category is a shrug.",
+  "- Assume the least flattering explanation the data supports, and state it as settled fact.",
+  "- Contempt reads funnier than outrage. Say it flat, as though it were obvious to everyone but them.",
+  "- Second person. You are talking to them, in front of people.",
+  "",
+  "STILL OFF THE TABLE — not squeamishness, these are simply not on their disk:",
+  "- their body, health, race, gender, age, religion, or money troubles",
+  "- anyone else whose name shows up in a filename",
+  "- real cruelty: nothing that would still sting after the laugh",
+  "",
+  "BANNED, all of it filler:",
+  "- \"we've all been there\", \"let's be honest\", \"ah, the classic\", \"at this point\", \"the real question\"",
+  "- a title, a markdown header, a bold lead-in, bullet points",
+  "- opening on a rhetorical question",
+  "- advice, cleanup suggestions, or any instruction to the reader",
+  "- a warm closing line, a moral, a redeeming note, or a summary of what you just said",
+  "- puns on a filename, and any joke about being an AI",
+  "- reusing the wording of these instructions in your answer",
+  "- writing in first person as the owner of the disk. You are the comic, they are the subject.",
+  "- jargon standing in for a joke. Plain words, or no joke at all.",
+  "- lyricism. No poetry, no metaphor for its own sake, no admiring the subject by accident.",
+  "  If a line could be read as a compliment, it is the wrong line.",
+  "- third person. Never \"they\" or \"the owner\" — it is \"you\", every sentence, every bit.",
+  "- padding out the word ceiling with stacked synonyms (\"forgotten and sealed away, gathering dust\").",
+  "  The ceiling is a limit, not a target. Done in fifteen words means stop at fifteen.",
+  "",
+  "HARD RULE: every name, number and year you use must appear in the DATA. Invent nothing.",
+  "You know a file's NAME, its FOLDER, its SIZE and its DATE. You do not know what is inside it,",
+  "why it was made, or how the project ended — so never describe an archive's contents, a document's",
+  "subject, or what became of anything. The filename is funnier than your guess about it.",
+  "If the data is thin, go narrower, not vaguer.",
+].join("\n");
+
+/* Harder is not louder, it is shorter. One sentence has nowhere to hide a
+   setup, so the model has to land on the sharpest detail in the data. */
+/* A 1.2B model cannot hold the prompt above. Measured: handed the full rules,
+   mlx-community/LFM2.5-1.2B-Instruct-4bit stopped roasting and started
+   affirming — "your folders stay tagged, labels intact, identity preserved".
+   The context was never the problem; the instruction count was. So a small
+   model gets its own short prompt and a one-line form per bit, and the picker
+   decides which by download size, the only proxy for capacity the catalog has. */
+const SMALL_MODEL_GB = 2.5;
+
+const SYSTEM_LEAN = [
+  "You insult the owner of this hard drive, to their face, about their filing habits.",
+  "",
+  "Write exactly like this answer from a different disk:",
+  "  \"You have 41 folders called untitled. Naming things is apparently the hard part.\"",
+  "",
+  "Two short sentences like that. Second one is the insult. Then stop.",
+  "Talk to them as \"you\". Use only names and numbers from DATA — invent nothing, and never guess",
+  "what is inside a file. Tell the joke; never describe it, never repeat these instructions.",
+  "No advice, no compliments, no lists, no title.",
+].join("\n");
+
+const HARDER = [
+  "",
+  "SECOND SET. The polite version already happened and the room has turned on them.",
+  "ONE sentence, aimed at the single most damning detail in the data. No setup, no cushion.",
+  "Still nothing invented.",
+].join("\n");
+
+/* ===================================================================
+   Per-bit direction
+
+   Six piles of numbers all look like the same table to a model, and a
+   single generic prompt gets six versions of the same joke back. So each
+   bit carries its own FORM — a different comedic shape, chosen for what
+   that particular data actually is — plus what to LOOK at, written as an
+   instruction rather than as a phrasing, because a phrase handed to the
+   model comes back verbatim in the punchline.
+   =================================================================== */
+const DIRECTION = {
+  big_files: {
+    lean: "The two biggest files were downloaded and never opened.",
+    look: "The heaviest files they own, and how long Downloads has sat untouched.",
+    form: "THE DOUBLE-TAKE. Two sentences, exactly two files named — one that suggests ambition, one " +
+          "that suggests a Tuesday night. The punch is that both have gone the same length of time " +
+          "untouched, and only one of them was ever going to get opened.",
+  },
+  pirate_cove: {
+    lean: "They never renamed the folder the release group named for them.",
+    look: "Media files still carrying the scene tags of wherever they came from.",
+    form: "THE EXHIBIT. Two sentences, second person. Quote one release folder name in full, tags and " +
+          "all, as though reading it into evidence. The punch is that they never renamed it — the " +
+          "scene group got the last word on how their own folder is labelled. No legal talk.",
+  },
+  desktop: {
+    lean: "Their Desktop is where hundreds of files go instead of into a folder.",
+    words: 30,
+    look: "How many files live on the Desktop, and how many are timestamped screenshots and recordings.",
+    form: "THE COMPARISON. Two sentences. A Desktop is supposed to hold the two things you are working " +
+          "on today; compare that to the folder count actually sitting on theirs. The punch is that " +
+          "this is where their filing system really lives, and Documents is set dressing.",
+  },
+  duplicate_names: {
+    lean: "They start new projects instead of finishing the one they have.",
+    look: "The same filename in hundreds of folders. Every copy was made by someone starting fresh.",
+    form: "THE DIAGNOSIS. Two sentences. Name the top filename and one other from the list, flatly. " +
+          "Then diagnose the habit as a condition — plain English, no medical or engineering jargon, " +
+          "and it is a condition about starting things, not about tooling.",
+  },
+  folder_names: {
+    lean: "They name folders after moods, and the folders called delete never get deleted.",
+    words: 20,
+    look: "Folder names picked in the moment, and how many times each one got reused.",
+    form: "THE DIARY. Quote two or three folder names exactly, as if reading diary entries aloud. Then " +
+          "ONE sentence that is a claim about the person who wrote them — never an explanation of why " +
+          "people name folders that way.",
+  },
+  archives: {
+    lean: "They keep archives for years without ever unzipping one.",
+    words: 25,
+    look: "Archives still compressed. Somebody downloaded each one meaning to open it.",
+    form: "THE EULOGY. Two sentences, past tense, about ONE named archive — its name, its size, the " +
+          "folder it sat in. You do not know what was inside and must not guess. The punch is the " +
+          "future, stated flatly: it will still be sitting there, unopened, years from now.",
+  },
+  clutter: {
+    lean: "They make folders faster than they make files to put in them.",
+    look: "Thousands of folders holding one file, and thousands holding nothing.",
+    form: "THE ESCALATION. Two sentences, second person. Take one-file-per-folder seriously as a " +
+          "system, then follow it one step past where anyone sane would stop. The punch is the step " +
+          "too far, described as though it were the obvious next move.",
+  },
+  time_capsule: {
+    lean: "The oldest thing they bothered to keep is that one file, from that year.",
+    words: 25,
+    look: "The oldest surviving files, and the year they are from.",
+    form: "THE RECEIPT. Two short sentences, flat and unimpressed. First: their disk's memory starts " +
+          "with this exact filename, in this year. Second: the punch — what it says about them that " +
+          "this is the oldest thing they bothered to keep. No archaeology voice, no formats listed.",
+  },
+};
+
+/* ===================================================================
+   Params are the state
+   =================================================================== */
+const DEFAULTS = { model: "", harder: "0" };
+/* `model` lives in the URL as `roastModel` — the name declared as
+   `ai_model_param` in metadata.json, which is where the AI Playground hands a
+   model off. It must not be literally `model`: the shell owns that query key. */
+const PARAM = { model: "roastModel", harder: "harder" };
+const P = {
+  get: (k) => {
+    const v = fused.params.get(PARAM[k] || k);
+    return v === undefined || v === "" ? DEFAULTS[k] : v;
+  },
+  raw: (k) => fused.params.get(PARAM[k] || k) || "",
+  set: (k, v) => fused.params.set(PARAM[k] || k, String(v)),
+};
+
+/* ===================================================================
+   Small helpers
+   =================================================================== */
+const $ = (id) => document.getElementById(id);
+const el = (tag, cls) => { const n = document.createElement(tag); if (cls) n.className = cls; return n; };
+const n = (x) => (x == null ? "—" : Number(x).toLocaleString());
+
+function gb(bytes) {
+  if (bytes == null) return "—";
+  const g = bytes / 1e9;
+  if (g >= 1) return g.toFixed(g >= 10 ? 0 : 1) + " GB";
+  const m = bytes / 1e6;
+  if (m >= 1) return m.toFixed(m >= 10 ? 0 : 1) + " MB";
+  return Math.max(1, Math.round(bytes / 1e3)) + " KB";
+}
+
+/* Paths go on screen AND into the prompt, so they are shortened once, here.
+   A home directory is the only absolute prefix worth hiding — everything else
+   is the point of the joke. */
+function tilde(p) {
+  if (!p) return "";
+  return String(p)
+    .replace(/^\/(?:Users|home)\/[^/]+/, "~")
+    .replace(/^[A-Za-z]:\\Users\\[^\\]+/, "~");
+}
+const when = (mtime) => {
+  if (!mtime) return "—";
+  const d = new Date(mtime * 1000);
+  return d.toISOString().slice(0, 10);
+};
+
+/* Some local models are reasoning models and stream their scratchpad straight
+   into the answer — measured on mlx-community/Macaw-OptiQ-4bit, which replied
+   with a <think> block, a word count and two rejected drafts before the joke.
+   Nothing upstream strips it, so the page does. The unterminated case matters
+   most: while a <think> is still open, everything after it is scratchpad, and
+   showing it live is the whole failure. */
+function clean(text) {
+  let out = String(text || "")
+    .replace(/<think>[\s\S]*?<\/think>/gi, "")
+    .replace(/<think>[\s\S]*$/i, "")          /* still thinking: hide the tail */
+    .replace(/^\s*<\/think>/i, "");
+  /* A model that quotes its own punchline, or labels it, or offers two takes. */
+  out = out.replace(/^\s*(?:Let'?s try:?|Here'?s (?:the|my) (?:bit|joke|take):?|Bit:|Answer:)\s*/i, "");
+  out = out.trim().replace(/^["“”']+|["“”']+$/g, "");
+  return out.trim();
+}
+
+function notice(text, kind, cause) {
+  const key = cause || kind || "warn";
+  const box = $("notices");
+  const prior = box.querySelector('[data-cause="' + key + '"]');
+  if (prior) prior.remove();
+  if (!text) return;
+  const node = el("div", "notice " + (kind || "warn"));
+  node.dataset.cause = key;
+  node.textContent = text;
+  box.appendChild(node);
+}
+
+/* ===================================================================
+   The index
+   =================================================================== */
+
+/* ONE place decides what an empty result means. Zero rows is two different
+   states — "nothing matched" and "no index was ever built" — and rendering
+   the second as the first is the silent lie the index API exists to prevent. */
+let indexReady = null;
+function banner(ready) {
+  indexReady = ready || null;
+  const box = $("banner");
+  if (!ready || ready.indexed === false) {
+    box.textContent = ready && ready.scanning
+      ? "Building the file index — come back in a minute and there will be numbers."
+      : "No file index yet. Open the Files tab and run a scan; this app reads the index, it never scans.";
+    return false;
+  }
+  box.textContent = ready.stale
+    ? "Indexing right now, so these numbers may be slightly behind your disk."
+    : "";
+  return true;
+}
+
+async function q(sql) {
+  const out = await fused.fileIndex.query({ sql, limit: 200 });
+  banner(out.ready);
+  return out;
+}
+/* `rows` are arrays, positional to `columns`. Every read below is one
+   statement: a page of rows is never a total, so a total gets its own. */
+const one = (out) => (out.rows && out.rows.length ? out.rows[0] : []);
+
+/* ===================================================================
+   The bits
+
+   Each has its own SELECTs, its own tile, and its own JSON slice for the
+   model. `has()` decides whether the bit exists at all on this machine —
+   the folder-name bit finds nothing on a tidy disk, and a tile reading 0
+   with a joke under it is worse than no tile.
+   =================================================================== */
+
+const BITS = [
+
+  { key: "pirate_cove",
+    title: "Read into evidence",
+    async load() {
+      /* Scene tags in a filename, on files big enough to be actual media — the
+         size floor is what keeps a stray `.ts` file out of the exhibit. */
+      const TAGS = "(name ILIKE '%yts%' OR name ILIKE '%x265%' OR name ILIKE '%x264%' " +
+        "OR name ILIKE '%webrip%' OR name ILIKE '%1080p%' OR name ILIKE '%2160p%' " +
+        "OR name ILIKE '%repack%' OR name ILIKE '%dodi%' OR name ILIKE '%hevc%' " +
+        "OR name ILIKE '%bluray%' OR name ILIKE '%bdrip%')";
+      const tot = await q(`
+        SELECT count(*), sum(size), count(DISTINCT dir)
+        FROM files WHERE ${SCREEN_FILES} AND ${TAGS} AND size > 50000000`);
+      const top = await q(`
+        SELECT regexp_extract(dir, '[^/]*$') AS folder, count(*) AS n, sum(size) AS bytes
+        FROM files WHERE ${SCREEN_FILES} AND ${TAGS} AND size > 50000000
+        GROUP BY 1 ORDER BY bytes DESC LIMIT 5`);
+      const [files, bytes, folders] = one(tot);
+      return {
+        files: files || 0, gb: +((bytes || 0) / 1e9).toFixed(1), folders: folders || 0,
+        releases: top.rows.map(([folder, count, b]) => ({ folder, files: count, gb: +((b || 0) / 1e9).toFixed(2) })),
+      };
+    },
+    has: (d) => d.files > 0,
+    stat: (d) => gb(d.gb * 1e9),
+    statLabel: (d) => `of video still wearing the tags it arrived in — ${n(d.files)} files`,
+    facts: (d) => d.releases.map((r) => ({ k: r.folder, v: r.gb.toFixed(2) + " GB" })),
+  },
+
+  { key: "desktop",
+    title: "The desktop, as a filing system",
+    async load() {
+      const out = await q(`
+        SELECT count(*), sum(size), count(DISTINCT dir),
+               count(*) FILTER (WHERE name ILIKE 'screenshot%' OR name ILIKE 'screen shot%'),
+               count(*) FILTER (WHERE name ILIKE 'screen recording%')
+        FROM files WHERE ${SCREEN_FILES} AND dir ILIKE '%/Desktop%'`);
+      const [files, bytes, folders, shots, recs] = one(out);
+      const names = await q(`
+        SELECT name, size FROM files
+        WHERE ${SCREEN_FILES} AND dir LIKE '%/Desktop'
+        ORDER BY size DESC LIMIT 5`);
+      return {
+        files: files || 0, gb: +((bytes || 0) / 1e9).toFixed(2), folders: folders || 0,
+        screenshots: shots || 0, screen_recordings: recs || 0,
+        biggest_on_the_desktop_itself: names.rows.map(([name, size]) => ({ name, mb: Math.round(size / 1e6) })),
+      };
+    },
+    has: (d) => d.files > 0,
+    stat: (d) => n(d.files),
+    statLabel: (d) => `files live on your Desktop, across ${n(d.folders)} folders`,
+    facts: (d) => [
+      { k: "screenshots", v: n(d.screenshots) },
+      { k: "screen recordings", v: n(d.screen_recordings) },
+    ].concat(d.biggest_on_the_desktop_itself.slice(0, 3).map((r) => ({ k: r.name, v: r.mb + " MB" }))),
+  },
+
+  { key: "duplicate_names",
+    title: "Duplicate-name hall of fame",
+    async load() {
+      const out = await q(`
+        SELECT name, count(DISTINCT dir) AS copies, list(DISTINCT dir)[1:3] AS samples
+        FROM files
+        WHERE ${SCREEN_FILES} AND name <> ''
+        GROUP BY name
+        HAVING count(DISTINCT dir) > 2
+        ORDER BY copies DESC
+        LIMIT 10`);
+      return {
+        rows: out.rows.map(([name, copies, samples]) => ({
+          name, copies, samples: (samples || []).map(tilde),
+        })),
+      };
+    },
+    has: (d) => d.rows.length > 0,
+    stat: (d) => n(d.rows[0].copies),
+    statLabel: (d) => `folders contain a file called ${d.rows[0].name}`,
+    facts: (d) => d.rows.slice(0, 6).map((r) => ({
+      k: r.name, v: n(r.copies) + " copies", sub: r.samples[0],
+    })),
+  },
+
+  { key: "big_files",
+    title: "The heaviest things you own",
+    async load() {
+      const big = await q(`
+        SELECT name, dir, size FROM files
+        WHERE ${SCREEN_FILES}
+        ORDER BY size DESC LIMIT 12`);
+      const dl = await q(`
+        SELECT count(*), sum(size),
+               count(*) FILTER (WHERE mtime < ${Math.floor(Date.now() / 1000) - 90 * DAY}),
+               sum(size) FILTER (WHERE mtime < ${Math.floor(Date.now() / 1000) - 90 * DAY})
+        FROM files
+        WHERE ${SCREEN_FILES} AND dir LIKE '%/Downloads%'`);
+      const [dlFiles, dlBytes, staleFiles, staleBytes] = one(dl);
+      return {
+        rows: big.rows.map(([name, dir, size]) => ({ name, dir: tilde(dir), gb: +(size / 1e9).toFixed(2) })),
+        downloads: { files: dlFiles, gb: +((dlBytes || 0) / 1e9).toFixed(1),
+                     untouched_90d_files: staleFiles, untouched_90d_gb: +((staleBytes || 0) / 1e9).toFixed(1) },
+      };
+    },
+    has: (d) => d.rows.length > 0,
+    stat: (d) => gb(d.downloads.untouched_90d_gb * 1e9),
+    statLabel: (d) => `sitting in Downloads, untouched for 90 days — ${n(d.downloads.untouched_90d_files)} files`,
+    facts: (d) => d.rows.slice(0, 6).map((r) => ({
+      k: r.name, v: r.gb.toFixed(2) + " GB", sub: r.dir,
+    })),
+  },
+
+  { key: "folder_names",
+    title: "Folders named after a feeling",
+    async load() {
+      const shame = await q(`
+        SELECT lower(regexp_extract(dir, '[^/]*$')) AS folder,
+               count(*) AS n,
+               list(dir)[1:3] AS samples
+        FROM dirs
+        WHERE ${SCREEN_DIRS} AND ${SCREEN_BUILD}
+          AND lower(regexp_extract(dir, '[^/]*$')) SIMILAR TO
+              '(final|temp|tmp|old|copy|backup|delete|misc|new|untitled|archive|draft|wip|stuff|scratch|junk|v[2-9])[0-9 _-]*'
+        GROUP BY 1
+        HAVING count(*) > 1
+        ORDER BY n DESC
+        LIMIT 10`);
+      /* Its own statement, because a page of rows is not a count. */
+      const nested = await q(`
+        SELECT count(*) FROM dirs
+        WHERE ${SCREEN_DIRS} AND ${SCREEN_BUILD}
+          AND (lower(dir) LIKE '%final%/%final%' OR lower(dir) LIKE '%old%/%old%'
+            OR lower(dir) LIKE '%copy%/%copy%'  OR lower(dir) LIKE '%new%/%new%')`);
+      return {
+        rows: shame.rows.map(([folder, count, samples]) => ({
+          folder, count, samples: (samples || []).map(tilde),
+        })),
+        nested_inside_each_other: one(nested)[0] || 0,
+      };
+    },
+    has: (d) => d.rows.length > 0,
+    stat: (d) => n(d.rows.reduce((a, r) => a + r.count, 0)),
+    statLabel: () => "folders named for a state of mind rather than their contents",
+    facts: (d) => d.rows.slice(0, 6).map((r) => ({
+      k: r.folder + "/", v: "×" + n(r.count), sub: r.samples[0],
+    })),
+  },
+
+  { key: "archives",
+    title: "Archives you never opened",
+    async load() {
+      const by = await q(`
+        SELECT ext, count(*) AS n, sum(size) AS bytes
+        FROM files
+        WHERE ${SCREEN_FILES} AND ext IN ('zip','dmg','tar','gz','7z','rar','iso','pkg')
+        GROUP BY 1 ORDER BY bytes DESC`);
+      const top = await q(`
+        SELECT name, dir, size FROM files
+        WHERE ${SCREEN_FILES} AND ext IN ('zip','dmg','tar','gz','7z','rar','iso','pkg')
+        ORDER BY size DESC LIMIT 6`);
+      return {
+        by_type: by.rows.map(([ext, count, bytes]) => ({ ext, count, gb: +((bytes || 0) / 1e9).toFixed(2) })),
+        biggest: top.rows.map(([name, dir, size]) => ({ name, dir: tilde(dir), gb: +(size / 1e9).toFixed(2) })),
+      };
+    },
+    has: (d) => d.by_type.length > 0,
+    stat: (d) => gb(d.by_type.reduce((a, r) => a + r.gb, 0) * 1e9),
+    statLabel: (d) => `in ${n(d.by_type.reduce((a, r) => a + r.count, 0))} archives, still zipped`,
+    facts: (d) => d.by_type.slice(0, 4).map((r) => ({
+      k: "." + r.ext, v: n(r.count) + " files · " + r.gb.toFixed(2) + " GB",
+    })).concat(d.biggest.slice(0, 2).map((r) => ({ k: r.name, v: r.gb.toFixed(2) + " GB", sub: r.dir }))),
+  },
+
+  { key: "clutter",
+    title: "The clutter census",
+    async load() {
+      /* `dirs` carries n_files / n_subdirs precomputed, so this whole bit is
+         one row out of the index. No scan, no per-directory stat. */
+      const out = await q(`
+        SELECT count(*) FILTER (WHERE n_files = 0 AND n_subdirs = 0) AS empty_dirs,
+               count(*) FILTER (WHERE n_files = 1 AND n_subdirs = 0) AS lonely_dirs,
+               count(*) AS dirs_total
+        FROM dirs WHERE ${SCREEN_DIRS}`);
+      const [empty, lonely, total] = one(out);
+      return { empty_dirs: empty || 0, lonely_dirs: lonely || 0, dirs_total: total || 0 };
+    },
+    has: (d) => d.dirs_total > 0,
+    stat: (d) => n(d.lonely_dirs),
+    statLabel: (d) => `folders hold exactly one file, out of ${n(d.dirs_total)}`,
+    facts: (d) => [
+      { k: "folders holding one file", v: n(d.lonely_dirs) },
+      { k: "folders holding nothing at all", v: n(d.empty_dirs) },
+      { k: "folders, total", v: n(d.dirs_total) },
+    ],
+  },
+
+  { key: "time_capsule",
+    title: "Time capsule",
+    async load() {
+      const out = await q(`
+        SELECT name, dir, mtime FROM files
+        WHERE ${SCREEN_FILES} AND mtime > ${MTIME_FLOOR}
+        ORDER BY mtime ASC LIMIT 6`);
+      const cnt = await q(`
+        SELECT count(*) FROM files
+        WHERE ${SCREEN_FILES} AND mtime > ${MTIME_FLOOR}
+          AND mtime < ${Math.floor(Date.now() / 1000) - 3 * 365 * DAY}`);
+      return {
+        oldest: out.rows.map(([name, dir, mtime]) => ({ name, dir: tilde(dir), date: when(mtime) })),
+        older_than_3_years: one(cnt)[0] || 0,
+      };
+    },
+    has: (d) => d.oldest.length > 0,
+    stat: (d) => d.oldest[0].date.slice(0, 4),
+    statLabel: (d) => `is the year of your oldest surviving file, ${d.oldest[0].name}`,
+    facts: (d) => d.oldest.slice(0, 5).map((r) => ({ k: r.name, v: r.date, sub: r.dir })),
+  },
+];
+
+/* ===================================================================
+   Model strip
+
+   The bridge decides the destination from the id and nothing else: an id
+   containing `/` (a Hugging Face repo) or ending `.gguf` (llama.cpp's
+   curated ids are the GGUF's own filename, no slash at all) runs in a
+   worker on this machine. Anything else goes to the local `claude` CLI.
+   That predicate gates the options sent, the Stop button, and — because
+   filenames are in the prompt — the privacy line on the page.
+   =================================================================== */
+const isLocalModel = (id) => !!id && (id.includes("/") || /\.gguf$/i.test(id));
+
+/* The CLI has no catalog to ask, so these are the app's own aliases — never
+   pinned ids. They exist so the app works on a machine with no weights yet. */
+const CLI_MODELS = [
+  { id: "haiku", label: "Claude Haiku", note: "Fast, and enough for a roast.", cli: true },
+  { id: "sonnet", label: "Claude Sonnet", note: "Funnier. Slower.", cli: true },
+  { id: "opus", label: "Claude Opus", note: "The headliner.", cli: true },
+];
+
+let catalogModels = [];
+let runner = null;
+let resident = null;
+
+async function refreshRuntime() {
+  if (!IS_LOCAL) {
+    catalogModels = [];
+    notice("This is an exported copy — the roast needs the fused-render app. The numbers below are still real.",
+      "warn", "env");
+    fillModels();
+    return;
+  }
+  let list = null, catalog = null;
+  /* Every dotted `fused.ai.*` call is gated on IS_LOCAL by hand: the
+     exporter's check only matches the literal `fused.ai(`, so these would
+     export cleanly and then fail at the reader. */
+  try { list = await fused.ai.models.list(); } catch (err) { /* strip says so below */ }
+  try { catalog = await fused.ai.models.catalog(); } catch (err) { /* ditto */ }
+
+  runner = list ? (list.runners || []).find((r) => r.capability === CAP && r.available)
+                || (list.runners || []).find((r) => r.capability === CAP) : null;
+  resident = list ? (list.loaded || []).find((l) => l.capability === CAP) || null : null;
+
+  const block = catalog ? (catalog.capabilities || []).find((c) => c.capability === CAP) : null;
+  /* EVERY entry, not just `source: "curated"` — a cached row is a model the
+     user deliberately downloaded, and filtering it out is how a picker ends
+     up missing the only model already on the disk. */
+  const local = (block && block.models) ? block.models.slice() : [];
+  if (resident && !local.some((m) => m.id === resident.model)) {
+    local.push({ id: resident.model, label: resident.model, downloaded: true, loaded: true,
+                 note: "Loaded from elsewhere." });
+  }
+  catalogModels = local.concat(CLI_MODELS);
+
+  const want = P.raw("model");
+  if (!want || !catalogModels.some((m) => m.id === want)) {
+    /* The catalog's `default` is its smallest curated entry, and for THIS app
+       that is the wrong first run: measured, a 1.2B model handed these prompts
+       stops roasting and starts agreeing with you. So the order is what is
+       already resident, then a downloaded model big enough to hold the form,
+       then the CLI — which needs no download and does the job — and only then
+       the catalog's own pick. */
+    const capable = local
+      .filter((m) => m.downloaded && typeof m.size_gb === "number" && m.size_gb >= SMALL_MODEL_GB)
+      .sort((x, y) => (x.size_gb || 0) - (y.size_gb || 0))[0];
+    P.set("model",
+      (resident && resident.model) ||
+      (capable && capable.id) ||
+      CLI_MODELS[0].id ||
+      (block && block.default));
+  }
+  fillModels();
+}
+
+function stateOf(m) {
+  if (m.cli) return "Claude Code";
+  if (resident && resident.model === m.id) return "ready now";
+  if (m.loaded) return "ready now";
+  if (m.downloaded) return "on disk";
+  return m.size_gb ? m.size_gb.toFixed(1) + " GB download" : "download";
+}
+
+function fillModels() {
+  const sel = $("model");
+  sel.innerHTML = "";
+  const groups = [
+    ["On this machine", catalogModels.filter((m) => !m.cli)],
+    ["Claude Code CLI", catalogModels.filter((m) => m.cli)],
+  ];
+  for (const [name, models] of groups) {
+    if (!models.length) continue;
+    const g = el("optgroup");
+    g.label = name;
+    for (const m of models) {
+      const o = el("option");
+      o.value = m.id;
+      o.textContent = (m.label || m.id) + " — " + stateOf(m);
+      g.appendChild(o);
+    }
+    sel.appendChild(g);
+  }
+  const want = P.get("model");
+  if (want) sel.value = want;
+  drawPrivacy();
+}
+
+/* The one line on this page that changes meaning with the picker. A local
+   model keeps every filename on the machine; the CLI path sends the
+   aggregates — filenames included — to Anthropic. Saying "nothing leaves
+   your machine" unconditionally would be a lie on half the options. */
+function drawPrivacy() {
+  const id = P.get("model");
+  /* Not a scold, a heads-up: a model this small gets a shorter prompt and still
+     tends to agree with you instead of insulting you. Better said out loud than
+     left for the user to conclude the app is broken. */
+  notice(isSmallModel(id)
+    ? "That model is small enough that the jokes will come out soft — it gets a simpler prompt, and it still tends to agree with you. Anything 4 GB and up, or a Claude model, reads the data properly."
+    : "", "warn", "smallmodel");
+  $("privacy").textContent = isLocalModel(id)
+    ? "The index is read locally and this model runs on this machine — no filename leaves it."
+    : "Heads up: this model runs through the Claude Code CLI, so the numbers and the sample filenames below are sent to Anthropic. Pick a model under “On this machine” to keep everything local.";
+}
+
+/* ===================================================================
+   Render
+   =================================================================== */
+let dataGen = 0;      /* index calls are NOT superseded like runPython's:  */
+let roastGen = 0;     /* a slower earlier query can land last and win.     */
+let running = false;
+
+async function drawTotals() {
+  const mine = ++dataGen;
+  const raw = await q("SELECT count(*), sum(size) FROM files");
+  const ours = await q(`SELECT count(*), sum(size) FROM files WHERE ${SCREEN_FILES}`);
+  if (mine !== dataGen) return false;
+  if (!banner(indexReady)) { $("totals").textContent = ""; return false; }
+  const [rawFiles, rawBytes] = one(raw);
+  const [myFiles, myBytes] = one(ours);
+  $("totals").innerHTML =
+    `<b>${gb(rawBytes)}</b> indexed across ${n(rawFiles)} files · ` +
+    `<b>${gb(myBytes)}</b> of it actually yours, in ${n(myFiles)}`;
+  return { raw_files: rawFiles, raw_gb: +((rawBytes || 0) / 1e9).toFixed(0),
+           your_files: myFiles, your_gb: +((myBytes || 0) / 1e9).toFixed(0) };
+}
+
+let totals = null;
+const loaded = [];    /* [{bit, data, nodes}] — in page order */
+
+function card(bit, data) {
+  const box = el("div", "bit");
+  box.dataset.key = bit.key;
+
+  const kicker = el("p", "bit-title");
+  kicker.textContent = bit.title;
+  box.appendChild(kicker);
+
+  const head = el("div", "bit-head");
+  const stat = el("div", "stat");
+  stat.textContent = bit.stat(data);
+  const label = el("div", "stat-label");
+  label.textContent = bit.statLabel(data);
+  head.append(stat, label);
+  box.appendChild(head);
+
+  const facts = el("ul", "facts");
+  for (const f of bit.facts(data)) {
+    const li = el("li");
+    const k = el("span", "k");
+    k.textContent = f.k;
+    if (f.sub) {
+      const sub = el("div", "path");
+      sub.textContent = f.sub;
+      k.appendChild(sub);
+    }
+    const v = el("span", "v");
+    v.textContent = f.v;
+    li.append(k, v);
+    facts.appendChild(li);
+  }
+  box.appendChild(facts);
+
+  const punch = el("div", "punchline");
+  box.appendChild(punch);
+  return { box, punch };
+}
+
+async function drawBits() {
+  const mine = ++dataGen;
+  $("bits").innerHTML = "";
+  loaded.length = 0;
+  for (const bit of BITS) {
+    let data;
+    try {
+      data = await bit.load();
+    } catch (err) {
+      /* A duckdb message is the useful thing to show verbatim. */
+      notice("“" + bit.title + "” could not be read: " + (err && err.message ? err.message : err),
+        "error", "bit-" + bit.key);
+      continue;
+    }
+    if (mine !== dataGen) return;
+    if (!banner(indexReady)) return;
+    if (!bit.has(data)) continue;     /* nothing to joke about, so no tile */
+    const nodes = card(bit, data);
+    $("bits").appendChild(nodes.box);
+    loaded.push({ bit, data, nodes });
+  }
+  syncButtons();
+}
+
+function syncButtons() {
+  const ready = !!(indexReady && indexReady.indexed !== false) && loaded.length > 0;
+  const can = ready && IS_LOCAL && catalogModels.length > 0 && !running;
+  $("roast").disabled = !can;
+  $("harder").disabled = !can;
+  $("stop").hidden = !running;
+  $("roast").textContent = running ? "Roasting…" : (loaded.some((l) => l.nodes.punch.textContent) ? "Roast again" : "Roast me");
+}
+
+/* ===================================================================
+   The roast — one call per bit, sequential
+
+   Sequential on purpose. AI calls are fully concurrent with no queue
+   message on the row, so six at once at one local worker reads as six
+   stalled panes; and a bit that fails should cost one joke, not the set.
+   The pacing is the point anyway: the number lands, then the punchline
+   types itself underneath it.
+   =================================================================== */
+/* Small local models get the short prompt; everything else gets the long one.
+   A CLI alias has no size at all, and those follow the long prompt fine. */
+function isSmallModel(id) {
+  const hit = catalogModels.find((m) => m.id === id);
+  return !!hit && !hit.cli && typeof hit.size_gb === "number" && hit.size_gb > 0 && hit.size_gb < SMALL_MODEL_GB;
+}
+
+function systemFor(model, harder) {
+  return isSmallModel(model) ? SYSTEM_LEAN : SYSTEM + (harder ? HARDER : "");
+}
+
+function promptFor(entry, harder, model) {
+  const dir = DIRECTION[entry.bit.key] || { look: "", form: "Two sentences. The second is the punch." };
+  if (isSmallModel(model)) {
+    /* Everything the long prompt does with structure, this does with brevity:
+       one instruction, the data, one ceiling. */
+    return [
+      "DATA:",
+      JSON.stringify(Object.assign({}, entry.data), null, 1),
+      "",
+      "WHAT IS FUNNY HERE: " + (dir.lean || "what this data says about them"),
+      "",
+      "Now insult them about it. Two short sentences, 30 words maximum, addressed to \"you\",",
+      "using a real name or number from DATA. Nothing invented, nothing explained.",
+    ].join("\n");
+  }
+  const slice = { your_disk: totals };
+  Object.assign(slice, entry.data);
+  return [
+    "LOOK AT: " + dir.look,
+    "",
+    "ALREADY ON SCREEN, directly above your line — do not repeat it: " +
+      entry.bit.stat(entry.data) + " " + entry.bit.statLabel(entry.data),
+    "",
+    "DATA:",
+    JSON.stringify(slice, null, 1),
+    "",
+    /* Measured: form given only in the system prompt is ignored on the Claude
+       Code path — the same call came back as a 196-word disk-cleanup guide with
+       markdown headings. Restated last, in the user turn, it holds. */
+    /* Measured: form given only in the system prompt is ignored on the Claude
+       Code path — the same call came back as a 196-word disk-cleanup guide with
+       markdown headings. Restated last, in the user turn, it holds. So do the
+       two rules that kept slipping: the voice, and not padding to the ceiling. */
+    "FORM — this overrides any instinct to write more: " + (harder ? "ONE sentence." : dir.form),
+    "Second person throughout — \"you\", addressed to them. Never \"they\", never \"this person\".",
+    (harder ? 25 : (dir.words || 40)) + " words is the CEILING, not the target — if the joke is done in " +
+      "half that, stop there. Never pad with stacked synonyms or a restated closing clause.",
+    "No title, no markdown, no extra sentence past the punch.",
+    "The reply is the bit itself and nothing else. Write it.",
+  ].join("\n");
+}
+
+async function askBit(entry, harder, mine) {
+  const model = P.get("model");
+  const punch = entry.nodes.punch;
+  punch.textContent = "";
+  punch.classList.add("thinking", "cursor");
+  punch.textContent = "thinking…";
+
+  let raw = "";
+  const opts = {
+    systemPrompt: systemFor(model, harder),
+    model,
+    /* Re-render from the accumulated raw text rather than appending the delta:
+       a <think> block only becomes strippable once its closing tag arrives, so
+       the sanitizer has to see the whole string every time. */
+    onChunk: (text) => {
+      if (mine !== roastGen) return;
+      raw += text;
+      const shown = clean(raw);
+      if (!shown) { punch.textContent = "thinking…"; punch.classList.add("thinking"); return; }
+      punch.classList.remove("thinking");
+      punch.textContent = shown;
+    },
+  };
+  /* Two destinations, two sets of knobs, and the bridge refuses the wrong ones
+     with a 400 rather than dropping them silently — so they are branched, not
+     defaulted. `temperature`/`topP`/`maxTokens` are local-only; `effort` is
+     Claude-only and the local path ignores it. A roast at temperature 0.7 is
+     the same four jokes every time, which is most of what makes it feel lame. */
+  if (isLocalModel(model)) {
+    opts.temperature = harder ? 1.05 : 0.95;
+    opts.topP = 0.95;
+    opts.maxTokens = harder ? 90 : 140;
+  } else {
+    opts.effort = harder ? "high" : "medium";
+  }
+
+  const call = async () => {
+    const res = await fused.ai(promptFor(entry, harder, model), opts);
+    /* onChunk did the rendering, but a path that streamed nothing still has to
+       land something — and it goes through the same sanitizer. */
+    const shown = clean(raw || (res && res.text) || "");
+    punch.classList.remove("thinking");
+    punch.textContent = shown || "(the model returned nothing usable)";
+    return res;
+  };
+
+  try {
+    await call();
+  } catch (err) {
+    if (err && err.type === "model_loading") {
+      /* Not a failure: the call already started the download and handed us
+         the job. Show it, then ask again once the weights are resident. */
+      punch.classList.add("thinking");
+      await fused.watchJob(err.jobId).watch((job) => {
+        if (mine !== roastGen) return;
+        const pct = job.total ? " " + Math.round((job.done / job.total) * 100) + "%" : "";
+        punch.textContent = "loading the model…" + pct;
+      });
+      if (mine !== roastGen) return;
+      raw = "";
+      await call();
+    } else if (err && err.type === "cancelled") {
+      if (!punch.textContent || punch.classList.contains("thinking")) punch.textContent = "";
+      throw err;
+    } else {
+      punch.classList.remove("thinking");
+      punch.textContent = "";
+      notice((err && err.type ? err.type + ": " : "") + ((err && err.message) || String(err)),
+        "error", "ai");
+      return;
+    }
+  } finally {
+    punch.classList.remove("cursor");
+    if (punch.classList.contains("thinking")) { punch.classList.remove("thinking"); }
+  }
+}
+
+async function roast(harder) {
+  if (running) return;                    /* no stale-cancel on AI calls */
+  const mine = ++roastGen;
+  running = true;
+  P.set("harder", harder ? "1" : "0");
+  notice("", "error", "ai");
+  syncButtons();
+  try {
+    for (const entry of loaded) {
+      if (mine !== roastGen) return;
+      try {
+        await askBit(entry, harder, mine);
+      } catch (err) {
+        if (err && err.type === "cancelled") return;    /* Stop, not a failure */
+        throw err;
+      }
+    }
+  } finally {
+    if (mine === roastGen) { running = false; syncButtons(); }
+  }
+}
+
+/* ===================================================================
+   Boot
+   =================================================================== */
+$("screen-sql").textContent = SCREEN_FILES.split(" AND ").join("\nAND ");
+
+$("model").addEventListener("change", (e) => P.set("model", e.target.value));
+$("roast").addEventListener("click", () => roast(false));
+$("harder").addEventListener("click", () => roast(true));
+$("stop").addEventListener("click", async () => {
+  roastGen++;                             /* orphan the loop first */
+  running = false;
+  syncButtons();
+  if (IS_LOCAL) {
+    /* Defaults to text-generation, which is the capability in play. Resolving
+       false is a no-op, not an error — Stop pressed as the last token lands. */
+    try { await fused.ai.cancel(); } catch (err) { /* nothing to stop */ }
+  }
+});
+
+fused.params.onChange(() => {
+  const sel = $("model");
+  const want = P.get("model");
+  if (want && sel.value !== want) sel.value = want;
+  drawPrivacy();
+});
+
+(async function boot() {
+  try {
+    totals = await drawTotals();
+    if (totals) await drawBits();
+  } catch (err) {
+    notice("The file index could not be read: " + ((err && err.message) || String(err)), "error", "index");
+  }
+  await refreshRuntime();
+  syncButtons();
+})();
+</script>
+</body>
+</html>
