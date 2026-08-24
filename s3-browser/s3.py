@@ -21,6 +21,24 @@ import json
 
 import s3lib
 
+# Under the warm-worker runtime (fused.engine) this module stays imported across
+# calls, so botocore clients are cached per connection here instead of being
+# rebuilt every call — that client build is ~1s of a cold call. Keyed by the
+# fields that define the client; the page drops the whole worker (engine.forget)
+# when a connection's credentials change, so a stale client can't outlive an edit.
+# Under plain /api/run each call is a fresh process, so this is simply empty.
+_CLIENT_CACHE = {}
+
+
+def _cached_client(conn):
+    key = (conn["profile"], conn["region"], conn["anonymous"],
+           conn["endpoint_url"], conn["access_key"])
+    client = _CLIENT_CACHE.get(key)
+    if client is None:
+        client = s3lib.client(conn)
+        _CLIENT_CACHE[key] = client
+    return client
+
 
 def _leaf(key: str, delimiter: str) -> str:
     d = delimiter or "/"
@@ -232,7 +250,7 @@ def _list_objects(client, conn, bucket, prefix, delimiter, token, max_keys, **_)
     if not out_region and not conn["endpoint_url"] and not token:
         out_region = _resolve_region(client, bucket) or ""
         if out_region:
-            client = s3lib.client({**conn, "region": out_region})
+            client = _cached_client({**conn, "region": out_region})
     kw = {"Bucket": bucket, "Prefix": prefix, "MaxKeys": max_keys}
     if delimiter:
         kw["Delimiter"] = delimiter
@@ -499,7 +517,7 @@ def main(
 
     try:
         conn = s3lib.resolve(account_id, profile, region, anonymous, endpoint_url)
-        client = s3lib.client(conn)
+        client = _cached_client(conn)
         return fn(
             client,
             conn=conn,
