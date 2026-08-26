@@ -23,8 +23,6 @@ dependencies = [
     # HEIC/HEIF, which is what an iPhone shoots by default and plain Pillow
     # cannot open at all (thumbnails and video posters both go through PIL).
     "pillow-heif",
-    # Offline reverse geocoding for the place names on a photo (lens/metadata.py).
-    "reverse_geocoder",
     # The memory guard reads this machine's RAM and this process's footprint to
     # decide when an index run must pause (lens/memguard.py). Imported at MODULE
     # level there, so it is not optional the way torch is — and it used to arrive
@@ -41,6 +39,20 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# **`reverse_geocoder` is deliberately NOT declared here, in any form.** It
+# turns a photo's GPS fix into a place name, and it has never published a
+# wheel — every version on PyPI is an sdist. Under the packaged app's bundled
+# interpreter that source build dies inside setuptools' distutils shim
+# (`ModuleNotFoundError: No module named 'jaraco.text'`) and takes the whole
+# environment with it, so the app cannot start at all. Declaring it as an
+# EXTRA does not help either: an sdist has no static metadata, so uv must
+# build it just to resolve, even for an extra nobody asked for.
+#
+# `metadata.geocode` imports it lazily and `_record_place` already swallows
+# the failure, so a photo keeps its coordinates and loses only the place
+# names. Anyone who wants them can install it into the app's project
+# environment by hand — a feature added on purpose beats an app that will not
+# open.
 dev = ["pytest", "piexif"]
 # Reads the Apple Photos library's own database, so lens can index the
 # originals in a .photoslibrary bundle in place instead of walking it (see
