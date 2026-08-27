@@ -14,6 +14,11 @@
 <meta name="fused-app" />
 <title>Lens — local photo search</title>
 <style>
+  /* Card peek on the /apps hub: one still, nothing else — see IS_THUMBNAIL. */
+  body.is-thumbnail { margin: 0; overflow: hidden; background: #10131a; }
+  body.is-thumbnail .thumb-still {
+    display: block; width: 100vw; height: 100vh; object-fit: cover;
+  }
   :root {
     color-scheme: dark;
     /* palette lifted from the fused-render explorer shell */
@@ -1070,6 +1075,53 @@
   </div>
 
 <script>
+  // ── am I a thumbnail? ──────────────────────────────────────────────────
+  // The /apps hub shows this page twice: opened, and PEEKED — hovering the
+  // card mounts the entry page live in a scaled-down iframe. Lens is the
+  // heaviest app on that grid (a Python process, the SigLIP embedder warming,
+  // hundreds of thumbnails), and a hover is not a use of it. So a peek gets a
+  // still — the same preview.png the card shows before the hover — and none
+  // of the app boots: no runtime calls, no GSAP, no polling.
+  //
+  // The `path=` in the address is identical either way, so the URL alone does
+  // not say which case this is. The shell does: every thumbnail frame it mounts
+  // carries `_preview=1` (thumb-frame.ts / router.ts), inherited by same-origin
+  // descendants — the same climb the runtime's own IS_THUMBNAIL makes to refuse
+  // fused.daemon.* from a picture. Nothing exposes that flag to the page, so it
+  // is read here. Cross-origin ancestors end the climb: nothing above them is
+  // ours to read, and a real open of the app is never under one.
+  const IS_THUMBNAIL = (() => {
+    const has = search => {
+      try { return new URLSearchParams(search).get("_preview") === "1"; }
+      catch (err) { return false; }
+    };
+    if (has(location.search)) return true;
+    try {
+      let w = window;
+      while (w.parent && w.parent !== w) {
+        w = w.parent;
+        if (has(w.location.search)) return true;
+      }
+    } catch (err) { /* cross-origin: the climb ends here */ }
+    return false;
+  })();
+
+  if (IS_THUMBNAIL) {
+    // preview.png sits at the app root beside this file. fused.rawUrl because
+    // the page is served from /render?path=…, where a relative <img src> would
+    // resolve against /render rather than this folder (same reason GSAP below
+    // cannot be a plain <script src>).
+    document.body.innerHTML =
+      '<img class="thumb-still" alt="Lens — local photo search">';
+    document.body.className = "is-thumbnail";
+    document.querySelector(".thumb-still").src = fused.rawUrl("./preview.png");
+  }
+
+  // Everything else is the app, and only runs for a real open. A block rather
+  // than a throw so a peek leaves a clean console; the body keeps its
+  // top-level indentation because 3,400 lines re-indented would bury every
+  // future diff.
+  if (!IS_THUMBNAIL) {
   // ── where the data comes from ──────────────────────────────────────────
   // There used to be a daemon here: a long-lived loopback process that held the
   // store and the SigLIP weights, and a `DAEMON` constant this page fetched
@@ -4468,6 +4520,7 @@
   paintScope(currentScope());
   route();
   pollStatus();
+  } // !IS_THUMBNAIL
 </script>
 </body>
 </html>
