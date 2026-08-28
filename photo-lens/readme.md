@@ -38,9 +38,19 @@ Re-scan any time with ↻ in the header. Only new and changed files are read.
 There isn't any beyond the first run above: lens runs entirely on
 fused-render's own APIs, and needs a build with the `embeddings` AI capability
 (fused-render **0.4.45** or newer). The folder's Python environment builds
-itself on first render — numpy, Pillow, pillow-heif, reverse_geocoder and av,
-and deliberately no PyTorch, because the model is fused-render's rather than
+itself on first render — numpy, Pillow, pillow-heif, psutil and av, and
+deliberately no PyTorch, because the model is fused-render's rather than
 lens's.
+
+**Place names are opt-in.** Photos keep their GPS coordinates always, but the
+city and region labels need `reverse_geocoder`, which has never published a
+wheel — under the packaged app's interpreter its source build fails and would
+stop the app from starting, so it is not declared. To switch place names on,
+install it into this app's environment yourself:
+
+    uv pip install --python <the app's project venv> reverse_geocoder
+
+Then re-index; the names appear on new and re-read photos.
 
 There is no daemon to start. The model lives in fused-render's AI runtime
 (`fused.ai.embed`); the catalog and vectors live in
