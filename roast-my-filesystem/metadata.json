@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "name": "Roast My Filesystem",
+  "description": "SQL over your disk with no scan, then a local model does five minutes of stand-up about what it found.",
+  "author": { "name": "Vasu" },
+  "tags": ["local-ai", "llm", "filesystem", "humor"],
+  "category": "local-ai",
+  "version": "1.0.0",
+  "requires_python": false,
+  "ai_capabilities": ["text-generation"],
+  "ai_model_param": "roastModel"
+}
