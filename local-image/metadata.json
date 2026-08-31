@@ -1,11 +1,11 @@
 {
   "schema": 1,
   "name": "Local Image",
-  "description": "Text-to-image on your own machine — a single-shot studio, a parameter sweep, an AI prompt lab, and a gallery of everything you've made.",
+  "description": "Text-to-image on your own machine — one workspace to generate and edit a picture, and a gallery of everything you've made.",
   "author": { "name": "Isaac" },
   "tags": ["local-ai", "image-generation", "flux", "text-to-image"],
   "category": "local-ai",
-  "version": "1.2.0",
+  "version": "1.4.0",
   "requires_python": true,
   "ai_capabilities": ["text-to-image"],
   "ai_model_param": "imageModel"
