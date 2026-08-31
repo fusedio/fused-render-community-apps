@@ -916,7 +916,10 @@
 <!-- ── The Advanced drawer (§5.1): the ONLY place this app's technical
      vocabulary is allowed to appear. A beginner never opens it. ───────────── -->
 <div class="scrim hidden" id="scrim"></div>
-<aside class="drawer" id="drawer" aria-label="Advanced settings">
+<!-- `inert` from the start, not just from the first setDrawer(): the panel is
+     closed on load and only slid away by a transform, so it must be out of the
+     tab order before anything toggles it. -->
+<aside class="drawer" id="drawer" aria-label="Advanced settings" inert>
   <header>
     <h2>Advanced</h2>
     <button id="closeDrawer" aria-label="Close">&times;</button>
@@ -1104,6 +1107,19 @@ function effectivePrompt(raw) {
   return out;
 }
 
+// The inverse obligation. Everything this app stores as "the prompt" — history
+// entries, a gallery sidecar — is the SETTLED prompt, which already carries the
+// style and palette wording effectivePrompt() joined in. So refilling the box
+// from one while the tiles stay selected would append the same suffixes a
+// second time on the next Generate ("…, pixel art, …, pixel art"), compounding
+// with every reuse. Putting a settled prompt back therefore clears both
+// choices: the wording it needs is in the text already.
+function usePromptVerbatim(text) {
+  setP("prompt", text || "");
+  setP("look", "");
+  setP("palette", "");
+}
+
 const el = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
@@ -1166,6 +1182,13 @@ let residencyStale = false;  // a render has touched the worker: re-read the run
 // anything is in `stack`, the plate's picture-vs-empty state is `stack.length`
 // alone — this flag exists only for that gap.
 let rendering = false;
+// Is a live preview thumbnail currently the picture on the plate? Distinct from
+// both `rendering` (a FRESH generate is painting an empty plate) and `running`
+// (any job is in flight, including a batch that never touches the plate): this
+// says the plate's own <img> belongs to a render in progress, so a redraw must
+// leave it alone. An edit is the case that needs it — it runs with a picture
+// already on the plate and never sets `rendering`.
+let previewOnPlate = false;
 let variants = [];           // wording suggestions: {prompt, image|null, error|null, state}
 let gallery = [];            // last gallery listing
 let detail = null;           // the saved picture being shown
@@ -1282,7 +1305,14 @@ async function refreshRuntime() {
   }
   try {
     const rt = await fused.ai.models.list();
-    runner = (rt.runners || []).find((r) => r.capability === T2I) || null;
+    // `available` and `active` are different questions: several engines can
+    // serve this capability on one machine, and exactly one of them is the one
+    // a load would actually use. The registry lists mflux first, so taking the
+    // first row reports "Not available" — and disables Generate — on any
+    // machine mflux cannot serve but another engine can, a Linux box with a
+    // working CUDA build included.
+    const t2i = (rt.runners || []).filter((r) => r.capability === T2I);
+    runner = t2i.find((r) => r.active) || t2i.find((r) => r.available) || t2i[0] || null;
     resident = (rt.loaded || []).find((m) => m.capability === T2I) || null;
   } catch (err) {
     runner = null; resident = null;
@@ -1396,9 +1426,10 @@ function syncEnabled() {
 }
 
 // The two transitions of `running`, so the "app went idle" moment exists once.
-function beginRun() { running = true; abandon = false; syncEnabled(); drawRuntime(); }
+function beginRun() { running = true; abandon = false; previewOnPlate = false; syncEnabled(); drawRuntime(); }
 function endRun() {
   running = false;
+  previewOnPlate = false;
   syncEnabled();
   drawRuntime();
   // One runtime read per burst — a batch marks residency stale on every take and
@@ -1571,6 +1602,7 @@ function drawPlatePreview(job) {
   el("plateBeforeWrap").classList.add("hidden");
   el("plateDivider").classList.add("hidden");
   showImage(job.previewUrl, true);
+  previewOnPlate = true;
 }
 
 // A fresh generate clears everything describing a finished file, so the
@@ -1664,18 +1696,27 @@ async function generate() {
 function stepMeta(step, i) {
   const rows = [];
   if (i === 0) {
-    const askedSize = `${step.askedW} × ${step.askedH}`;
+    // An imported, camera or "Change it" picture is step 0 without ever having
+    // been asked for: ensureStack() builds it from a path alone, so there is no
+    // asked-vs-settled to show and half these rows have nothing behind them.
+    const asked = step.askedW && step.askedH ? `${step.askedW} × ${step.askedH}` : null;
     const gotSize = `${step.width} × ${step.height}`;
-    rows.push(["Words", step.prompt]);
-    rows.push(["Size", gotSize === askedSize ? gotSize : `${gotSize} (asked ${askedSize})`]);
-    rows.push(["Steps", step.steps === step.askedSteps ? step.steps : `${step.steps} (asked ${step.askedSteps})`]);
-    rows.push(["Guidance", step.guidance]);
+    if (step.prompt) rows.push(["Words", step.prompt]);
+    rows.push(["Size", !asked || gotSize === asked ? gotSize : `${gotSize} (asked ${asked})`]);
+    if (step.steps != null) {
+      rows.push(["Steps", step.askedSteps == null || step.steps === step.askedSteps
+        ? step.steps : `${step.steps} (asked ${step.askedSteps})`]);
+    }
+    if (step.guidance != null) rows.push(["Guidance", step.guidance]);
   } else {
     rows.push(["Change", step.prompt]);
     rows.push(["Size", `${step.width} × ${step.height}`]);
   }
-  rows.push(["Seed", step.seed]);
-  rows.push(["Model", step.model]);
+  // Same reason as the asked-vs-settled rows above: an imported picture has a
+  // path and nothing else, and a row reading "Seed —" tells the reader less
+  // than no row at all.
+  if (step.seed != null) rows.push(["Seed", step.seed]);
+  if (step.model) rows.push(["Model", step.model]);
   rows.push(["Written to", step.path]);
   return rows;
 }
@@ -1711,11 +1752,17 @@ function drawPlate() {
     frameSignature(el("plateSig"), step.width, step.height);
   }
   el("plateImgAfter").alt = step.prompt || "";
-  showImage(step.url, false);
-  el("plateCaption").textContent = step.elapsedMs ? `Made in ${secs(step.elapsedMs)}` : "";
+  // A live preview owns the plate's <img>, and the run's ticker owns the
+  // caption. An edit renders with a picture already on the plate and leaves the
+  // prompt box live throughout, so without these guards a single keystroke
+  // redraws the previous finished picture over the preview, restores the
+  // compare slider, and overwrites the elapsed-time ticker.
+  if (!previewOnPlate) showImage(step.url, false);
+  if (!running) el("plateCaption").textContent = step.elapsedMs ? `Made in ${secs(step.elapsedMs)}` : "";
 
-  // Before/after: only once there is a previous step to compare against (§2.4).
-  const prev = at > 0 ? stack[at - 1] : null;
+  // Before/after: only once there is a previous step to compare against (§2.4),
+  // and never over a live preview — matching drawPlatePreview(), which hides it.
+  const prev = at > 0 && !previewOnPlate ? stack[at - 1] : null;
   el("plateDivider").classList.toggle("hidden", !prev);
   el("plateBeforeWrap").classList.toggle("hidden", !prev);
   if (prev) {
@@ -1758,7 +1805,9 @@ function openInStudio(image) {
   setP("guidance", image.guidance);
   setP("w", image.width);
   setP("h", image.height);
-  if (image.prompt) setP("prompt", image.prompt);
+  // Settled prompt — the style/palette wording is already in the text, so this
+  // clears the tiles rather than letting them append it twice.
+  if (image.prompt) usePromptVerbatim(image.prompt);
   if (image.model) setP("imageModel", image.model);
   setP("tab", "studio");
 }
@@ -2359,6 +2408,10 @@ function updateScrim() {
 function setDrawer(open) {
   drawerOpen = open;
   el("drawer").classList.toggle("open", open);
+  // The panel is only slid off-screen by a transform, so without `inert` every
+  // control in it — model, size, steps, seed — stays in the tab order while
+  // closed, and a keyboard user tabs through settings they cannot see.
+  el("drawer").inert = !open;
   updateScrim();
   if (open) el("drawer").querySelector("select, input, button").focus();
 }
@@ -2801,7 +2854,7 @@ el("sheetGrid").addEventListener("click", async (e) => {
 el("historyList").addEventListener("click", (e) => {
   const b = e.target.closest("button[data-hist]");
   if (!b) return;
-  setP("prompt", promptHistory[Number(b.dataset.hist)]);
+  usePromptVerbatim(promptHistory[Number(b.dataset.hist)]);
   closeRecent();
   el("prompt").focus();
 });
@@ -2928,7 +2981,13 @@ el("plateFile").addEventListener("change", async () => {
   if (!f) return;
   await useBaseFromDataUrl(await fileToDataUrl(f), f.name, "upload");
 });
-el("plateDropZone").addEventListener("click", () => el("plateFile").click());
+// The whole zone browses for a file — but it WRAPS the two buttons, so a press
+// on "Use the camera" would open the file dialog on top of the camera, and one
+// on "Choose a file" would open it twice.
+el("plateDropZone").addEventListener("click", (e) => {
+  if (e.target.closest("button")) return;
+  el("plateFile").click();
+});
 el("plateEmpty").addEventListener("dragover", (e) => { e.preventDefault(); el("plateEmpty").classList.add("drop"); });
 el("plateEmpty").addEventListener("dragleave", () => el("plateEmpty").classList.remove("drop"));
 el("plateEmpty").addEventListener("drop", async (e) => {
