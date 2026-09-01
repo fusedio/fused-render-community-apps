@@ -433,6 +433,10 @@
      gutter), and matching padding puts the text back exactly where the old
      margin/padding put it, so resting appearance at scrollTop 0 is
      unchanged. */
+  /* Sits above the first (sticky) heading, whose own 15px padding-top supplies
+     most of the gap below — hence the negative bottom margin rather than a
+     second stacked space. */
+  .style-panel-mode { margin: 14px 0 -4px; }
   .style-panel-heading {
     position: sticky; top: 0; z-index: 1; background: var(--surface);
     flex: none; font: 600 15px/1.4 var(--display); color: var(--text);
@@ -456,6 +460,10 @@
   .stile-label { font-size: 11px; line-height: 1.3; text-align: center; }
   .style-tile[aria-checked="true"] .stile-label { font-weight: 600; color: var(--text); }
   .style-tile:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* Only "Any style"/"Any colour", and only while editing, where "add no
+     suffix" is not an instruction anything can carry out. */
+  .style-tile:disabled { opacity: .4; cursor: default; }
+  .style-tile:disabled:hover { color: var(--muted); }
 
   /* Below 900px: out of the flex flow, off-screen by default, a fixed
      overlay panel when opened. Kept BELOW the Advanced drawer's z-index (41)
@@ -901,6 +909,11 @@
        interleaved with it. -->
   <aside class="style-panel" id="stylePanel">
     <div class="style-panel-body" id="stylePanelBody">
+      <!-- Only shown with a picture on the plate, where the tiles change job
+           from "modify the next render" to "restyle this one" (syncStylePanel).
+           Without it the panel looks identical in both modes while behaving
+           differently, which is exactly the confusion it exists to end. -->
+      <p class="hint style-panel-mode hidden" id="stylePanelMode">Puts a restyle instruction in the box.</p>
       <div class="style-group">
         <h2 class="style-panel-heading" id="stylePanelHeading">Style</h2>
         <div class="style-tiles" id="styleTiles" role="radiogroup" aria-labelledby="stylePanelHeading"></div>
@@ -1105,6 +1118,17 @@ function effectivePrompt(raw) {
   if (look) out += `, ${look.suffix}`;
   if (palette) out += `, ${palette.suffix}`;
   return out;
+}
+
+// The same table read the other way round, for the Edit surface. A style
+// cannot be a suffix on an edit instruction (see effectivePrompt() above), but
+// it CAN be the whole instruction: with a picture on the plate the tiles stop
+// being modifiers and become named jobs, exactly like EDIT_ACTIONS. The
+// keep-clause is what separates a restyle from a fresh render — without it the
+// model is free to redraw the subject too.
+function restyleInstruction(kind, item) {
+  const verb = kind === "palette" ? "Recolour" : "Restyle";
+  return `${verb} this picture: ${item.suffix}. Keep the same subject and composition.`;
 }
 
 // The inverse obligation. Everything this app stores as "the prompt" — history
@@ -2629,24 +2653,53 @@ function renderTilePanel(containerId, folder, items) {
   }).join("");
 }
 function tilesIn(containerId) { return [...el(containerId).querySelectorAll(".style-tile")]; }
-function syncTilePanel(containerId, currentVal) {
+// Two modes, one set of tiles. With an empty plate a group is a radiogroup
+// choosing the suffix the NEXT render gets (effectivePrompt); with a picture
+// on it the same tiles are plain buttons that write a restyle instruction.
+// The roles have to move with the mode or a screen reader announces a
+// selection that no longer exists — hence the role/aria juggling here rather
+// than a static attribute in the markup.
+function syncTilePanel(containerId, currentVal, actionMode) {
+  el(containerId).setAttribute("role", actionMode ? "group" : "radiogroup");
   for (const t of tilesIn(containerId)) {
-    const checked = t.dataset.val === currentVal;
-    t.setAttribute("aria-checked", String(checked));
-    t.tabIndex = checked ? 0 : -1;
+    const checked = !actionMode && t.dataset.val === currentVal;
+    if (actionMode) {
+      t.setAttribute("role", "button");
+      t.removeAttribute("aria-checked");
+      // "Any style"/"Any colour" mean "add no suffix" — a no-op as an
+      // instruction, so they have nothing to do in this mode.
+      t.disabled = !t.dataset.val;
+      t.tabIndex = 0;
+    } else {
+      t.setAttribute("role", "radio");
+      t.setAttribute("aria-checked", String(checked));
+      t.disabled = false;
+      t.tabIndex = checked ? 0 : -1;
+    }
   }
 }
 // `getVal`/`setVal` close over the param each group actually owns (`look` or
 // `palette`), which is what keeps the two groups from ever touching each
-// other's selection.
-function wireTilePanel(containerId, getVal, setVal) {
+// other's selection. `fill` is the change-mode counterpart: same tile, but it
+// writes the box instead of the param.
+function wireTilePanel(containerId, getVal, setVal, fill) {
   el(containerId).addEventListener("click", (e) => {
     const b = e.target.closest(".style-tile");
-    if (b) setVal(b.dataset.val);
+    if (!b || b.disabled) return;
+    if (stack.length) fill(b.dataset.val); else setVal(b.dataset.val);
   });
   el(containerId).addEventListener("keydown", (e) => {
-    const tiles = tilesIn(containerId);
-    const cur = tiles.findIndex((t) => t.dataset.val === getVal());
+    // Disabled tiles cannot take focus, so they must not be stops on the ring
+    // either — otherwise an arrow press lands nowhere.
+    const tiles = tilesIn(containerId).filter((t) => !t.disabled);
+    if (!tiles.length) return;
+    // In action mode every tile is tabbable and Enter/Space activates it
+    // natively, so the arrows only walk focus — moving the SELECTION on each
+    // arrow press would fire a restyle fill per keystroke.
+    const actionMode = stack.length > 0;
+    const cur = actionMode
+      ? tiles.indexOf(document.activeElement.closest?.(".style-tile"))
+      : tiles.findIndex((t) => t.dataset.val === getVal());
     let next = -1;
     if (e.key === "ArrowRight" || e.key === "ArrowDown") next = (cur + 1) % tiles.length;
     else if (e.key === "ArrowLeft" || e.key === "ArrowUp") next = (cur - 1 + tiles.length) % tiles.length;
@@ -2654,7 +2707,7 @@ function wireTilePanel(containerId, getVal, setVal) {
     else if (e.key === "End") next = tiles.length - 1;
     else return;
     e.preventDefault();
-    setVal(tiles[next].dataset.val);
+    if (!actionMode) setVal(tiles[next].dataset.val);
     tiles[next].focus();
   });
 }
@@ -2662,11 +2715,29 @@ function wireTilePanel(containerId, getVal, setVal) {
 renderTilePanel("styleTiles", "styles", STYLE_TILES);
 renderTilePanel("paletteTiles", "palettes", PALETTE_TILES);
 function syncStylePanel() {
-  syncTilePanel("styleTiles", P.look);
-  syncTilePanel("paletteTiles", P.palette);
+  // Same test as the composer's own `changeMode` in draw(): a picture on the
+  // plate is what turns the whole surface from "make one" into "change this".
+  const actionMode = stack.length > 0;
+  el("stylePanelMode").classList.toggle("hidden", !actionMode);
+  syncTilePanel("styleTiles", P.look, actionMode);
+  syncTilePanel("paletteTiles", P.palette, actionMode);
 }
-wireTilePanel("styleTiles", () => P.look, (v) => setP("look", v));
-wireTilePanel("paletteTiles", () => P.palette, (v) => setP("palette", v));
+// Goes through usePromptVerbatim() rather than setP("prompt"): the instruction
+// it writes already spells the style out in full, so leaving a tile selected
+// would append the same wording a second time on the next Generate.
+function fillRestyle(kind, map, v) {
+  usePromptVerbatim(restyleInstruction(kind, map[v]));
+  // Below 900px the panel is an overlay sitting over the composer, so a tile
+  // that fills the box has to get out of the way to show what it did.
+  // Deliberately not closeStylePanel(), which returns focus to the rail
+  // toggle — the box is where the user is now.
+  if (stylePanelOpen) { stylePanelOpen = false; applyStylePanelState(); }
+  el("prompt").focus();
+}
+wireTilePanel("styleTiles", () => P.look, (v) => setP("look", v),
+  (v) => fillRestyle("look", LOOK_MAP, v));
+wireTilePanel("paletteTiles", () => P.palette, (v) => setP("palette", v),
+  (v) => fillRestyle("palette", PALETTE_MAP, v));
 
 // Below 900px there's no room for a 180px panel beside a usable content
 // column, so it collapses out of flow and opens as a dismissible (not modal)
