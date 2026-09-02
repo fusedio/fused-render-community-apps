@@ -1,0 +1,9 @@
+# Declares s3.py as this folder's daemon protocol (SPEC.md §46): the shipped
+# worker imports s3.py once and answers each call by splatting the request
+# body into its main(action=...) dispatcher, keeping botocore clients cached
+# (s3.py's _CLIENT_CACHE) across calls instead of paying a fresh subprocess
+# and a ~1s client build every request. No [project] table: this folder has
+# no dependencies of its own, so the worker runs on the app's own bundled
+# interpreter, where botocore/pandas/pyarrow already live.
+[tool.fused-render.app]
+main = "s3.py"
