@@ -461,19 +461,30 @@ function connParams() {
   if (region()) p.region = region();
   return p;
 }
-// Warm worker (fused.engine) keeps s3.py's process alive so botocore imports
-// once and clients stay cached — every call after the first is a warm round-trip
-// instead of a fresh subprocess. Falls back to runPython on older runtimes; the
-// engine handle itself falls back if the server ever becomes unreachable.
-const S3ENGINE = (typeof fused !== "undefined" && fused.engine) ? fused.engine("./s3.py") : null;
-async function call(action, extra = {}, conn = connParams(), opts) {
+// s3.py declares `main = "s3.py"` (pyproject.toml), so the shipped worker
+// keeps it imported and its botocore clients cached (s3.py's _CLIENT_CACHE)
+// across calls — every call after the first is a warm round-trip instead of
+// a fresh subprocess. `fused.daemon.run()` has no per-call cancellation of
+// its own (no AbortController, no key-based supersession the way
+// `fused.runPython`'s `opts.key` gives it), so the stale-cancel guarantee
+// `call()`'s callers rely on — an in-flight action's result never lands once
+// a newer call of the SAME key has started — is reimplemented here at the
+// page level with a generation counter per key: a superseded call's promise
+// never settles, exactly like `runPython`'s own supersession contract, it
+// just can't abort the in-flight request server-side the way runPython's
+// AbortController-backed cancellation could.
+const S3_CALL_GEN = new Map();
+function call(action, extra = {}, conn = connParams(), opts = {}) {
   const params = { action, ...conn, ...extra };
-  // Key stale-cancel per action, not per script: otherwise any in-flight call
-  // (e.g. a listing) is silently cancelled by the next call of a different
-  // action (e.g. head_object), and its promise never settles. Same-action calls
-  // still supersede — a new listing cancels a stale one during fast navigation.
-  opts = { key: action, ...opts };
-  return S3ENGINE ? S3ENGINE.call(params, opts) : fused.runPython("./s3.py", params, opts);
+  const key = opts.key === undefined ? action : opts.key;
+  if (key === null) return fused.daemon.run(params);
+  const gen = (S3_CALL_GEN.get(key) || 0) + 1;
+  S3_CALL_GEN.set(key, gen);
+  const stale = () => S3_CALL_GEN.get(key) !== gen;
+  return fused.daemon.run(params).then(
+    (result) => (stale() ? new Promise(() => {}) : result),
+    (err) => { if (stale()) return new Promise(() => {}); throw err; }
+  );
 }
 async function callPreview(extra = {}) { return fused.runPython("./preview.py", { ...connParams(), ...extra }); }
 function embedUrl(localPath) {
@@ -513,9 +524,10 @@ async function loadAccounts() {
 async function saveAccounts() {
   await fused.writeFile(ACCOUNTS_FILE, JSON.stringify({ accounts: ACCOUNTS }, null, 2));
   cacheAccounts();
-  // Credentials may have changed; drop the warm worker so its cached botocore
-  // clients are rebuilt from the new accounts on the next call.
-  if (S3ENGINE) S3ENGINE.forget();
+  // Credentials may have changed; stop the daemon so its cached botocore
+  // clients are rebuilt from the new accounts on the next call — run()
+  // brings it back up transparently.
+  fused.daemon.stop().catch(() => {});
 }
 
 // ---- connections sidebar ----

@@ -12,7 +12,8 @@ Every S3 operation the UI needs flows through one dispatcher, `main(action=...)`
 - **Pagination from day one.** `list_objects` speaks continuation tokens.
 
 botocore drives every call; pandas/pyarrow back the Parquet preview — all in
-fused-render's bundled interpreter, so this folder has no pyproject.toml.
+fused-render's bundled interpreter (this folder's pyproject.toml declares
+`main = "s3.py"` and no dependencies of its own).
 Anonymous mode is what lets it all be exercised against public AWS Open Data
 buckets with no account.
 """
@@ -21,12 +22,12 @@ import json
 
 import s3lib
 
-# Under the warm-worker runtime (fused.engine) this module stays imported across
+# The shipped worker (`main = "s3.py"`) keeps this module imported across
 # calls, so botocore clients are cached per connection here instead of being
 # rebuilt every call — that client build is ~1s of a cold call. Keyed by the
-# fields that define the client; the page drops the whole worker (engine.forget)
-# when a connection's credentials change, so a stale client can't outlive an edit.
-# Under plain /api/run each call is a fresh process, so this is simply empty.
+# fields that define the client; the page stops the daemon
+# (`fused.daemon.stop()`) when a connection's credentials change, so a stale
+# client can't outlive an edit.
 _CLIENT_CACHE = {}
 
 
