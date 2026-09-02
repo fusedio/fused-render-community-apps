@@ -298,7 +298,9 @@
   .pillbar button:hover:not(:disabled) { background: var(--surface-2); color: var(--text); }
   .pillbar button:disabled { opacity: .4; cursor: default; }
   .pillbar .sep { width: 1px; height: 20px; background: var(--line); margin: 0 4px; }
-  .pillbar .pos { font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; padding: 0 6px; }
+  /* nowrap: without it "Step 2 of 2" breaks across two lines and makes the
+     pillbar taller than its buttons (specs feedback). */
+  .pillbar .pos { font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; padding: 0 6px; white-space: nowrap; }
 
   /* Everything technical the surface is not allowed to say lives behind one of
      these, closed (§1.5). Never hidden, never on the face. */
@@ -750,9 +752,9 @@
               <svg class="sig" id="plateSig" viewBox="0 0 100 100" aria-hidden="true"><rect x="1" y="1" width="98" height="98" rx="4" pathLength="100"/></svg>
             <div class="pillbar plate-actions hidden" id="plateActions">
               <span id="plateUndoGroup" class="hidden" style="display:contents">
-                <button id="plateUndo" title="Undo" aria-label="Undo"><svg class="ic" viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h9a6 6 0 0 1 0 12h-3"/></svg></button>
-                <span class="pos" id="platePos"></span>
-                <button id="plateRedo" title="Redo" aria-label="Redo"><svg class="ic" viewBox="0 0 24 24"><path d="M15 14l5-5-5-5"/><path d="M20 9h-9a6 6 0 0 0 0 12h3"/></svg></button>
+                <button id="plateUndo" title="Undo the last change" aria-label="Undo the last change"><svg class="ic" viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h9a6 6 0 0 1 0 12h-3"/></svg></button>
+                <span class="pos" id="platePos" aria-live="polite"></span>
+                <button id="plateRedo" title="Redo the change" aria-label="Redo the change"><svg class="ic" viewBox="0 0 24 24"><path d="M15 14l5-5-5-5"/><path d="M20 9h-9a6 6 0 0 0 0 12h3"/></svg></button>
                 <div class="sep"></div>
               </span>
               <button data-act="save" title="Keep this picture" aria-label="Keep this picture"><svg class="ic" viewBox="0 0 24 24"><path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7V4M8 20v-6h8v6"/></svg><span>Keep</span></button>
@@ -1813,7 +1815,10 @@ function drawPlate() {
         <div class="box"><img src="${esc(s.url)}" alt="" loading="lazy" /></div>
         <div class="cap">${i === 0 ? "Original" : esc(s.prompt || "")}</div>
       </div>`).join("");
-    el("platePos").textContent = `${at + 1} / ${stack.length}`;
+    // Spelled out, not "2 / 2": the bare fraction read as a page number rather
+    // than a position in the edit history, which is what the arrows move
+    // through (specs feedback).
+    el("platePos").textContent = `Step ${at + 1} of ${stack.length}`;
   }
   syncEnabled();   // there is a file now: the actions can act on it
 }
