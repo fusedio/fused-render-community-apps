@@ -223,7 +223,9 @@
      own rect never moves. */
   .plate.slot.drop { outline: 1.5px dashed var(--accent); outline-offset: -1.5px; background: var(--accent-soft); }
   .slot-inner { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 24px; text-align: center; }
+  .slot-icon { width: 34px; height: 34px; stroke-width: 1.3; color: var(--faint); margin-bottom: 2px; }
   .slot-title { margin: 0; font: 600 15px/1.4 var(--display); color: var(--text); }
+  .slot-hint { margin: -6px 0 0; font: 400 12px/1.4 var(--display); color: var(--faint); }
   /* These are escape hatches, not the primary path — typing in the prompt bar
      is — so they must not carry the same filled weight as the style chips
      elsewhere on the page. A border alone used to carry the shape here, but
@@ -723,7 +725,9 @@
                  to be the separate Edit tab's empty state. -->
             <div class="plate slot" id="plateEmpty">
               <div class="slot-inner" id="plateDropZone">
+                <svg class="ic slot-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="3"/><circle cx="8.5" cy="10" r="1.6"/><path d="M21 16l-5-5-6 6"/></svg>
                 <p class="slot-title">Describe a picture, or drop one in</p>
+                <p class="slot-hint">PNG, JPEG or WEBP</p>
                 <div class="row" style="justify-content:center">
                   <button class="btn" id="plateUpload">Choose a file</button>
                   <button class="btn" id="plateWebcam">Use the camera</button>
