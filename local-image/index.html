@@ -223,19 +223,23 @@
      own rect never moves. */
   .plate.slot.drop { outline: 1.5px dashed var(--accent); outline-offset: -1.5px; background: var(--accent-soft); }
   .slot-inner { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 24px; text-align: center; }
-  /* A small badge, not a bare icon: the circular accent-soft ground gives the
-     glyph a shape to sit in, echoing the pill/chip language used for the
-     style tray and status pips elsewhere on the page rather than inventing a
-     new motif. The sparkle is a second, smaller badge overlapping the
-     corner — it borrows the "generate" glyph from the rail (line 681) so the
-     empty plate visually promises what typing below will do. */
-  .slot-art { position: relative; width: 64px; height: 64px; margin-bottom: 4px; }
-  .slot-icon {
-    width: 64px; height: 64px; padding: 17px; box-sizing: border-box; border-radius: 50%;
-    stroke-width: 1.4; color: var(--accent); background: var(--accent-soft);
-  }
+  /* A little illustration, not a bare icon: two tilted cards — a plain one
+     behind, and a landscape scene in front — read as "a picture" the way a
+     single glyph didn't. Filled shapes at accent-soft/accent tints keep it
+     quiet against the wash rather than a bold flat icon fighting the copy
+     below it. The sparkle rides the front card's corner and borrows the
+     "generate" glyph from the rail (line 681) so the empty plate visually
+     promises what typing below will do. */
+  .slot-art { position: relative; width: 108px; height: 84px; margin-bottom: 2px; }
+  .slot-illus { width: 100%; height: 100%; overflow: visible; }
+  .slot-illus-back { fill: var(--surface-3); stroke: var(--line); stroke-width: 1.2; }
+  .slot-illus-front { fill: var(--surface); stroke: var(--line); stroke-width: 1.2; }
+  .slot-illus-sky { fill: var(--accent-soft); }
+  .slot-illus-sun { fill: var(--accent); opacity: .9; }
+  .slot-illus-hill-a { fill: var(--accent); opacity: .3; }
+  .slot-illus-hill-b { fill: var(--accent); opacity: .55; }
   .slot-spark {
-    position: absolute; right: -4px; bottom: -4px; width: 24px; height: 24px; padding: 5px; box-sizing: border-box;
+    position: absolute; right: 6px; bottom: 4px; width: 24px; height: 24px; padding: 5px; box-sizing: border-box;
     border-radius: 50%; stroke-width: 1.8; color: var(--accent-ink); background: var(--accent);
     box-shadow: 0 0 0 3px var(--surface-2);
   }
@@ -741,7 +745,21 @@
             <div class="plate slot" id="plateEmpty">
               <div class="slot-inner" id="plateDropZone">
                 <div class="slot-art" aria-hidden="true">
-                  <svg class="ic slot-icon" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><circle cx="8.5" cy="10" r="1.6"/><path d="M21 16l-5-5-6 6"/></svg>
+                  <svg class="slot-illus" viewBox="0 0 108 84">
+                    <rect class="slot-illus-back" x="12" y="16" width="58" height="44" rx="6" transform="rotate(-8 41 38)"/>
+                    <g transform="rotate(5 60 32)">
+                      <defs>
+                        <clipPath id="slotIllusClip"><rect x="30" y="10" width="58" height="44" rx="6"/></clipPath>
+                      </defs>
+                      <rect class="slot-illus-front" x="30" y="10" width="58" height="44" rx="6"/>
+                      <g clip-path="url(#slotIllusClip)">
+                        <rect class="slot-illus-sky" x="30" y="10" width="58" height="44"/>
+                        <circle class="slot-illus-sun" cx="70" cy="22" r="6"/>
+                        <path class="slot-illus-hill-a" d="M30 54 L44 32 L53 42 L63 28 L88 54 Z"/>
+                        <path class="slot-illus-hill-b" d="M30 54 L40 42 L48 48 L58 36 L70 46 L88 54 Z"/>
+                      </g>
+                    </g>
+                  </svg>
                   <svg class="ic slot-spark" viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/></svg>
                 </div>
                 <p class="slot-title">Describe a picture, or drop one in</p>
