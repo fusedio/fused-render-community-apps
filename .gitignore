@@ -13,3 +13,5 @@ venv/
 *.annotations.json
 *.recording.webm
 *.recording.status.json
+.fused/
+.cache/
