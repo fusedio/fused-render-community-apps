@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="fused-app" />
+<meta name="fused-api-version" content="1" />
 <title>Local image</title>
 <style>
   /* ── Tokens ────────────────────────────────────────────────────────────────
@@ -1018,7 +1019,7 @@
 
   <div class="foot">
     This page is <b>local-only by design</b>. The exporter refuses any file containing
-    <span class="mono">fused.ai(</span> — the wording-suggestion call — because an exported page has
+    <span class="mono">fused.ai.text(</span> — the wording-suggestion call — because an exported page has
     neither the Claude CLI nor a local worker to answer it.
   </div>
 </aside>
@@ -1039,8 +1040,8 @@
 
 <script>
 // ── This page is local-only, twice over. The wording-suggestion call is a
-// `fused.ai(` TEXTUAL match the exporter refuses, so the page cannot be exported
-// at all. The dotted calls (fused.ai.image, fused.ai.models.*) would slip past
+// `fused.ai.text(` TEXTUAL match the exporter refuses, so the page cannot be
+// exported at all. The other verbs (fused.ai.image, fused.ai.models.*) slip past
 // that match and then fail at the reader — a hosted page has no worker — so they
 // are gated by hand. See specs/assumptions.md §5.
 const IS_LOCAL = fused.env === "local";
@@ -1471,6 +1472,30 @@ function endRun() {
 // edit call MUST use the server's own edit defaults — steps 4, guidance 1.0,
 // size derived from the base image (specs/app-v2.md §0, §2.2). Model and an
 // optional seed still come through `overrides` either way.
+// API v1 resolves a layered frame — the PNG under `images[0]`, and everything
+// the server settled (seed, snapped size, steps, guidance, the prompt it
+// actually rendered) under `providerMetadata.local`. This app passes render
+// objects around as one flat record: the stack entries, the contact sheet's
+// takes, saveToGallery(), the Details rows all read `res.path` / `res.seed` /
+// `res.model`. Flattening HERE, at the one call site, is what keeps that shape
+// the app's own rather than the wire's.
+function flattenImage(res, elapsedMs) {
+  const file = (res.images && res.images[0]) || {};
+  const local = (res.providerMetadata && res.providerMetadata.local) || {};
+  // A reply with no file in it is not something any caller can show, keep or
+  // save — and reading it as an ordinary record is what produced a blank plate
+  // and a "No such image: (no path given)" on Keep. Fail where it happened.
+  if (!file.path) throw Object.assign(new Error("The picture engine replied without a picture file."), { type: "ai_error" });
+  return {
+    path: file.path, url: file.url,
+    width: local.width, height: local.height,
+    prompt: local.prompt, seed: local.seed,
+    steps: local.steps, guidance: local.guidance,
+    model: res.response && res.response.modelId,
+    elapsedMs,
+  };
+}
+
 async function render(overrides, onTick, settings = {}) {
   const req = {
     prompt: overrides.prompt,
@@ -1495,8 +1520,7 @@ async function render(overrides, onTick, settings = {}) {
         throw err;
       }
     }
-    res.elapsedMs = Date.now() - started;
-    return res;
+    return flattenImage(res, Date.now() - started);
   } finally {
     // A render brings the worker up and leaves it RESIDENT — on every way out,
     // including a failure and a Stop, which end the job but not the weights.
@@ -2265,7 +2289,7 @@ async function askForHelp() {
   try {
     // Claude path deliberately: model pinned to sonnet, and none of
     // temperature/history/raw, which are local-model-only and refused here.
-    const res = await fused.ai(`Idea: ${idea}`, { systemPrompt: expandSystem(P.variants), effort: "low", model: "sonnet" });
+    const res = await fused.ai.text({ prompt: `Idea: ${idea}`, systemPrompt: expandSystem(P.variants), effort: "low", model: "sonnet" });
     const parsed = parseVariants(res.text, P.variants);
     if (!parsed.length) {
       el("helperTitle").textContent = "No luck this time";
