@@ -840,6 +840,7 @@ const summaryHtml = () => aiOn && !aiBroken ? `<div id="summary">
 const actsHtml = t => `
         <div class="acts">
           <button class="act" data-act="archive" title="Archive" aria-label="Archive">${svg("archive", 17)}</button>
+          <button class="act" data-act="spam" title="Mark as spam" aria-label="Mark as spam">${svg("report", 17)}</button>
           <button class="act danger" data-act="trash" title="Move to trash" aria-label="Move to trash">${svg("trash", 17)}</button>
           ${t.unread
             ? `<button class="act" data-act="read" title="Mark as read" aria-label="Mark as read">${svg("mailopen", 17)}</button>`
@@ -1307,6 +1308,7 @@ $("#list").addEventListener("click", e => {
     const kind = act.dataset.act;
     if (kind === "archive") return archiveThread(id);
     if (kind === "trash") return trashThread(id);
+    if (kind === "spam") return spamThread(id);
     if (kind === "unread") return triage(id, ["UNREAD"], [], "Marked unread");
     if (kind === "read") return triage(id, [], ["UNREAD"], "Marked read");
     return;
@@ -1625,6 +1627,7 @@ const moveThread = (tid, labelId, name) => undoableMove(tid, `Moved to ${name}`,
 const trashThread = tid => undoableMove(tid, "Moved to trash", "Couldn't move to trash",
   () => py({ op: "trash", account: P.account, thread: tid }), () => modOp(tid, ["INBOX"], ["TRASH"]),
   removeRowOptimistic, restoreRow, reloadAfterUndo(tid));
+const spamThread = tid => moveThread(tid, "SPAM", "Spam");
 const addrOf = s => { const m = /<([^>]+)>/.exec(s || ""); return (m ? m[1] : (s || "")).trim(); };
 
 // Who a reply is addressed to. NOT simply the last message's sender: once you

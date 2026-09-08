@@ -151,6 +151,7 @@ $("#listpane").addEventListener("click", e => {
     const kind = mact.dataset.act;
     if (kind === "archive") return mgArchive(id);
     if (kind === "trash") return mgTrash(id);
+    if (kind === "spam") return mgSpam(id);
     if (kind === "unread") return mgSetUnread(id, true, "Marked unread");
     if (kind === "read") return mgSetUnread(id, false, "Marked read");
     return;
@@ -933,6 +934,9 @@ const mgArchive = tid => undoableMove(tid, "Archived", "Couldn't archive",
   mgRemoveOptimistic, mgRestoreRow, mgRestoreRow);
 const mgTrash = tid => undoableMove(tid, "Moved to trash", "Couldn't move to trash",
   () => py({ op: "trash", account: P.account, thread: tid }), () => modOp(tid, ["INBOX"], ["TRASH"]),
+  mgRemoveOptimistic, mgRestoreRow, mgRestoreRow);
+const mgSpam = tid => undoableMove(tid, "Marked as spam", "Couldn't mark as spam",
+  () => modOp(tid, ["SPAM"], ["INBOX"]), () => modOp(tid, ["INBOX"], ["SPAM"]),
   mgRemoveOptimistic, mgRestoreRow, mgRestoreRow);
 function mgSetUnread(tid, unread, msg) {
   const t = mg.threads.find(x => x.id === tid);

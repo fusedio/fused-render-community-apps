@@ -870,8 +870,27 @@ def main(
         return {"error": "SMTP send failed — " + "; ".join(errors)}
 
     def imap_modify(email, thrid, add, remove):
+        add, remove = list(add or []), list(remove or [])
         M = imap_conn(email)
         try:
+            # Gmail's IMAP rejects \Spam via X-GM-LABELS ("Invalid System Label");
+            # like trash, spam is a folder move. Spam mail also leaves All Mail,
+            # so un-spamming (undo) has to search the Spam folder instead.
+            if "SPAM" in add:
+                M.select(imap_quote(IMAP_FOLDERS["ALL"]))
+                uids = imap_thread_uids(M, thrid)
+                if not uids:
+                    return {"error": "thread not found"}
+                M.uid("COPY", ",".join(uids), imap_quote(IMAP_FOLDERS["SPAM"]))
+                return {"ok": True}
+            if "SPAM" in remove:
+                M.select(imap_quote(IMAP_FOLDERS["SPAM"]))
+                uids = imap_thread_uids(M, thrid)
+                if not uids:
+                    return {"error": "thread not found"}
+                dest = "INBOX" if "INBOX" in add else "ALL"
+                M.uid("COPY", ",".join(uids), imap_quote(IMAP_FOLDERS[dest]))
+                return {"ok": True}
             M.select(imap_quote(IMAP_FOLDERS["ALL"]))
             uids = imap_thread_uids(M, thrid)
             if not uids:
