@@ -93,11 +93,17 @@ Every model list in this app is read from `catalog()` at load time.
   **Must be named**; the argless form defaults to `"text-generation"` and would stop
   a chat instead of our render. Resolving `false` is not an error.
 
-**`/api/ai/runtime` reports ONE runner entry per capability — the active one.** There
-is no `active` field to read in this build; the payload's single `text-to-image` row
-*is* the answer to "what is serving this capability now". Finding that row by
-capability is therefore correct, and would keep being correct if a future build
-listed both and added the flag.
+**`/api/ai/runtime` reports ONE row per registered runner, NOT one per capability.**
+(Corrected 2026-08-19; the original claim was true when written on 2026-08-16 and went
+false the next day, when the mflux runner and the `active` field landed.) Several rows
+share `capability: "text-to-image"` — mflux-image, diffusers-image, diffusers-image-cuda,
+diffusers-image-rocm — listed in registry order, and mflux-image comes first *by design*
+even on a Linux/x86 box where MLX can never run. A bare `.find` by capability therefore
+picks a runner that was never going to serve us, and prints its "needs Apple Silicon"
+reason as if it were ours. Select with `active` first, then `available`, and only
+fall back to the first row when nothing can serve the capability. Siblings do the same:
+`local-transcription/index.html` filters on `r.active`, `local-chat/index.html` on
+`r.available`.
 
 **Observed on this machine (2026-08-16), recorded as a warning, not a constant:**
 two probes minutes apart disagreed. The first reported `diffusers-image`
