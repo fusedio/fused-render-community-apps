@@ -2,6 +2,7 @@
 <html>
 <head>
   <meta name="fused-app">
+  <meta name="fused-api-version" content="1">
 <meta charset="utf-8">
 <title>OpenMail</title>
 <script>
@@ -272,7 +273,7 @@ function sendInBackground(params, onDone, onError) {
 }
 
 // ---------- AI (local only — see spec 2026-08-03-mail-ai-scope.md) ----------
-// fused.ai runs the local claude CLI, so it exists only in the shell. Any page
+// fused.ai.text runs the local claude CLI, so it exists only in the shell. Any page
 // containing the call is refused by the exporter (SPEC RH-11) — this app is
 // deliberately local-only, so we call it directly rather than gating on env.
 const AI_KEY = "fused.mail.ai";           // opt-in flag
@@ -492,7 +493,7 @@ async function runSummary(force) {
   redo.textContent = "";
   const rid = threadReq;   // ignore the answer if the user moved on
   try {
-    const res = await fused.ai(threadToText(t), { systemPrompt: SUMMARY_PROMPT, effort: "low" });
+    const res = await fused.ai.text({ prompt: threadToText(t), systemPrompt: SUMMARY_PROMPT, effort: "low" });
     if (rid !== threadReq) return;
     cachePut(t, res.text.trim());
     body.textContent = res.text.trim();
@@ -543,8 +544,8 @@ async function autoDraft() {
   const rid = threadReq;   // user moved on → drop the stream on the floor
   let acc = "";
   try {
-    await fused.ai(threadToText(t) + ask,
-      { systemPrompt: withPersona(DRAFT_PROMPT), effort: "low", onChunk: d => {
+    await fused.ai.text({ prompt: threadToText(t) + ask,
+        systemPrompt: withPersona(DRAFT_PROMPT), effort: "low", onChunk: d => {
           if (rid !== threadReq) return;
           acc += d;
           suggestText = acc;      // Tab mid-stream takes what exists so far
@@ -634,10 +635,10 @@ function wireFixBar() {
     const sel = ta.value.slice(fs, fe);
     bar.classList.add("busy"); inp.disabled = true; go.disabled = true;
     try {
-      const res = await fused.ai(
-        "Full draft:\n" + ta.value + "\n\nSelected passage:\n" + sel + "\n\nInstruction: " + instr,
-        { systemPrompt: withPersona(FIX_PROMPT), effort: "low" });
-      // fused.ai resolves to {text} — splicing the object itself printed "[object Object]"
+      const res = await fused.ai.text({
+        prompt: "Full draft:\n" + ta.value + "\n\nSelected passage:\n" + sel + "\n\nInstruction: " + instr,
+        systemPrompt: withPersona(FIX_PROMPT), effort: "low" });
+      // fused.ai.text resolves to {text} — splicing the object itself printed "[object Object]"
       const txt = String(res.text || "").replace(/\s+$/, sel.match(/\s*$/)[0]);
       ta.setRangeText(txt, fs, fe, "select");
       autosizeReply();
@@ -738,8 +739,8 @@ async function runDigest(force) {
   const ctx = unread.map((t, i) => `[${i + 1}] From ${fromName(t.from)} — "${t.subject}": ${t.snippet}`).join("\n");
   let acc = "";
   try {
-    await fused.ai("Unread emails:\n" + ctx,
-      { systemPrompt: DIGEST_PROMPT, effort: "low",
+    await fused.ai.text({ prompt: "Unread emails:\n" + ctx,
+        systemPrompt: DIGEST_PROMPT, effort: "low",
         onChunk: d => { if (rid !== dgRun) return; acc += d; dg.text = acc; paintDigest(); } });
   } catch (err) {
     if (rid !== dgRun) return;

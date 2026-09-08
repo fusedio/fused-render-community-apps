@@ -284,9 +284,9 @@ function mgAddCategory(name) {
 async function mgDescribe(catId, name, cur) {
   const others = mgCats().filter(c => c.id !== catId)
     .map(c => `- ${c.name}: ${c.prompt || "(no description)"}`).join("\n");
-  const res = await fused.ai(
-    `Category name: ${name}\nCurrent description: ${cur || "(none)"}\nThe OTHER categories are:\n${others}`,
-    { systemPrompt: "You write classifier instructions for an email triage system. Reply with ONE concise sentence (max 25 words) describing exactly which emails belong in the given category, clearly distinct from the other categories. Reply with the sentence only — no quotes, no preamble.", effort: "low" });
+  const res = await fused.ai.text({
+    prompt: `Category name: ${name}\nCurrent description: ${cur || "(none)"}\nThe OTHER categories are:\n${others}`,
+    systemPrompt: "You write classifier instructions for an email triage system. Reply with ONE concise sentence (max 25 words) describing exactly which emails belong in the given category, clearly distinct from the other categories. Reply with the sentence only — no quotes, no preamble.", effort: "low" });
   return res.text.trim().replace(/^["']+|["']+$/g, "");
 }
 // Drafts the description for a freshly created category into its (busy,
@@ -320,9 +320,9 @@ async function mgSuggestCategory() {
     `From ${fromName(t.from)} <${addrOf(t.from)}> — "${t.subject}": ${t.snippet}`).join("\n");
   const cat = mgCat(id);
   try {
-    const res = await fused.ai(
-      `Existing categories:\n${cats}\n\nRecent inbox mail:\n${ctx}`,
-      { systemPrompt: "You design email triage categories. Propose ONE new category that captures a clear cluster of the mail below that the existing categories miss. Reply in EXACTLY this format, nothing else:\nNAME: <2-3 word name>\nDESC: <one sentence, max 25 words, describing which emails belong here>\nDEST: <one of TRASH, SPAM, ARCHIVE, KEEP>", effort: "low" });
+    const res = await fused.ai.text({
+      prompt: `Existing categories:\n${cats}\n\nRecent inbox mail:\n${ctx}`,
+      systemPrompt: "You design email triage categories. Propose ONE new category that captures a clear cluster of the mail below that the existing categories miss. Reply in EXACTLY this format, nothing else:\nNAME: <2-3 word name>\nDESC: <one sentence, max 25 words, describing which emails belong here>\nDEST: <one of TRASH, SPAM, ARCHIVE, KEEP>", effort: "low" });
     const name = /NAME:\s*(.+)/i.exec(res.text);
     const desc = /DESC:\s*(.+)/i.exec(res.text);
     const dest = /DEST:\s*(TRASH|SPAM|ARCHIVE|KEEP)/i.exec(res.text);
@@ -394,7 +394,7 @@ $("#listpane").addEventListener("change", e => {
 
 // ---------- manage (batch triage board) ----------
 // Inbox threads are pre-sorted: learned sender rules first (free), then an
-// RSVP heuristic, then one fused.ai call for the rest. Nothing moves until a
+// RSVP heuristic, then one fused.ai.text call for the rest. Nothing moves until a
 // tab's confirm button; each confirm teaches a sender → bucket rule.
 const MG_CACHE = "fused.mail.manage.v1";    // "threadId:date" -> bucket (AI verdicts)
 const MG_RULES = "fused.mail.manage.rules"; // sender address -> bucket (learned)
@@ -436,7 +436,7 @@ function mgPrompt() {
 async function mgClassify(threads) {
   const ctx = threads.map((t, i) =>
     `[${i + 1}] From ${fromName(t.from)} <${addrOf(t.from)}> — "${t.subject}": ${t.snippet}`).join("\n");
-  const res = await fused.ai("Inbox emails:\n" + ctx, { systemPrompt: mgPrompt(), effort: "low" });
+  const res = await fused.ai.text({ prompt: "Inbox emails:\n" + ctx, systemPrompt: mgPrompt(), effort: "low" });
   const ids = new Set(mgCats().map(c => c.id));
   const map = {};
   for (const line of res.text.split("\n")) {
