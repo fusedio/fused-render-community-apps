@@ -2,6 +2,3 @@
 .claude-split.json
 .venv/
 gallery/
-.fused/
-__pycache__/
-cmux-assets/
