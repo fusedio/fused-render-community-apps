@@ -19,7 +19,8 @@ Actions
   rename_client(client, name)  -> {slug, name}  (slug unchanged)
   delete_client(client)        -> {ok: true}
   list_invoices(client)        -> {invoices:[{id, number, issue_date, status,
-                                              total, currency, modified}]}
+                                              total, currency, modified,
+                                              paid, paid_date}]}
   new_invoice(client)          -> {doc}  (composed, not saved)
   duplicate_invoice(client,id) -> {doc}  (fresh id/number/date, not saved)
   load_invoice(client, id)     -> {doc}
@@ -61,6 +62,8 @@ DOC_SCHEMA = {
     "id": "",
     "number": "",
     "status": "draft",
+    "paid": False,
+    "paid_date": "",
     "issue_date": "",
     "due_date": "",
     "po": "",
@@ -242,7 +245,8 @@ def _delete_client(client):
 def _list_invoices(client):
     rows = [{"id": d["id"], "number": d["number"], "issue_date": d["issue_date"],
              "status": d["status"], "total": round(_total(d), 2),
-             "currency": d["currency"], "modified": d["modified"]}
+             "currency": d["currency"], "modified": d["modified"],
+             "paid": d["paid"], "paid_date": d["paid_date"]}
             for d in _invoices(client)]
     rows.sort(key=lambda r: (r["issue_date"], r["modified"]), reverse=True)
     return {"invoices": rows}
@@ -272,6 +276,8 @@ def _new_invoice(client):
     doc["po"] = ""
     doc["notes"] = ""
     doc["status"] = "draft"
+    doc["paid"] = False
+    doc["paid_date"] = ""
     doc["created"] = doc["modified"] = _now()
     return {"doc": doc}
 
@@ -284,6 +290,8 @@ def _duplicate_invoice(client, inv_id):
     doc["issue_date"] = date.today().isoformat()
     doc["due_date"] = ""
     doc["status"] = "draft"
+    doc["paid"] = False
+    doc["paid_date"] = ""
     doc["created"] = doc["modified"] = _now()
     return {"doc": doc}
 

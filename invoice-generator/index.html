@@ -46,6 +46,8 @@
   .pill { display: inline-flex; align-items: center; padding: 1px 9px; border-radius: 99px; font-size: 11.5px; }
   .pill.draft { background: #faeeda; color: #854f0b; }
   .pill.final { background: #eaf3de; color: #3b6d11; }
+  .pill.unpaid { background: #faeeda; color: #854f0b; }
+  .pill.paid { background: #eaf3de; color: #3b6d11; }
 
   input, select, textarea { font: inherit; color: var(--ink); background: #fff;
     border: 0.5px solid var(--hair); border-radius: var(--radius); padding: 6px 8px; width: 100%; }
@@ -259,6 +261,8 @@
     </button>
     <span class="pill draft" id="statusPill">Draft</span>
     <button class="btn sm" id="statusBtn">Mark as final</button>
+    <span class="pill unpaid" id="paidPill">Unpaid</span>
+    <button class="btn sm" id="paidBtn">Mark as paid</button>
     <span id="saveState"></span>
     <span class="spacer"></span>
     <button class="btn primary" id="pdfBtn">
@@ -316,6 +320,11 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g,
   (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const escML = (s) => esc(s).replace(/\n/g, "<br>");
 const asObj = (d) => typeof d === "string" ? JSON.parse(d) : d;
+function todayLocal() {
+  const d = new Date();
+  const m = String(d.getMonth() + 1).padStart(2, "0"), day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${day}`;
+}
 
 function fmtMoney(n, cur) {
   return new Intl.NumberFormat(undefined, { style: "currency", currency: cur || "USD" }).format(n || 0);
@@ -484,7 +493,7 @@ async function doSave() {
       setSaveState("Saved");
       if (state.routeId === "new") {
         state.routeId = doc.id;
-        history.replaceState(null, "", `#/edit/${encodeURIComponent(client)}/${doc.id}`);
+        fused.params.set("edit", `${client}/${doc.id}`);
       }
     }
   } catch (err) {
@@ -506,11 +515,17 @@ function showView(name) {
   $("editor").classList.toggle("hidden", name !== "editor");
 }
 async function route() {
-  const m = (location.hash || "#/").match(/^#\/edit\/([^/]+)\/([^/]+)$/);
-  if (m) return openEditor(decodeURIComponent(m[1]), decodeURIComponent(m[2]));
+  const edit = fused.params.get("edit") || "";
+  const m = edit.match(/^([^/]+)\/(.+)$/);
+  if (m) {
+    const [, client, id] = m;
+    if (state.doc && state.client === client && state.routeId === id) return; // already showing it
+    return openEditor(client, id);
+  }
+  const c = fused.params.get("client") || "";
+  if (c) state.selClient = c;
   return openLibrary();
 }
-window.addEventListener("hashchange", () => act(route));
 
 // ---------- library ----------
 async function openLibrary() {
@@ -538,6 +553,7 @@ function renderClients() {
     b.innerHTML = `<span class="nm"></span><span class="ct">${c.invoice_count}</span>`;
     b.querySelector(".nm").textContent = c.name;
     b.addEventListener("click", () => act(async () => {
+      fused.params.set("client", c.slug);
       state.selClient = c.slug;
       renderClients();
       await renderLibMain();
@@ -589,34 +605,36 @@ async function renderLibMain() {
     });
     if (!ok) return;
     await py({ action: "delete_client", client: client.slug });
+    fused.params.set("client", null);
     state.selClient = "";
     await openLibrary();
   }));
   main.querySelector("#newInvBtn").addEventListener("click", () => act(async () => {
     const r = await py({ action: "new_invoice", client: client.slug });
     state.pending = { client: client.slug, doc: asObj(r.doc) };
-    location.hash = `#/edit/${encodeURIComponent(client.slug)}/new`;
+    fused.params.set("edit", `${client.slug}/new`);
   }));
   const r = await py({ action: "list_invoices", client: client.slug });
   renderInvTable(main.querySelector("#invHost"), client, r.invoices || []);
 }
 
-function renderInvTable(host, client, invoices) {
-  if (!invoices.length) {
-    host.innerHTML = `<div class="empty"><p>No invoices yet.</p>
-      <button class="btn" id="emptyNewBtn">New invoice</button></div>`;
-    host.querySelector("#emptyNewBtn").addEventListener("click", () =>
-      document.querySelector("#newInvBtn").click());
-    return;
-  }
+function buildInvTable(host, client, invoices) {
   const table = document.createElement("table");
   table.className = "inv-table";
-  table.innerHTML = `<thead><tr><th>Number</th><th>Issued</th><th>Total</th><th>Status</th><th></th></tr></thead><tbody></tbody>`;
+  table.innerHTML = `<thead><tr><th>Number</th><th>Issued</th><th>Total</th><th>Status</th><th>Paid</th><th></th></tr></thead><tbody></tbody>`;
   const tbody = table.querySelector("tbody");
   for (const inv of invoices) {
     const tr = document.createElement("tr");
+    const paidTitle = inv.paid
+      ? `Paid${inv.paid_date ? " on " + inv.paid_date : ""} — click to mark unpaid`
+      : "Mark as paid";
     tr.innerHTML = `<td class="num"></td><td class="muted"></td><td></td>
       <td><span class="pill ${inv.status === "final" ? "final" : "draft"}">${inv.status === "final" ? "Final" : "Draft"}</span></td>
+      <td><button class="icon-btn" data-op="paid" title="${esc(paidTitle)}" style="color:${inv.paid ? "#3b6d11" : "var(--ink-3)"}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="9"/>${inv.paid ? '<path d="M8.5 12.5l2.2 2.2 4.3-4.3"/>' : ""}
+        </svg>
+      </button></td>
       <td class="ops">
         <button class="icon-btn" data-op="dup" title="Duplicate">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
@@ -631,10 +649,20 @@ function renderInvTable(host, client, invoices) {
     tr.addEventListener("click", (e) => {
       const op = e.target.closest("[data-op]");
       if (op) {
-        if (op.dataset.op === "dup") act(async () => {
+        e.stopPropagation();
+        if (op.dataset.op === "paid") act(async () => {
+          const r = await py({ action: "load_invoice", client: client.slug, id: inv.id });
+          const d = asObj(r.doc);
+          d.paid = !d.paid;
+          d.paid_date = d.paid ? todayLocal() : "";
+          await py({ action: "save_invoice", client: client.slug, doc: JSON.stringify(d) });
+          const r2 = await py({ action: "list_invoices", client: client.slug });
+          renderInvTable(host, client, r2.invoices || []);
+        });
+        else if (op.dataset.op === "dup") act(async () => {
           const r = await py({ action: "duplicate_invoice", client: client.slug, id: inv.id });
           state.pending = { client: client.slug, doc: asObj(r.doc) };
-          location.hash = `#/edit/${encodeURIComponent(client.slug)}/new`;
+          fused.params.set("edit", `${client.slug}/new`);
         });
         else act(async () => {
           const ok = await dialog({ title: `Delete ${inv.number}?`, input: false, danger: true, okText: "Delete",
@@ -645,12 +673,47 @@ function renderInvTable(host, client, invoices) {
         });
         return;
       }
-      location.hash = `#/edit/${encodeURIComponent(client.slug)}/${inv.id}`;
+      fused.params.set("edit", `${client.slug}/${inv.id}`);
     });
     tbody.appendChild(tr);
   }
+  return table;
+}
+
+function renderInvTable(host, client, invoices) {
+  if (!invoices.length) {
+    host.innerHTML = `<div class="empty"><p>No invoices yet.</p>
+      <button class="btn" id="emptyNewBtn">New invoice</button></div>`;
+    host.querySelector("#emptyNewBtn").addEventListener("click", () =>
+      document.querySelector("#newInvBtn").click());
+    return;
+  }
+  const prevPaidSection = host.querySelector(".paid-section");
+  const paidWasOpen = prevPaidSection ? prevPaidSection.open : false;
   host.innerHTML = "";
-  host.appendChild(table);
+  const unpaid = invoices.filter((inv) => !inv.paid);
+  const paid = invoices.filter((inv) => inv.paid);
+  if (unpaid.length) {
+    host.appendChild(buildInvTable(host, client, unpaid));
+  } else {
+    const p = document.createElement("p");
+    p.className = "muted";
+    p.textContent = "All invoices for this client are marked paid.";
+    host.appendChild(p);
+  }
+  if (paid.length) {
+    const det = document.createElement("details");
+    det.className = "disc paid-section";
+    det.style.marginTop = "12px";
+    det.open = paidWasOpen;
+    const summary = document.createElement("summary");
+    summary.textContent = `Paid (${paid.length})`;
+    const body = document.createElement("div");
+    body.className = "disc-body";
+    body.appendChild(buildInvTable(host, client, paid));
+    det.append(summary, body);
+    host.appendChild(det);
+  }
 }
 
 function newClient() {
@@ -658,6 +721,7 @@ function newClient() {
     const name = await dialog({ title: "New client", label: "Client name", okText: "Create" });
     if (!name) return;
     const r = await py({ action: "create_client", name });
+    fused.params.set("client", r.slug);
     state.selClient = r.slug;
     await openLibrary();
   });
@@ -761,9 +825,13 @@ function updateTopbar() {
   pill.className = "pill " + (fin ? "final" : "draft");
   pill.textContent = fin ? "Final" : "Draft";
   $("statusBtn").textContent = fin ? "Mark as draft" : "Mark as final";
+  const paidPill = $("paidPill");
+  paidPill.className = "pill " + (d.paid ? "paid" : "unpaid");
+  paidPill.textContent = d.paid ? "Paid" : "Unpaid";
+  $("paidBtn").textContent = d.paid ? "Mark as unpaid" : "Mark as paid";
 }
 
-$("backBtn").addEventListener("click", () => { location.hash = "#/"; });
+$("backBtn").addEventListener("click", () => { fused.params.set("edit", null); });
 $("numInput").addEventListener("input", () => {
   if (!state.doc) return;
   state.doc.number = $("numInput").value;
@@ -780,6 +848,14 @@ $("statusBtn").addEventListener("click", () => {
   if (!d) return;
   d.status = d.status === "final" ? "draft" : "final";
   buildForm();
+  updateTopbar();
+  onDocChange();
+});
+$("paidBtn").addEventListener("click", () => {
+  const d = state.doc;
+  if (!d) return;
+  d.paid = !d.paid;
+  d.paid_date = d.paid ? todayLocal() : "";
   updateTopbar();
   onDocChange();
 });
@@ -1106,6 +1182,7 @@ async function boot() {
   try {
     try { await py({ action: "health" }); }
     catch { await py({ action: "health" }); }   // one retry: engine warm-up
+    fused.params.onChange(() => act(route));
     await route();
     $("boot").remove();
   } catch (err) {
