@@ -276,6 +276,8 @@ def _new_invoice(client):
     doc["po"] = ""
     doc["notes"] = ""
     doc["status"] = "draft"
+    doc["paid"] = False
+    doc["paid_date"] = ""
     doc["created"] = doc["modified"] = _now()
     return {"doc": doc}
 
@@ -288,6 +290,8 @@ def _duplicate_invoice(client, inv_id):
     doc["issue_date"] = date.today().isoformat()
     doc["due_date"] = ""
     doc["status"] = "draft"
+    doc["paid"] = False
+    doc["paid_date"] = ""
     doc["created"] = doc["modified"] = _now()
     return {"doc": doc}
 

@@ -320,6 +320,11 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g,
   (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const escML = (s) => esc(s).replace(/\n/g, "<br>");
 const asObj = (d) => typeof d === "string" ? JSON.parse(d) : d;
+function todayLocal() {
+  const d = new Date();
+  const m = String(d.getMonth() + 1).padStart(2, "0"), day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${day}`;
+}
 
 function fmtMoney(n, cur) {
   return new Intl.NumberFormat(undefined, { style: "currency", currency: cur || "USD" }).format(n || 0);
@@ -649,7 +654,7 @@ function buildInvTable(host, client, invoices) {
           const r = await py({ action: "load_invoice", client: client.slug, id: inv.id });
           const d = asObj(r.doc);
           d.paid = !d.paid;
-          d.paid_date = d.paid ? new Date().toISOString().slice(0, 10) : "";
+          d.paid_date = d.paid ? todayLocal() : "";
           await py({ action: "save_invoice", client: client.slug, doc: JSON.stringify(d) });
           const r2 = await py({ action: "list_invoices", client: client.slug });
           renderInvTable(host, client, r2.invoices || []);
@@ -850,7 +855,7 @@ $("paidBtn").addEventListener("click", () => {
   const d = state.doc;
   if (!d) return;
   d.paid = !d.paid;
-  d.paid_date = d.paid ? new Date().toISOString().slice(0, 10) : "";
+  d.paid_date = d.paid ? todayLocal() : "";
   updateTopbar();
   onDocChange();
 });
