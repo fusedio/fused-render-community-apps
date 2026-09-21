@@ -26,14 +26,23 @@ Actions
   load_invoice(client, id)     -> {doc}
   save_invoice(client, doc)    -> {ok, id, modified}
   delete_invoice(client, id)   -> {ok: true}
+  attach_page(client, id,      -> {page: {file, w, h}, dir}
+              att, data)          data = {index, mime, b64, w, h}
   fx_rate(base, quote)         -> {rate, date, cached}
+
+Attachment pages are bytes, not document text: each one is written as its own
+image file under <client>/attachments/<invoice id>/ and the invoice JSON keeps
+only the record that points at it. Adding one to the document itself would make
+every autosave carry megabytes of base64.
 """
+import base64
 import copy
 import json
 import os
 import re
 import secrets
 import shutil
+import time
 from datetime import date, datetime
 
 # NOTE: bare `def main` (no @fused.udf) is deliberate — under the built-in
@@ -48,6 +57,15 @@ FX_DIR = os.path.join(CACHE_ROOT, "fx")
 
 KV = {"label": "", "value": ""}
 ITEM = {"desc": "", "qty": 1, "rate": 0, "hsn": "", "unit": ""}
+APAGE = {"file": "", "w": 0, "h": 0}
+ATTACHMENT = {"id": "", "label": "", "filename": "", "kind": "image", "pages": []}
+
+# Extensions the page may hand us — every one is something <img> can print.
+ATTACH_EXT = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp",
+              "image/gif": ".gif", "image/svg+xml": ".svg"}
+# An orphan file younger than this may belong to an upload the page has not
+# recorded in the document yet, so pruning leaves it alone.
+ATTACH_GRACE = 900
 
 SETTINGS_SCHEMA = {
     "billed_by": {"name": "", "email": "", "phone": "", "address": "", "custom": []},
@@ -84,6 +102,8 @@ DOC_SCHEMA = {
     "terms": "",
     "payment": [],
     "signature": "",
+    "attachments": [],
+    "attach_list": True,
     "created": "",
     "modified": "",
 }
@@ -114,7 +134,14 @@ def _fill_doc(doc):
     for party in ("billed_by", "billed_to"):
         doc[party]["custom"] = [_fill(KV, e) for e in doc[party]["custom"]]
     doc["payment"] = [_fill(KV, e) for e in doc["payment"]]
+    doc["attachments"] = [_fill_attachment(a) for a in doc["attachments"]]
     return doc
+
+
+def _fill_attachment(att):
+    att = _fill(ATTACHMENT, att)
+    att["pages"] = [_fill(APAGE, p) for p in att["pages"]]
+    return att
 
 
 def _read_json(path):
@@ -149,6 +176,32 @@ def _invoice_path(client, inv_id):
     if not os.path.isfile(p):
         raise ValueError(f"no such invoice: {inv_id}")
     return p
+
+
+def _safe_seg(value, what):
+    """One path segment that came off the wire, never a traversal."""
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,80}", value or "") or ".." in value:
+        raise ValueError(f"bad {what}")
+    return value
+
+
+def _attach_dir(client, inv_id):
+    return os.path.join(_client_dir(client), "attachments", _safe_seg(inv_id, "invoice id"))
+
+
+def _prune_attachments(client, doc):
+    """Drop page files the document no longer refers to (removed attachments)."""
+    root = _attach_dir(client, doc["id"])
+    if not os.path.isdir(root):
+        return
+    keep = {p["file"] for a in doc["attachments"] for p in a["pages"]}
+    cutoff = time.time() - ATTACH_GRACE
+    for name in os.listdir(root):
+        path = os.path.join(root, name)
+        if name in keep or not os.path.isfile(path):
+            continue
+        if os.path.getmtime(path) < cutoff:
+            os.remove(path)
 
 
 def _invoices(client):
@@ -246,7 +299,8 @@ def _list_invoices(client):
     rows = [{"id": d["id"], "number": d["number"], "issue_date": d["issue_date"],
              "status": d["status"], "total": round(_total(d), 2),
              "currency": d["currency"], "modified": d["modified"],
-             "paid": d["paid"], "paid_date": d["paid_date"]}
+             "paid": d["paid"], "paid_date": d["paid_date"],
+             "attachments": sum(1 for a in d["attachments"] if a["pages"])}
             for d in _invoices(client)]
     rows.sort(key=lambda r: (r["issue_date"], r["modified"]), reverse=True)
     return {"invoices": rows}
@@ -259,6 +313,7 @@ def _new_invoice(client):
         doc = max(docs, key=lambda d: d["modified"])
         doc["items"] = [copy.deepcopy(ITEM)]
         doc["shipping"] = 0
+        doc["attachments"] = []
     else:
         doc = _fill_doc({})
         s = _get_settings()["settings"]
@@ -279,7 +334,7 @@ def _new_invoice(client):
     doc["paid"] = False
     doc["paid_date"] = ""
     doc["created"] = doc["modified"] = _now()
-    return {"doc": doc}
+    return {"doc": doc, "attach_dir": _attach_dir(client, doc["id"])}
 
 
 def _duplicate_invoice(client, inv_id):
@@ -293,11 +348,16 @@ def _duplicate_invoice(client, inv_id):
     doc["paid"] = False
     doc["paid_date"] = ""
     doc["created"] = doc["modified"] = _now()
-    return {"doc": doc}
+    src = _attach_dir(client, inv_id)
+    dst = _attach_dir(client, doc["id"])
+    if os.path.isdir(src):
+        shutil.copytree(src, dst)
+    return {"doc": doc, "attach_dir": dst}
 
 
 def _load_invoice(client, inv_id):
-    return {"doc": _fill_doc(_read_json(_invoice_path(client, inv_id)))}
+    doc = _fill_doc(_read_json(_invoice_path(client, inv_id)))
+    return {"doc": doc, "attach_dir": _attach_dir(client, doc["id"])}
 
 
 def _save_invoice(client, doc):
@@ -309,12 +369,40 @@ def _save_invoice(client, doc):
             raise ValueError(f'invoice number "{d["number"]}" is already used')
     d["modified"] = _now()
     _write_json(os.path.join(_client_dir(client), "invoices", d["id"] + ".json"), d)
+    _prune_attachments(client, d)
     return {"ok": True, "id": d["id"], "modified": d["modified"]}
 
 
 def _delete_invoice(client, inv_id):
     os.remove(_invoice_path(client, inv_id))
+    shutil.rmtree(_attach_dir(client, inv_id), ignore_errors=True)
     return {"ok": True}
+
+
+def _attach_page(client, inv_id, att, data):
+    """Write one rendered attachment page beside the invoice it belongs to.
+
+    The page arrives already rasterised (a PDF page rendered by the browser, or
+    an image file read straight off disk) — this end only decodes and stores it.
+    """
+    d = json.loads(data)
+    att = _safe_seg(att, "attachment id")
+    index = int(d.get("index") or 0)
+    if not 1 <= index <= 999:
+        raise ValueError("attachment page index out of range")
+    mime = d.get("mime") or ""
+    if mime not in ATTACH_EXT:
+        raise ValueError(f"cannot attach {mime or 'that file'} — use a PDF or an image")
+    root = _attach_dir(client, inv_id)
+    os.makedirs(root, exist_ok=True)
+    name = f"{att}-{index:03d}{ATTACH_EXT[mime]}"
+    path = os.path.join(root, name)
+    tmp = path + ".tmp"
+    with open(tmp, "wb") as f:
+        f.write(base64.b64decode(d.get("b64") or ""))
+    os.replace(tmp, path)
+    return {"page": {"file": name, "w": int(d.get("w") or 0), "h": int(d.get("h") or 0)},
+            "dir": root}
 
 
 def _fx_rate(base, quote):
@@ -355,6 +443,8 @@ def main(
     name: str = "",
     doc: str = "",
     settings: str = "",
+    att: str = "",
+    data: str = "",
     base: str = "",
     quote: str = "",
 ):
@@ -384,6 +474,8 @@ def main(
         return _save_invoice(client, doc)
     if action == "delete_invoice":
         return _delete_invoice(client, id)
+    if action == "attach_page":
+        return _attach_page(client, id, att, data)
     if action == "fx_rate":
         return _fx_rate(base, quote)
     raise ValueError(f"unknown action {action!r}")

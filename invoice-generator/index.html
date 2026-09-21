@@ -150,6 +150,19 @@
   details.disc summary::before { content: "›"; color: var(--ink-3); transition: transform .12s; }
   details.disc[open] summary::before { transform: rotate(90deg); }
   details.disc .disc-body { padding: 0 12px 12px; display: flex; flex-direction: column; gap: 8px; }
+  .att-list { display: flex; flex-direction: column; gap: 5px; }
+  .att-row { display: flex; align-items: center; gap: 5px; }
+  .att-row .att-i { flex: 0 0 14px; color: var(--ink-3); font-size: 11.5px; }
+  .att-row input { min-width: 0; }
+  .att-row .att-meta { flex: 0 0 auto; max-width: 130px; color: var(--ink-3); font-size: 11px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .att-row .icon-btn { flex: 0 0 auto; padding: 3px; }
+  .att-hint { font-size: 12px; color: var(--ink-3); line-height: 1.45; }
+  .att-check { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-2); }
+  .att-check input { width: auto; }
+  .att-badge { display: inline-flex; color: var(--ink-3); vertical-align: -2px; margin-left: 5px; }
+  .att-badge svg { width: 12px; height: 12px; }
+
   .fx-row { display: flex; align-items: center; gap: 8px; }
   .fx-row input[type=checkbox] { width: auto; }
   .fx-row select { width: 110px; }
@@ -158,7 +171,8 @@
   /* ---- preview ---- */
   #previewPane { flex: 1 1 auto; min-width: 0; overflow: auto; padding: 24px; }
   #pageWrap { margin: 0 auto; }
-  #page { position: relative; width: 210mm; min-height: 297mm; background: #fff; transform-origin: top left; --pv-scale: 1;
+  #pageStack { width: 210mm; transform-origin: top left; }
+  #page { position: relative; width: 210mm; min-height: 297mm; background: #fff; --pv-scale: 1;
     box-shadow: 0 2px 16px rgba(20, 20, 15, .13); padding: 14mm 15mm; font-size: calc(9.5pt * var(--pv-scale)); line-height: 1.5; }
   .pv-pagemark { position: absolute; left: 0; right: 0; top: 297mm; border-top: 1.5px dashed #c0392b; pointer-events: none; }
   .pv-pagemark::after { content: "Page 1 ends here — content below prints on a second page";
@@ -197,6 +211,17 @@
   .pv-sigline { border-top: 0.5px solid var(--ink-3); margin-top: 2mm; padding-top: 1mm;
     font-size: calc(8pt * var(--pv-scale)); color: var(--ink-2); }
 
+  /* ---- attachment sheets (one per attachment page, printed after the invoice) ---- */
+  #attachPages { display: flow-root; }   /* contains the sheets' margins so the stack measures right */
+  .att-page { width: 210mm; height: 297mm; background: #fff; padding: 10mm; margin-top: 10mm;
+    box-shadow: 0 2px 16px rgba(20, 20, 15, .13); overflow: hidden; }
+  .att-head { height: 8mm; display: flex; justify-content: space-between; align-items: baseline;
+    gap: 6mm; font-size: 8.5pt; color: var(--ink-2); }
+  .att-head .att-name { font-weight: 600; color: var(--ink);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .att-body { height: 269mm; display: flex; align-items: center; justify-content: center; }
+  .att-body img { max-width: 100%; max-height: 100%; object-fit: contain; }
+
   /* ---- modal / toast / boot ---- */
   .modal-bg { position: fixed; inset: 0; background: rgba(26,26,24,.32); display: grid; place-items: center; z-index: 100; }
   .modal { background: #fff; border-radius: var(--radius-lg); box-shadow: 0 8px 32px rgba(20,20,15,.2);
@@ -221,10 +246,16 @@
   @media print {
     body { overflow: visible !important; height: auto !important; display: block !important; background: #fff; }
     #library, #etop, #form, #modalHost, #toast, #boot { display: none !important; }
-    #editor, #ebody, #previewPane, #pageWrap { display: block !important; overflow: visible !important;
-      height: auto !important; width: auto !important; padding: 0 !important; margin: 0 !important; }
-    #page { transform: none !important; margin: 0 !important; box-shadow: none !important;
-      width: 210mm; min-height: 0 !important; }
+    #editor, #ebody, #previewPane, #pageWrap, #pageStack { display: block !important;
+      overflow: visible !important; height: auto !important; width: auto !important;
+      padding: 0 !important; margin: 0 !important; }
+    #pageStack, #page { transform: none !important; }
+    #page { margin: 0 !important; box-shadow: none !important; width: 210mm; min-height: 0 !important; }
+    /* 296mm, not 297: a sheet filled to the exact page height rounds over the
+       edge in some engines and emits a blank page after every attachment. */
+    .att-page { break-before: page; page-break-before: always; break-inside: avoid;
+      width: 210mm; height: 296mm; margin: 0 !important; box-shadow: none !important; }
+    .att-body { height: 268mm; }
     .pv-pagemark { display: none !important; }
   }
 </style>
@@ -272,7 +303,10 @@
   </div>
   <div id="ebody">
     <div id="form"></div>
-    <div id="previewPane"><div id="pageWrap"><div id="page" class="theme-minimal"></div></div></div>
+    <div id="previewPane"><div id="pageWrap"><div id="pageStack">
+      <div id="page" class="theme-minimal"></div>
+      <div id="attachPages"></div>
+    </div></div></div>
   </div>
 </div>
 
@@ -292,18 +326,18 @@ const CURRENCIES = [
 
 const state = {
   clients: [], selClient: "",
-  client: "", routeId: "", doc: null,
-  pending: null,          // {client, doc} composed but unsaved
+  client: "", routeId: "", doc: null, attachDir: "",
+  pending: null,          // {client, doc, attach_dir} composed but unsaved
 };
 
 // ---------- plumbing ----------
-function py(params) {
+function py(params, opts) {
   const clean = {};
   for (const [k, v] of Object.entries(params)) {
     if (v === null || v === undefined) continue;
     clean[k] = typeof v === "string" ? v : (typeof v === "number" || typeof v === "boolean") ? v : String(v);
   }
-  return fused.runPython(PY, clean);
+  return fused.runPython(PY, clean, opts);
 }
 let toastTimer = 0;
 function toast(msg, err = false) {
@@ -470,6 +504,213 @@ function imageChip(host, obj, key, label, onChange) {
   render();
 }
 
+// ---------- attachments ----------
+// A PDF is rasterised here, in the browser, one canvas per page; an image is
+// stored as it came. Either way the invoice ends up with a list of page images
+// the print layout can put on their own sheets. The file itself never leaves
+// the machine — but the first PDF does fetch pdf.js from the CDN below.
+const PDFJS = "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.6.82/build/";
+const ATT_MAX_PX = 1700;   // long edge of a stored page: sharp in print, small on disk
+const CLIP_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.4 11.05 12.25 20.2a5.5 5.5 0 0 1-7.78-7.78l9.2-9.19a3.67 3.67 0 0 1 5.18 5.18l-9.2 9.2a1.83 1.83 0 0 1-2.59-2.6l8.5-8.49"/></svg>`;
+
+let pdfjsLib = null;
+async function loadPdfJs() {
+  if (!pdfjsLib) {
+    try {
+      const mod = await import(PDFJS + "pdf.min.mjs");
+      mod.GlobalWorkerOptions.workerSrc = PDFJS + "pdf.worker.min.mjs";
+      pdfjsLib = mod;
+    } catch (err) {
+      console.error(err);
+      throw new Error("Reading a PDF needs a one-time download of the PDF engine and it could not be "
+        + "fetched. Check your connection, or attach the pages as images instead.");
+    }
+  }
+  return pdfjsLib;
+}
+
+function pickFile(accept) {
+  return new Promise((resolve) => {
+    const inp = document.createElement("input");
+    inp.type = "file"; inp.accept = accept;
+    inp.onchange = () => resolve(inp.files[0] || null);
+    inp.click();
+  });
+}
+
+function readDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const rd = new FileReader();
+    rd.onload = () => resolve(rd.result);
+    rd.onerror = () => reject(new Error(`could not read ${file.name}`));
+    rd.readAsDataURL(file);
+  });
+}
+
+// PNG keeps text and line art crisp; JPEG wins by a mile on photographs and
+// scans, so take it only when it is clearly smaller, not when it merely ties.
+function canvasPage(canvas) {
+  const png = canvas.toDataURL("image/png");
+  const jpg = canvas.toDataURL("image/jpeg", 0.88);
+  return { url: jpg.length < png.length * 0.6 ? jpg : png, w: canvas.width, h: canvas.height };
+}
+
+async function pdfToPages(buf, onPage) {
+  const lib = await loadPdfJs();
+  const pdf = await lib.getDocument({ data: buf }).promise;
+  const pages = [];
+  try {
+    for (let i = 1; i <= pdf.numPages; i++) {
+      onPage(i, pdf.numPages);
+      const page = await pdf.getPage(i);
+      const unit = page.getViewport({ scale: 1 });
+      const viewport = page.getViewport({ scale: Math.min(3, ATT_MAX_PX / Math.max(unit.width, unit.height)) });
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(viewport.width);
+      canvas.height = Math.round(viewport.height);
+      const ctx = canvas.getContext("2d");
+      ctx.fillStyle = "#fff";                      // PDF pages are opaque; canvases start transparent
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      await page.render({ canvasContext: ctx, viewport }).promise;
+      pages.push(canvasPage(canvas));
+      page.cleanup();
+    }
+  } finally {
+    pdf.destroy();
+  }
+  return pages;
+}
+
+// What the backend stores verbatim; anything else the browser can decode (bmp,
+// avif, a Safari-readable heic) goes through the canvas and comes out png/jpeg.
+const ATT_KEEP = ["image/png", "image/jpeg", "image/webp", "image/gif"];
+
+async function imageToPages(file) {
+  const url = await readDataUrl(file);
+  if (file.type === "image/svg+xml") return [{ url, w: 0, h: 0 }];
+  const img = await new Promise((resolve, reject) => {
+    const im = new Image();
+    im.onload = () => resolve(im);
+    im.onerror = () => reject(new Error(`${file.name} is not an image this browser can read`));
+    im.src = url;
+  });
+  const long = Math.max(img.naturalWidth, img.naturalHeight);
+  if (long <= ATT_MAX_PX && ATT_KEEP.includes(file.type))
+    return [{ url, w: img.naturalWidth, h: img.naturalHeight }];
+  const k = Math.min(1, ATT_MAX_PX / long);
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(img.naturalWidth * k);
+  canvas.height = Math.round(img.naturalHeight * k);
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  return [canvasPage(canvas)];
+}
+
+function progressModal(text) {
+  const m = modal(`<h3>Adding attachment</h3><p id="attProg"></p>`);
+  const line = m.el.querySelector("#attProg");
+  line.textContent = text;
+  return { say: (t) => { line.textContent = t; }, close: () => m.close(null) };
+}
+
+const newAttId = () => "att-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+
+async function addAttachment() {
+  const doc = state.doc;
+  const file = await pickFile("application/pdf,image/*");
+  if (!file || state.doc !== doc) return;
+  const prog = progressModal(`Reading ${file.name}…`);
+  try {
+    const isPdf = file.type === "application/pdf" || /\.pdf$/i.test(file.name);
+    const pages = isPdf
+      ? await pdfToPages(await file.arrayBuffer(), (i, of) => prog.say(`Rendering page ${i} of ${of}…`))
+      : await imageToPages(file);
+    if (!pages.length) throw new Error(`${file.name} has no pages`);
+    const att = { id: newAttId(), label: file.name.replace(/\.[^.]+$/, ""), filename: file.name,
+                  kind: isPdf ? "pdf" : "image", pages: [] };
+    for (let i = 0; i < pages.length; i++) {
+      prog.say(pages.length > 1 ? `Saving page ${i + 1} of ${pages.length}…` : "Saving…");
+      const m = /^data:([^;,]+)[^,]*,(.*)$/s.exec(pages[i].url);
+      if (!m) throw new Error("could not encode that page");
+      const r = await py({
+        action: "attach_page", client: state.client, id: doc.id, att: att.id,
+        data: JSON.stringify({ index: i + 1, mime: m[1], b64: m[2], w: pages[i].w, h: pages[i].h }),
+      }, { key: "attach" });   // own channel — an autosave must not cancel an upload mid-way
+      state.attachDir = r.dir;
+      att.pages.push(asObj(r.page));
+    }
+    if (state.doc !== doc) return;            // the user navigated away while it uploaded
+    doc.attachments.push(att);
+    renderAttachments();
+    onDocChange();
+    toast(`${att.filename} added — ${pages.length} page${pages.length === 1 ? "" : "s"}`);
+  } finally {
+    prog.close();
+  }
+}
+
+function moveAttachment(i, d) {
+  const atts = state.doc.attachments, j = i + d;
+  if (j < 0 || j >= atts.length) return;
+  [atts[i], atts[j]] = [atts[j], atts[i]];
+  renderAttachments();
+  onDocChange();
+}
+
+function renderAttachments() {
+  const doc = state.doc;
+  const host = $("form").querySelector("#attList");
+  if (!doc || !host) return;
+  const atts = doc.attachments || [];
+  $("form").querySelector("#attSummary").textContent =
+    atts.length ? `Attachments (${atts.length})` : "Attachments";
+  host.innerHTML = "";
+  if (!atts.length) {
+    const hint = document.createElement("div");
+    hint.className = "att-hint";
+    hint.textContent = "A bill, receipt or any supporting file. Each page prints as its own sheet "
+      + "after the invoice, so the PDF you download is one document.";
+    host.appendChild(hint);
+  }
+  atts.forEach((att, i) => {
+    const row = document.createElement("div");
+    row.className = "att-row";
+    row.innerHTML = `<span class="att-i">${i + 1}</span>
+      <input placeholder="Attachment ${i + 1}">
+      <span class="att-meta"></span>
+      <button class="icon-btn" data-o="up" title="Move up"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"/></svg></button>
+      <button class="icon-btn" data-o="down" title="Move down"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>
+      <button class="icon-btn" data-o="del" title="Remove"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>`;
+    const inp = row.querySelector("input");
+    inp.value = att.label || "";
+    inp.addEventListener("input", () => { att.label = inp.value; onDocChange(); });
+    const meta = row.querySelector(".att-meta");
+    meta.textContent = att.pages.length > 1 ? `${att.filename} · ${att.pages.length} pages` : att.filename;
+    meta.title = att.filename;
+    row.querySelector("[data-o=up]").addEventListener("click", () => moveAttachment(i, -1));
+    row.querySelector("[data-o=down]").addEventListener("click", () => moveAttachment(i, 1));
+    row.querySelector("[data-o=del]").addEventListener("click", () => {
+      atts.splice(i, 1);
+      renderAttachments();
+      onDocChange();
+    });
+    host.appendChild(row);
+  });
+  if (doc.status === "final")
+    host.querySelectorAll("input, button").forEach((el) => { el.disabled = true; });
+}
+
+// Print has no second chance at a half-loaded <img> — wait for the sheets.
+function attachImagesReady() {
+  const imgs = [...$("attachPages").querySelectorAll("img")].filter((im) => !im.complete);
+  return Promise.all(imgs.map((im) => new Promise((done) => {
+    im.addEventListener("load", done, { once: true });
+    im.addEventListener("error", done, { once: true });
+  })));
+}
+
 // ---------- autosave ----------
 let saveTimer = 0, saving = false, savePending = false;
 const setSaveState = (txt) => { $("saveState").textContent = txt; };
@@ -611,7 +852,7 @@ async function renderLibMain() {
   }));
   main.querySelector("#newInvBtn").addEventListener("click", () => act(async () => {
     const r = await py({ action: "new_invoice", client: client.slug });
-    state.pending = { client: client.slug, doc: asObj(r.doc) };
+    state.pending = { client: client.slug, doc: asObj(r.doc), attach_dir: r.attach_dir };
     fused.params.set("edit", `${client.slug}/new`);
   }));
   const r = await py({ action: "list_invoices", client: client.slug });
@@ -644,6 +885,13 @@ function buildInvTable(host, client, invoices) {
         </button>
       </td>`;
     tr.children[0].textContent = inv.number;
+    if (inv.attachments) {
+      const clip = document.createElement("span");
+      clip.className = "att-badge";
+      clip.title = `${inv.attachments} attachment${inv.attachments === 1 ? "" : "s"}`;
+      clip.innerHTML = CLIP_SVG;
+      tr.children[0].appendChild(clip);
+    }
     tr.children[1].textContent = inv.issue_date;
     tr.children[2].textContent = fmtMoney(inv.total, inv.currency);
     tr.addEventListener("click", (e) => {
@@ -661,7 +909,7 @@ function buildInvTable(host, client, invoices) {
         });
         else if (op.dataset.op === "dup") act(async () => {
           const r = await py({ action: "duplicate_invoice", client: client.slug, id: inv.id });
-          state.pending = { client: client.slug, doc: asObj(r.doc) };
+          state.pending = { client: client.slug, doc: asObj(r.doc), attach_dir: r.attach_dir };
           fused.params.set("edit", `${client.slug}/new`);
         });
         else act(async () => {
@@ -784,18 +1032,24 @@ $("settingsBtn").addEventListener("click", () => act(openSettings));
 async function openEditor(client, id) {
   showView("editor");
   state.client = client; state.routeId = id;
-  let doc;
+  let doc, dir = "";
   if (id === "new") {
     if (state.pending && state.pending.client === client) {
       doc = state.pending.doc;
+      dir = state.pending.attach_dir || "";
       state.pending = null;
     } else {
-      doc = asObj((await py({ action: "new_invoice", client })).doc);
+      const r = await py({ action: "new_invoice", client });
+      doc = asObj(r.doc);
+      dir = r.attach_dir || "";
     }
   } else {
-    doc = asObj((await py({ action: "load_invoice", client, id })).doc);
+    const r = await py({ action: "load_invoice", client, id });
+    doc = asObj(r.doc);
+    dir = r.attach_dir || "";
   }
   state.doc = doc;
+  state.attachDir = dir;
   setSaveState(id === "new" ? "" : "Saved");
   buildForm();
   updateTopbar();
@@ -859,12 +1113,13 @@ $("paidBtn").addEventListener("click", () => {
   updateTopbar();
   onDocChange();
 });
-$("pdfBtn").addEventListener("click", () => {
+$("pdfBtn").addEventListener("click", () => act(async () => {
+  await attachImagesReady();
   const prev = document.title;
   document.title = state.doc?.number || "invoice";
   window.print();
   document.title = prev;
-});
+}));
 
 // ---------- editor form ----------
 function partyCardHTML(side, withLogo) {
@@ -919,6 +1174,12 @@ function buildForm() {
       <div class="trow"><span>Shipping</span><input type="number" min="0" step="any" data-path="shipping" data-num></div>
       <div class="tsum" id="totalsSum"></div>
     </div>
+    <details class="disc"${doc.attachments.length ? " open" : ""}><summary><span id="attSummary">Attachments</span></summary>
+      <div class="disc-body">
+        <div class="att-list" id="attList"></div>
+        <button class="link-btn" id="addAttBtn">+ Add attachment (PDF or image)</button>
+        <label class="att-check"><input type="checkbox" data-path="attach_list">List them on the invoice</label>
+      </div></details>
     <details class="disc"${doc.notes ? " open" : ""}><summary>Notes</summary>
       <div class="disc-body"><textarea data-path="notes" rows="3"></textarea></div></details>
     <details class="disc"${doc.terms ? " open" : ""}><summary>Terms</summary>
@@ -947,10 +1208,12 @@ function buildForm() {
   imageChip(form.querySelector("#logoChip"), doc, "logo", "logo", onDocChange);
   imageChip(form.querySelector("#sigChip"), doc, "signature", "signature", onDocChange);
   form.querySelector("#addItemBtn").addEventListener("click", addItem);
+  form.querySelector("#addAttBtn").addEventListener("click", () => act(addAttachment));
   form.querySelector("#fxOn").checked = !!doc.fx;
   form.querySelector("#fxOn").addEventListener("change", () => act(refreshFx));
   form.querySelector("#fxQuote").addEventListener("change", () => act(refreshFx));
   renderItems();
+  renderAttachments();
   renderTotals();
   renderFxLine();
   if (doc.status === "final")
@@ -1137,6 +1400,12 @@ function renderPreview() {
     pay.map((r) => `<div><span class="pv-k">${esc(r.label)}</span> ${esc(r.value)}</div>`).join("") + `</div>`);
   if (doc.notes) foot.push(`<div class="pv-sec"><div class="pv-lab">Notes</div>${escML(doc.notes)}</div>`);
   if (doc.terms) foot.push(`<div class="pv-sec"><div class="pv-lab">Terms</div>${escML(doc.terms)}</div>`);
+  const atts = (doc.attachments || []).filter((a) => a.pages.length);
+  if (doc.attach_list && atts.length)
+    foot.push(`<div class="pv-sec"><div class="pv-lab">Attachments</div>` + atts.map((a, i) =>
+      `<div>Attachment ${i + 1}${a.label ? ` — ${esc(a.label)}` : ""}` +
+      `<span class="pv-k"> ${a.pages.length} page${a.pages.length === 1 ? "" : "s"}</span></div>`).join("") +
+      `</div>`);
   if (doc.signature || doc.billed_by.name)
     foot.push(`<div class="pv-sign">${doc.signature ? `<img src="${esc(doc.signature)}" alt="">` : ""}` +
       `<div class="pv-sigline">${esc(doc.billed_by.name) || "&nbsp;"}</div></div>`);
@@ -1165,15 +1434,36 @@ function renderPreview() {
     mark.className = "pv-pagemark";
     page.appendChild(mark);
   }
+  renderAttachPages(doc, atts);
   fitPreview();
 }
 
+// One sheet per attachment page, sized like the invoice so print puts each on
+// its own A4 page. Rebuilt only when something on them changed — re-setting the
+// <img> src on every keystroke would reload every page image.
+function renderAttachPages(doc, atts) {
+  const host = $("attachPages");
+  const dir = state.attachDir;
+  const sig = JSON.stringify([dir, doc.number, atts.map((a) => [a.label, a.pages.map((pg) => pg.file)])]);
+  if (host.dataset.sig === sig) return;
+  host.dataset.sig = sig;
+  if (!dir || !atts.length) { host.innerHTML = ""; return; }
+  host.innerHTML = atts.map((a, i) => {
+    const title = `Attachment ${i + 1}${a.label ? ` — ${esc(a.label)}` : ""}`;
+    return a.pages.map((pg, j) => `<div class="att-page">
+      <div class="att-head"><span class="att-name">${title}</span>
+        <span>${a.pages.length > 1 ? `Page ${j + 1} of ${a.pages.length} · ` : ""}${esc(doc.number)}</span></div>
+      <div class="att-body"><img src="${esc(fused.rawUrl(dir + "/" + pg.file))}" alt=""></div>
+    </div>`).join("");
+  }).join("");
+}
+
 function fitPreview() {
-  const pane = $("previewPane"), page = $("page"), wrap = $("pageWrap");
-  const scale = Math.min(1.4, (pane.clientWidth - 48) / page.offsetWidth);
-  page.style.transform = `scale(${scale})`;
-  wrap.style.width = page.offsetWidth * scale + "px";
-  wrap.style.height = page.offsetHeight * scale + "px";
+  const pane = $("previewPane"), stack = $("pageStack"), wrap = $("pageWrap");
+  const scale = Math.min(1.4, (pane.clientWidth - 48) / $("page").offsetWidth);
+  stack.style.transform = `scale(${scale})`;
+  wrap.style.width = stack.offsetWidth * scale + "px";
+  wrap.style.height = stack.offsetHeight * scale + "px";
 }
 new ResizeObserver(() => { if (state.doc) fitPreview(); }).observe($("previewPane"));
 
