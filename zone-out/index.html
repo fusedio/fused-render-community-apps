@@ -1,0 +1,933 @@
+<!DOCTYPE html>
+<html data-fused-theme="shell" lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="fused-app" />
+<meta name="fused-api-version" content="1" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ZoneOut</title>
+<style>
+  :root {
+    color-scheme: dark;
+    /* Browse Bot palette: true black canvas, near-black panels, lime accent */
+    --bg: #000000; --panel: #0d0d0f; --panel-2: #1c1c1e; --card: #262628; --hover: #1c1c1e; --line: #1f1f21; --line-2: #2c2c2e;
+    --text: #ffffff; --muted: #8e8e93; --dim: #5d5d62;
+    --accent: #eafe68; --accent-ink: #0d0d0f; --accent-text: #eafe68; --ok: #38d591; --warn: #ffb020; --bad: #ff5667;
+    --ok-bg: rgba(56,213,145,.12); --warn-bg: rgba(255,176,32,.14); --bad-bg: rgba(255,86,103,.14); --accent-bg: rgba(234,254,104,.12);
+    --shadow: 0 12px 40px rgba(0,0,0,.7); --shadow-sm: 0 8px 24px rgba(0,0,0,.5);
+    --radius: 14px;
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --bg: #fcfcfc; --panel: #f4f5f1; --panel-2: #eaece4; --card: #eef0e8; --hover: #eaece4; --line: #dfe2d8; --line-2: #cfd3c6;
+    --text: #1b1d21; --muted: #5d6270; --dim: #9096a0;
+    --accent: #d9f036; --accent-ink: #1b1d21; --accent-text: #66740c; --ok: #1f9d5a; --warn: #b7791a; --bad: #d13b3b;
+    --ok-bg: rgba(31,157,90,.12); --warn-bg: rgba(183,121,26,.14); --bad-bg: rgba(209,59,59,.12); --accent-bg: rgba(217,240,54,.18);
+    --shadow: 0 12px 40px rgba(0,0,0,.18); --shadow-sm: 0 8px 24px rgba(0,0,0,.10);
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+  body { margin: 0; -webkit-tap-highlight-color: transparent; }
+  button, input, select, textarea { font: inherit; color: inherit; margin: 0; }
+  ::placeholder { color: var(--dim); opacity: 1; }
+  input, select, textarea, progress { accent-color: var(--accent, currentColor); }
+  img, svg, video, canvas { display: block; max-width: 100%; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 8px; }
+  :focus:not(:focus-visible) { outline: none; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 13px; line-height: 1.4; color: var(--text); background: var(--bg);
+    font-variant-numeric: tabular-nums; min-height: 100vh; min-height: 100dvh;
+  }
+  main { max-width: 760px; margin: 0 auto; padding: 16px 24px 56px; }
+  a { color: var(--accent-text); text-decoration: none; }
+  .muted { color: var(--muted); }
+  .dim { color: var(--dim); }
+  .mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11.5px; }
+  .spacer { flex: 1 1 auto; }
+  svg.i { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+
+  /* ---- brand row ------------------------------------------------------ */
+  .brand { display: flex; align-items: center; gap: 12px; padding: 4px 0 12px; }
+  .brand .logo { width: 52px; height: 52px; flex: none; border-radius: 13px; object-fit: cover; display: block; }
+  .brand h1 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: .01em; white-space: nowrap; line-height: 1.2; }
+  .brand .plan { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; margin-top: 2px; white-space: nowrap; }
+  .brand .tools { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+  .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--dim); flex: none; vertical-align: middle; }
+  .dot.ok { background: var(--ok); } .dot.bad { background: var(--bad); } .dot.warn { background: var(--warn); } .dot.accent { background: var(--accent); }
+  .row.live .dot.ok, .now .dot.ok { box-shadow: 0 0 0 3px var(--ok-bg); }
+  .dot.live { animation: breathe 2.2s ease-in-out infinite; }
+  @keyframes breathe { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+  @media (prefers-reduced-motion: reduce) { .dot.live { animation: none; } .ring .arc { transition: none; } }
+
+  /* ---- controls ------------------------------------------------------- */
+  .btn {
+    -webkit-appearance: none; appearance: none; font: inherit; font-size: 12px; font-weight: 500; color: var(--text);
+    background: var(--panel-2); border: 1px solid transparent; border-radius: 999px; padding: 6px 13px; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; transition: background .15s, color .15s, border-color .15s;
+  }
+  .btn.icon { padding: 6px 8px; color: var(--muted); border-radius: 999px; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+  .btn.danger { color: var(--bad); }
+  .btn.quiet { background: transparent; border-color: transparent; color: var(--muted); }
+  .btn.pill { border-radius: 999px; padding: 4px 10px; font-size: 11px; }
+  .btn:disabled { opacity: .5; cursor: default; }
+  .seg { display: inline-flex; padding: 3px; gap: 2px; border-radius: 999px; border: 1px solid transparent; background: var(--panel-2); }
+  .seg button { -webkit-appearance: none; appearance: none; font: inherit; font-size: 12px; font-weight: 500; padding: 4px 11px; border: 0; border-radius: 999px; background: transparent; color: var(--muted); cursor: pointer; transition: background .15s, color .15s; }
+  .seg button.on { background: var(--card); color: var(--text); }
+  .seg button.nav { padding: 4px 8px; }
+  @media (hover: hover) {
+    .btn:hover:not(:disabled) { background: var(--line-2); }
+    .btn.primary:hover:not(:disabled) { filter: brightness(1.08); background: var(--accent); }
+    .btn.quiet:hover:not(:disabled) { color: var(--text); background: var(--hover); }
+    .seg button:hover { color: var(--text); }
+    .row:hover { background: var(--hover); }
+    .row:hover .acts { visibility: visible; }
+    .tile.action:hover { border-color: var(--line-2); }
+  }
+  @media (hover: none) { .acts { visibility: visible !important; } }
+  @media (pointer: coarse) { .btn, input, select, textarea { font-size: 16px; } }
+  label.check { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; -webkit-user-select: none; user-select: none; }
+  input[type="checkbox"] { width: 15px; height: 15px; margin: 0; }
+  kbd { font: inherit; font-size: 10.5px; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; line-height: 1.5; }
+
+  /* ---- sections ------------------------------------------------------- */
+  hr { border: 0; border-top: 1px solid var(--line); margin: 0; }
+  section { padding: 12px 0 8px; }
+  .h { color: var(--muted); font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; margin: 0 0 10px; display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 22px; }
+  .h .meta { letter-spacing: 0; text-transform: none; color: var(--dim); font-size: 11px; display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .note { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 9px 14px; margin: 8px 0; border: 1px solid transparent; border-radius: 12px; background: var(--panel-2); color: var(--muted); font-size: 12px; }
+  .note b { color: var(--text); font-weight: 500; }
+  .note.bad { border-color: rgba(255,69,58,.4); background: var(--bad-bg); }
+  .note.warn { border-color: rgba(255,159,10,.4); background: var(--warn-bg); }
+  .note .grow { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+
+  /* ---- now ------------------------------------------------------------ */
+  .now { display: grid; grid-template-columns: 168px 1fr; gap: 22px; align-items: center; padding: 6px 0 10px; }
+  .ring { position: relative; width: 168px; height: 168px; }
+  .ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+  .ring .track { fill: none; stroke: var(--panel-2); stroke-width: 6; }
+  .ring .arc { fill: none; stroke: var(--accent); stroke-width: 6; stroke-linecap: round; transition: stroke-dashoffset .5s ease, stroke .3s; }
+  .ring.ok .arc { stroke: var(--ok); } .ring.bad .arc { stroke: var(--bad); } .ring.warn .arc { stroke: var(--warn); } .ring.dim .arc { stroke: var(--dim); }
+  .ring.bad .arc { animation: throb 1.4s ease-in-out infinite; }
+  @keyframes throb { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
+  @media (prefers-reduced-motion: reduce) { .ring.bad .arc { animation: none; } }
+  .ring .center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 22px; }
+  .ring .num { font-size: 32px; font-weight: 300; line-height: 1; letter-spacing: -.01em; }
+  .ring .lbl { font-size: 10.5px; color: var(--muted); letter-spacing: .1em; text-transform: uppercase; margin-top: 7px; }
+  .now .title { font-size: 17px; font-weight: 600; line-height: 1.25; min-width: 0; overflow-wrap: anywhere; display: flex; align-items: center; gap: 9px; }
+  .now .title .dot { width: 9px; height: 9px; }
+  .now .sub { color: var(--muted); margin-top: 6px; line-height: 1.5; }
+  .now .acts-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+  .now .acts-row .btn { visibility: visible; }
+  @media (max-width: 560px) { .now { grid-template-columns: 1fr; justify-items: center; text-align: center; } .now .title { justify-content: center; } .now .acts-row { justify-content: center; } }
+
+  /* ---- setup window --------------------------------------------------- */
+  .window { background: var(--panel-2); border: 1px solid transparent; border-radius: 20px; box-shadow: var(--shadow); padding: 26px 28px; margin: 18px auto 10px; max-width: 560px; }
+  .window h2 { margin: 0 0 6px; font-size: 18px; font-weight: 600; text-align: center; }
+  .window p { margin: 0 0 14px; color: var(--muted); text-align: center; line-height: 1.5; }
+  .window ol { margin: 0 0 16px; padding-left: 18px; color: var(--muted); display: grid; gap: 5px; font-size: 12px; }
+  .window ol b { color: var(--text); font-weight: 500; }
+  .window .foot { display: flex; align-items: center; gap: 12px; margin-top: 14px; flex-wrap: wrap; }
+
+  /* ---- tiles (signals) ------------------------------------------------ */
+  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(156px, 1fr)); gap: 8px; }
+  .tile { background: var(--panel-2); border: 1px solid transparent; border-radius: 12px; padding: 10px 12px 11px; min-width: 0; transition: border-color .15s; }
+  .tile .k { color: var(--muted); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 6px; }
+  .tile .k svg.i { width: 13px; height: 13px; color: var(--dim); }
+  .tile .n { font-size: 13px; font-weight: 500; margin-top: 5px; display: flex; align-items: center; gap: 7px; min-width: 0; }
+  .tile .n span.t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .tile .n.off { color: var(--muted); font-weight: 400; }
+  .tile .btn { margin-top: 7px; background: var(--card); }
+
+  /* ---- meeting rows --------------------------------------------------- */
+  .rows { display: flex; flex-direction: column; }
+  .row { display: grid; grid-template-columns: 60px minmax(0, 1fr) 110px auto 28px; gap: 12px; align-items: center; padding: 6px 8px; margin: 0 -8px; border-radius: 10px; transition: background .15s; }
+  .row + .row { border-top: 1px solid var(--line); border-radius: 0 0 8px 8px; margin-top: 0; }
+  .row.past { color: var(--muted); }
+  .row.past .title { color: var(--muted); font-weight: 400; }
+  .row.untracked .title { color: var(--muted); }
+  .row .time { font-size: 12.5px; font-weight: 500; white-space: nowrap; line-height: 1.3; }
+  .row .time small { display: block; color: var(--dim); font-size: 10px; font-weight: 400; }
+  .row .title { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.3; }
+  .row.live .title { color: var(--text); font-weight: 600; }
+  .row .meta { color: var(--dim); font-size: 11px; margin-top: 1px; display: flex; gap: 7px; flex-wrap: nowrap; align-items: center; white-space: nowrap; overflow: hidden; line-height: 1.3; }
+  .row .meta .prov { letter-spacing: .08em; text-transform: uppercase; font-size: 10px; color: var(--muted); }
+  .row .meta .prov.needs { color: var(--warn); }
+  .row .bar { height: 3px; border-radius: 2px; background: var(--line); overflow: hidden; display: flex; position: relative; }
+  .row .bar span { display: block; height: 100%; }
+  .row .bar .in_call { background: var(--ok); } .row .bar .lobby { background: var(--warn); } .row .bar .absent { background: var(--bad); opacity: .6; }
+  .row .bar .nowmark { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--text); }
+  .row .bar.none { background: transparent; }
+  .row .status { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); white-space: nowrap; justify-content: flex-end; }
+  .row .status.strong { color: var(--text); font-weight: 500; }
+  .row .status .acts { display: inline-flex; gap: 4px; visibility: hidden; margin-right: 4px; }
+  .row .more { -webkit-appearance: none; appearance: none; border: 0; background: transparent; color: var(--muted); font-size: 16px; line-height: 1; border-radius: 6px; cursor: pointer; padding: 3px 6px; }
+  .row .more:hover { background: var(--line); color: var(--text); }
+  .details { margin: 2px -8px 6px; padding: 12px 16px 14px 80px; background: var(--panel-2); border-radius: 12px; display: grid; gap: 6px; font-size: 12px; color: var(--muted); }
+  .details b { color: var(--text); font-weight: 500; }
+  .details .acts-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 4px; }
+  .details .link { -webkit-appearance: none; appearance: none; border: 0; background: none; padding: 0; color: var(--accent-text); cursor: pointer; font: inherit; font-size: 12px; }
+  .empty { padding: 34px 20px; text-align: center; color: var(--muted); }
+  .empty h3 { margin: 0 0 4px; font-size: 14px; font-weight: 600; color: var(--text); }
+  @media (max-width: 620px) {
+    .row { grid-template-columns: 52px minmax(0, 1fr) auto 28px; }
+    .row .bar { display: none; }
+    .details { padding-left: 14px; }
+  }
+
+  /* ---- alerts --------------------------------------------------------- */
+  .alerts { display: grid; gap: 2px; }
+  .alert { display: grid; grid-template-columns: 60px 1fr; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 12px; }
+  .alert:last-child { border-bottom: 0; }
+  .alert .t { color: var(--dim); }
+  .alert .k { font-weight: 500; }
+  .alert .m { color: var(--muted); margin-top: 1px; }
+
+  /* ---- footer --------------------------------------------------------- */
+  footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; padding-top: 10px; border-top: 1px solid var(--line); color: var(--dim); font-size: 11px; margin-top: 10px; }
+  footer .keys { display: flex; gap: 10px; flex-wrap: wrap; }
+
+  /* ---- dialogs -------------------------------------------------------- */
+  dialog { border: 1px solid var(--line); background: var(--panel-2); color: var(--text); border-radius: 20px; padding: 0; width: min(640px, calc(100vw - 32px)); max-height: calc(100vh - 40px); box-shadow: var(--shadow); }
+  dialog::backdrop { background: rgba(0,0,0,.6); }
+  dialog .dhead { display: flex; align-items: center; gap: 10px; padding: 14px 18px; border-bottom: 1px solid var(--line-2); position: sticky; top: 0; background: var(--panel-2); z-index: 1; }
+  dialog .dhead h3 { margin: 0; font-size: 15px; font-weight: 600; }
+  dialog .dbody { padding: 6px 18px 16px; }
+  dialog .dfoot { display: flex; gap: 8px; justify-content: flex-end; padding: 12px 18px; border-top: 1px solid var(--line-2); position: sticky; bottom: 0; background: var(--panel-2); }
+  dialog h4 { margin: 16px 0 6px; font-size: 10.5px; text-transform: uppercase; color: var(--muted); letter-spacing: .14em; font-weight: 600; }
+  .pref { display: flex; gap: 14px; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--line-2); }
+  .pref:last-child { border-bottom: 0; }
+  .pref .lab { flex: 1 1 auto; min-width: 0; }
+  .pref .lab small { display: block; color: var(--muted); font-size: 11.5px; margin-top: 1px; line-height: 1.4; }
+  .pref .ctl { flex: none; display: flex; align-items: center; gap: 8px; }
+  .pref.stack { flex-direction: column; align-items: stretch; gap: 6px; }
+  .pref.stack .ctl { display: block; }
+  input[type="text"], input[type="number"], input[type="email"], textarea, select {
+    -webkit-appearance: none; appearance: none; border: 1px solid transparent; background: var(--card); color: var(--text);
+    border-radius: 10px; padding: 7px 10px; min-width: 0; font-size: 12.5px;
+  }
+  input[type="text"]:focus, input[type="number"]:focus, input[type="email"]:focus, textarea:focus, select:focus { outline: none; border-color: var(--muted); }
+  input[type="number"] { width: 78px; text-align: right; }
+  input[type="email"], input[type="text"] { width: 240px; max-width: 100%; }
+  textarea { width: 100%; min-height: 72px; resize: vertical; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11.5px; }
+  select { padding-right: 26px; background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%); background-position: calc(100% - 14px) 55%, calc(100% - 9px) 55%; background-size: 5px 5px; background-repeat: no-repeat; }
+  .hint { color: var(--muted); font-size: 11.5px; line-height: 1.45; }
+  .hint.ok { color: var(--ok); }
+  .dbody .tile { background: var(--card); }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 500; font-size: 10.5px; text-transform: uppercase; letter-spacing: .1em; white-space: nowrap; }
+  td.num { text-align: right; white-space: nowrap; color: var(--muted); }
+  .scroll { overflow: auto; scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
+  .scroll::-webkit-scrollbar { width: 8px; height: 8px; } .scroll::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 8px; } .scroll::-webkit-scrollbar-track { background: transparent; }
+  .placeholder { display: grid; place-items: center; min-height: 60vh; text-align: center; color: var(--muted); }
+  .status-text { display: inline-flex; align-items: center; gap: 7px; }
+</style>
+</head>
+<body>
+<main id="app"></main>
+
+<dialog id="settingsDialog"></dialog>
+<dialog id="historyDialog"></dialog>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---------------------------------------------------------------- preview
+  function isPreview() {
+    if (new URLSearchParams(location.search).get("_preview") === "1") return true;
+    try {
+      let w = window;
+      while (w.parent && w.parent !== w) {
+        w = w.parent;
+        if (new URLSearchParams(w.location.search).get("_preview") === "1") return true;
+      }
+    } catch (e) { /* cross-origin ancestor */ }
+    return false;
+  }
+
+  // Same image the explorer uses for the sidebar glyph / app card (icon.png beside this page).
+  const LOGO_SRC = (typeof fused !== "undefined" && fused.rawUrl) ? fused.rawUrl("icon.png") : "icon.png";
+  const LOGO = '<img class="logo" src="' + LOGO_SRC + '" alt="" aria-hidden="true">';
+  const I = {
+    refresh: '<svg class="i" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v5h-5"/></svg>',
+    gear: '<svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
+    mic: '<svg class="i" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg>',
+    cam: '<svg class="i" viewBox="0 0 24 24"><rect x="3" y="7" width="13" height="10" rx="2"/><path d="M16 11l5-3v8l-5-3"/></svg>',
+    radio: '<svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="2"/><path d="M8.5 8.5a5 5 0 0 0 0 7M15.5 8.5a5 5 0 0 1 0 7M5.6 5.6a9 9 0 0 0 0 12.8M18.4 5.6a9 9 0 0 1 0 12.8"/></svg>',
+    tabs: '<svg class="i" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 9h18M8 5v4"/></svg>',
+    globe: '<svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>',
+    pulse: '<svg class="i" viewBox="0 0 24 24"><path d="M3 12h4l2-6 4 12 2-6h6"/></svg>',
+    lock: '<svg class="i" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>',
+    video: '<svg class="i" viewBox="0 0 24 24"><rect x="3" y="6" width="12" height="12" rx="2"/><path d="M15 10l6-3v10l-6-3"/></svg>',
+    pin: '<svg class="i" viewBox="0 0 24 24"><path d="M12 21s-6-5.3-6-11a6 6 0 0 1 12 0c0 5.7-6 11-6 11z"/><circle cx="12" cy="10" r="2"/></svg>',
+    link: '<svg class="i" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>',
+    left: '<svg class="i" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg>',
+    right: '<svg class="i" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>',
+  };
+
+  const app = document.getElementById("app");
+  if (isPreview()) {
+    app.innerHTML = '<div class="placeholder"><div><div class="brand" style="justify-content:center">' + LOGO + '<div><h1>ZoneOut</h1><div class="plan">meeting attendance</div></div></div>' +
+      '<p class="muted" style="margin:6px 0 0">Watches your calendar and this Mac. Tells you when you are about to be a no-show.</p></div></div>';
+    return;
+  }
+
+  // ------------------------------------------------------------------ utils
+  const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const parseTs = (s) => (s ? new Date(s) : null);
+  const fmtClockNow = (d) => d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });  // HH:MM
+  const fmtTime = (s) => { const d = parseTs(s); return d ? fmtClockNow(d) : ""; };
+  const fmtDate = (day) => { const d = new Date(day + "T12:00:00"); return d.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" }); };
+  const ymd = (d) => d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");  // local YYYY-MM-DD
+  const todayStr = () => ymd(new Date());
+  const addDays = (day, n) => { const d = new Date(day + "T12:00:00"); d.setDate(d.getDate() + n); return ymd(d); };
+  function fmtSeconds(s, long) {  // long: "45 min · 1 h 20 min · 30 s"; short: "45m · 1h 20m · 30s" for tight cells
+    const u = long ? { s: " s", m: " min", h: " h" } : { s: "s", m: "m", h: "h" };
+    s = Math.max(0, Math.round(s || 0));
+    if (s < 60) return s + u.s;
+    const m = Math.round(s / 60);
+    if (m < 60) return m + u.m;
+    return Math.floor(m / 60) + u.h + (m % 60 ? " " + (m % 60) + u.m : "");
+  }
+  const fmtDur = (s) => fmtSeconds(s, true);
+  const fmtShort = (s) => fmtSeconds(s, false);
+  function fmtClock(s) {  // mm:ss or h:mm:ss for the ring
+    s = Math.max(0, Math.floor(s || 0));
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+    return h ? h + ":" + String(m).padStart(2, "0") + ":" + String(sec).padStart(2, "0") : m + ":" + String(sec).padStart(2, "0");
+  }
+  function relTime(iso, now) {
+    const diff = (parseTs(iso) - now) / 1000;
+    const a = Math.abs(diff);
+    const txt = a < 60 ? "under a minute" : a < 3600 ? Math.round(a / 60) + " min" : a < 86400 ? (a / 3600).toFixed(1).replace(/\.0$/, "") + " h" : Math.round(a / 86400) + " d";
+    return diff >= 0 ? "in " + txt : txt + " ago";
+  }
+  const providerShort = { meet: "Meet", zoom: "Zoom", teams: "Teams", webex: "Webex", slack: "Slack", whereby: "Whereby", around: "Around", link: "Link" };
+  const kindLabel = { in_person: "in person", needs_link: "needs a link", personal: "personal" };
+  const dot = (cls, live) => '<span class="dot ' + cls + (live ? " live" : "") + '"></span>';
+
+  // ------------------------------------------------------------------ state
+  const params = fused.params;
+  let state = null;          // last /state response
+  let daemon = { running: null, autostart: null };
+  let lastError = "";
+  let busy = false;
+  let pollTimer = null;
+
+  function currentDay() { return params.get("day") || todayStr(); }
+  const errText = (e) => String((e && e.message) || e);
+  const parseIcsUrls = (text) => String(text || "").split("\n").map(x => x.trim()).filter(Boolean);
+  const toggleSel = (key) => params.set("sel", params.get("sel") === key ? "" : key);
+
+  async function refreshDaemon() {
+    try {
+      daemon = await fused.daemon.status();
+    } catch (e) { daemon = { running: null, autostart: null, error: errText(e) }; }
+  }
+
+  // One path for every engine control (start / stop / restart / autostart):
+  // record the failure, re-read the engine status once, then redraw — with a
+  // fresh state fetch when the engine may have (re)started.
+  async function daemonAction(fn, reloadState) {
+    try { await fn(); } catch (e) { lastError = errText(e); }
+    await refreshDaemon();
+    if (reloadState) await loadState(); else draw();
+  }
+
+  // Save settings and apply them in one round-trip of state: the settings
+  // response is skipped (noState) because `refresh` returns the same payload
+  // recomputed against the new settings.
+  async function saveSettings(patch) {
+    await call("settings", { settings: patch }, { noState: true });
+    await call("refresh", {});
+  }
+
+  async function call(route, body, opts) {
+    try {
+      const res = await fused.daemon.call(route, body || {});
+      if (res && res.ok === false) throw new Error(res.error || ("daemon: " + route + " failed"));
+      lastError = "";
+      if (res && res.events && !(opts && opts.noState)) {
+        // hide entries where nobody but you is invited (solo blocks, reminders, focus time) —
+        // but keep calls with a link even when the feed omits attendees
+        res.events = res.events.filter(e => e.gone || e.kind !== "personal");
+        state = res;
+      }
+      return res;
+    } catch (e) {
+      lastError = errText(e);
+      throw e;
+    }
+  }
+
+  async function loadState() {
+    try {
+      await call("state", { day: currentDay() });
+      if (daemon.running !== true) await refreshDaemon();
+    } catch (e) { /* lastError set */ }
+    redraw();
+  }
+
+  // After any action that already fetched fresh state: paint it and push the
+  // next poll out, so a timer armed before the action does not fire a second
+  // fetch a moment later.
+  function redraw() {
+    draw();
+    schedulePoll();
+  }
+
+  function schedulePoll() {
+    clearTimeout(pollTimer);
+    const live = state && state.live && ["in_meeting", "missing", "lobby", "starting"].includes(state.live.status);
+    const ms = document.visibilityState === "visible" ? (live ? 6000 : 15000) : 60000;
+    pollTimer = setTimeout(loadState, ms);
+  }
+
+  // ------------------------------------------------------------------ draw
+  function draw() {
+    const now = new Date();
+    const day = currentDay();
+    const s = state;
+    const settings = s ? s.settings : null;
+    const configured = settings && settings.ics_urls && settings.ics_urls.length > 0;
+    let html = "";
+
+    const engineDot = daemon.running === true ? "ok" : daemon.running === false ? "bad" : "";
+    const engineTxt = daemon.running === true ? "engine running" : daemon.running === false ? "engine stopped" : "engine…";
+    html += '<div class="brand">' + LOGO +
+      '<div><h1>ZoneOut</h1><div class="plan">' + dot(engineDot) + '<span>' + engineTxt + '</span>' +
+      (daemon.running === true ? '<span class="dim">·</span><span>' + (daemon.autostart ? "starts at login" : "manual start") + '</span>' : "") + '</div></div>' +
+      '<div class="tools">' +
+      '<div class="seg" role="tablist"><button class="on" id="btnToday" title="Today (T)">Today</button><button id="btnHistory" title="History (H)">History</button></div>' +
+      '<button class="btn icon" id="btnRefresh" title="Re-download the calendar and re-check now (R)">' + I.refresh + '</button>' +
+      '<button class="btn icon" id="btnSettings" title="Settings (S)">' + I.gear + '</button>' +
+      '</div></div><hr>';
+
+    if (lastError) {
+      html += '<div class="note bad"><b>Engine error</b><span class="grow mono">' + esc(lastError) + '</span>' +
+        '<button class="btn" id="btnStart">Start engine</button><button class="btn" id="btnRestart">Restart</button></div>';
+    }
+    if (s && s.engine && s.engine.last_error) {
+      html += '<div class="note warn"><b>Last check failed</b><span class="mono grow">' + esc(s.engine.last_error) + '</span></div>';
+    }
+
+    if (!s) {
+      html += '<section><div class="empty"><h3>Connecting to the background engine…</h3><div class="muted">It polls your calendar and this Mac even when this page is closed.</div></div></section>';
+      app.innerHTML = html;
+      wire();
+      return;
+    }
+
+    if (!configured) {
+      html += setupCard(s);
+    } else {
+      html += '<section><div class="h"><span>Now</span><span class="meta"><span id="clock">' + esc(fmtClockNow(now)) + '</span></span></div>' + hero(s, now) + '</section><hr>';
+      if (s.calendar && s.calendar.error) {
+        html += '<div class="note warn"><b>Calendar</b><span class="grow">' + esc(s.calendar.error) + (s.calendar.sources.some(x => x.from_cache) ? " — showing the last downloaded copy." : "") + '</span><button class="btn" id="btnSettings2">Fix link</button></div>';
+      }
+      if (daemon.running === true && daemon.autostart === false && !settings.autostart_hint_dismissed) {
+        html += '<div class="note"><span class="grow">Tracking stops when fused-render quits. Turn on <b>start at login</b> so it comes back on its own.</span>' +
+          '<button class="btn primary" id="btnAutostartOn">Turn on</button><button class="btn quiet" id="btnAutostartDismiss">Dismiss</button></div>';
+      }
+    }
+
+    html += signalsSection(s, now);
+    html += '<hr><section><div class="h"><span>Meetings</span><span class="meta">' +
+      '<div class="seg"><button class="nav" id="dayPrev" aria-label="Previous day">' + I.left + '</button>' +
+      '<button class="' + (day === s.today ? "on" : "") + '" id="dayLabel">' + (day === s.today ? "Today · " : "") + esc(fmtDate(day)) + '</button>' +
+      '<button class="nav" id="dayNext" aria-label="Next day">' + I.right + '</button></div>' +
+      (day !== s.today ? '<button class="btn quiet pill" id="dayToday">Back to today</button>' : "") +
+      '<span>' + esc(trackingSummary(s)) + '</span></span></div>';
+    html += '<div class="rows">' + (s.events.length ? s.events.map(e => eventRow(e, s, now)).join("") :
+      '<div class="empty"><h3>' + (configured ? "Nothing scheduled" : "No calendar yet") + '</h3><div>' + (configured ? "No timed meetings on this day." : "Add your calendar link to see meetings here.") + '</div></div>') + '</div></section>';
+
+    if (s.alerts && s.alerts.length) {
+      html += '<hr><section><div class="h"><span>Recent alerts</span><span class="meta">' + s.alerts.length + ' logged</span></div><div class="alerts">' + s.alerts.slice(0, 8).map(a =>
+        '<div class="alert"><span class="t">' + esc(fmtTime(a.ts)) + '</span><div><div class="k">' + esc(a.title) + '</div><div class="m">' + esc(a.message) + '</div></div></div>').join("") + '</div></section>';
+    }
+
+    const g = s.signals || {};
+    const age = g.ts ? Math.round((now - parseTs(g.ts)) / 1000) : null;
+    html += '<footer><span>' + (age == null ? "Waiting for the first check" : "Checked " + (age < 5 ? "just now" : fmtDur(age) + " ago")) +
+      (s.engine.next_poll ? ' · next ' + esc(fmtTime(s.engine.next_poll)) : "") + ' · ' + esc(s.engine.polls) + ' checks · pid ' + esc(s.engine.pid) + '</span>' +
+      '<span class="keys"><span><kbd>R</kbd> refresh</span><span><kbd>S</kbd> settings</span><span><kbd>H</kbd> history</span><span><kbd>←</kbd><kbd>→</kbd> day</span></span></footer>';
+
+    app.innerHTML = html;
+    wire();
+  }
+
+  function trackingSummary(s) {
+    const st = s.settings;
+    const n = s.events.filter(e => e.tracked).length;
+    if (st.track_mode === "selected") return n + " of " + s.events.length + " tracked · selected mode";
+    return n + " of " + s.events.length + " tracked";
+  }
+
+  function setupCard(s) {
+    return '<div class="window">' +
+      '<h2>Which calendar should I watch?</h2>' +
+      '<p>Paste the private iCal link of your calendar. The engine downloads it every few minutes, watches this Mac while each meeting runs, and warns you when you are not in a meeting you should be in.</p>' +
+      '<ol>' +
+      '<li><b>Google Calendar</b> — Settings → your calendar → Integrate calendar → <b>Secret address in iCal format</b></li>' +
+      '<li><b>Outlook / Office 365</b> — Settings → Calendar → Shared calendars → Publish → copy the <b>ICS</b> link</li>' +
+      '<li><b>Apple iCloud</b> — share the calendar publicly and paste the <b>webcal://</b> link</li>' +
+      '</ol>' +
+      '<textarea id="setupUrls" placeholder="https://calendar.google.com/calendar/ical/…/private-…/basic.ics"></textarea>' +
+      '<div class="hint" style="margin-top:6px">Kept on this Mac only, in the app\'s private .fused/data folder. One link per line.</div>' +
+      '<div class="foot"><label class="check muted"><input type="checkbox" id="setupAutostart" checked /> Start at login</label>' +
+      '<span class="spacer"></span><button class="btn primary" id="setupSave">Save &amp; start tracking</button></div>' +
+      '</div>';
+  }
+
+  // --- the ring: one focal element -------------------------------------
+  function ringModel(s, now) {
+    const l = s.live || { status: "free" };
+    const nowMs = now.getTime();
+    const m = { cls: "dim", frac: 0, num: "—", lbl: "" };
+    const span = (a, b) => Math.max(1, parseTs(b) - parseTs(a));
+    if (l.status === "in_meeting") {
+      m.cls = "ok"; m.frac = (nowMs - parseTs(l.since || l.end)) / span(l.since, l.end);
+      const left = (parseTs(l.end) - nowMs) / 1000; m.num = fmtClock(left); m.lbl = "left";
+    } else if (l.status === "missing") {
+      m.cls = "bad"; m.frac = (nowMs - parseTs(l.since)) / span(l.since, l.end);
+      m.num = fmtClock((nowMs - parseTs(l.since)) / 1000); m.lbl = "missing";
+    } else if (l.status === "lobby") {
+      m.cls = "warn"; m.frac = (nowMs - parseTs(l.since)) / span(l.since, l.end);
+      m.num = fmtClock((nowMs - parseTs(l.since)) / 1000); m.lbl = "not joined";
+    } else if (l.status === "starting") {
+      const grace = (s.settings.grace_min || 0) * 60, late = (nowMs - parseTs(l.since)) / 1000;
+      m.cls = "warn"; m.frac = grace ? late / grace : 1; m.num = fmtClock(Math.max(0, grace - late)); m.lbl = "to join";
+    } else if (l.status === "unverifiable" || l.status === "untracked") {
+      m.cls = "dim"; m.frac = (nowMs - parseTs(l.since)) / span(l.since, l.end);
+      m.num = fmtClock((parseTs(l.end) - nowMs) / 1000); m.lbl = "left";
+    } else if (l.next_start) {
+      const until = (parseTs(l.next_start) - nowMs) / 1000;
+      m.cls = ""; m.frac = Math.max(0, 1 - until / (8 * 3600));
+      m.num = until < 3600 ? fmtClock(until) : fmtShort(until); m.lbl = "until next";
+    } else {
+      const done = (s.events || []).filter(e => e.phase === "past").length;
+      m.cls = "dim"; m.frac = done ? 1 : 0; m.num = done ? String(done) : "—"; m.lbl = done ? "done today" : "no meetings";
+    }
+    m.frac = Math.min(1, Math.max(0, m.frac));
+    return m;
+  }
+
+  const RING_R = 64, RING_C = 2 * Math.PI * RING_R;  // shared by the first paint and the 1 s ticker
+  const arcOffset = (frac) => (RING_C * (1 - frac)).toFixed(1);
+
+  function ringHtml(m) {
+    return '<div class="ring ' + m.cls + '" id="ring"><svg viewBox="0 0 144 144" aria-hidden="true"><circle class="track" cx="72" cy="72" r="' + RING_R + '"/>' +
+      '<circle class="arc" cx="72" cy="72" r="' + RING_R + '" stroke-dasharray="' + RING_C.toFixed(1) + '" stroke-dashoffset="' + arcOffset(m.frac) + '"/></svg>' +
+      '<div class="center"><div class="num" id="ringNum">' + esc(m.num) + '</div><div class="lbl" id="ringLbl">' + esc(m.lbl) + '</div></div></div>';
+  }
+
+  function tickRing() {
+    if (!state || !state.settings || !state.settings.ics_urls.length) return;
+    const ring = document.getElementById("ring");
+    if (!ring) return;
+    const now = new Date();
+    const m = ringModel(state, now);
+    ring.className = "ring " + m.cls;
+    const arc = ring.querySelector(".arc");
+    if (arc) arc.setAttribute("stroke-dashoffset", arcOffset(m.frac));
+    const n = document.getElementById("ringNum"), l = document.getElementById("ringLbl"), clk = document.getElementById("clock");
+    if (n) n.textContent = m.num;
+    if (l) l.textContent = m.lbl;
+    if (clk) clk.textContent = fmtClockNow(now);
+  }
+
+  function hero(s, now) {
+    const l = s.live || { status: "free" };
+    const ev = l.key ? s.events.find(e => e.key === l.key) : null;
+    const link = ev && ev.links && ev.links[0];
+    const openBtn = link ? '<button class="btn primary" data-act="open" data-key="' + esc(l.key) + '">Open ' + esc(providerShort[link.provider] || "link") + '</button>' : "";
+    let d = "", title = "", sub = "", actions = "";
+    if (l.status === "in_meeting") {
+      d = dot("ok", true); title = l.title;
+      sub = "In the meeting since " + fmtTime(l.since) + " · ends " + fmtTime(l.end) + (l.confidence && l.confidence !== "high" ? " · " + l.confidence + " confidence: " + (l.detail || "") : "");
+    } else if (l.status === "missing") {
+      d = dot("bad", true); title = "Missing: " + l.title;
+      const lvl = ev && ev.record && ev.record.nag_level ? ev.record.nag_level : 0;
+      sub = "Started " + fmtDur(l.late_s) + " ago · ends " + fmtTime(l.end) + " · " + (l.detail || "no sign of you in this meeting") + (lvl > 1 ? " · " + lvl + " warnings unanswered, escalating" : "");
+      actions = openBtn +
+        '<button class="btn" data-act="ack" data-key="' + esc(l.key) + '" title="I know — keep reminding me every minute">Got it</button>' +
+        '<button class="btn" data-act="snooze" data-key="' + esc(l.key) + '">Snooze 5 min</button>' +
+        '<button class="btn quiet" data-act="skip" data-key="' + esc(l.key) + '">Skip this one</button>';
+    } else if (l.status === "lobby") {
+      d = dot("warn", true); title = "Not joined yet: " + l.title;
+      sub = "The meeting tab is open but no call is running · started " + fmtDur(l.late_s) + " ago";
+      actions = openBtn + '<button class="btn quiet" data-act="skip" data-key="' + esc(l.key) + '">Skip this one</button>';
+    } else if (l.status === "starting") {
+      d = dot("warn", true); title = "Starting: " + l.title;
+      sub = "Grace period · join within " + fmtDur(s.settings.grace_min * 60 - (l.late_s || 0)) + " · ends " + fmtTime(l.end);
+      actions = openBtn;
+    } else if (l.status === "unverifiable") {
+      d = dot("", false); title = l.title;
+      sub = "Now until " + fmtTime(l.end) + " · " + (l.detail || "");
+    } else if (l.status === "untracked") {
+      d = dot("", false); title = l.title;
+      sub = "Running until " + fmtTime(l.end) + " · not tracked" + (l.detail ? " · " + l.detail : "");
+      actions = ev ? '<button class="btn" data-act="track" data-uid="' + esc(ev.uid) + '">Track it</button>' : "";
+    } else {
+      d = dot("ok", false); title = "No meeting right now";
+      sub = l.next_title ? "Next: " + l.next_title + " at " + fmtTime(l.next_start) + " · " + relTime(l.next_start, now) + (l.next_tracked ? "" : " · not tracked") : "Nothing else on the calendar in this window.";
+    }
+    return '<div class="now">' + ringHtml(ringModel(s, now)) +
+      '<div><div class="title">' + d + '<span>' + esc(title) + '</span></div><div class="sub">' + esc(sub) + '</div>' +
+      (actions ? '<div class="acts-row">' + actions + '</div>' : "") + '</div></div>';
+  }
+
+  // --- signals as stat tiles --------------------------------------------
+  function tile(icon, label, value, on, extra, title) {
+    return '<div class="tile' + (extra ? " action" : "") + '"' + (title ? ' title="' + esc(title) + '"' : "") + '><div class="k">' + icon + '<span>' + esc(label) + '</span></div>' +
+      '<div class="n' + (on ? "" : " off") + '">' + dot(on === true ? "ok" : on === "warn" ? "warn" : "", on === true) + '<span class="t">' + esc(value) + '</span></div>' + (extra || "") + '</div>';
+  }
+
+  function signalsSection(s, now) {
+    const g = s.signals || {};
+    let body;
+    if (!g.ts) {
+      body = '<div class="empty">Waiting for the first check…</div>';
+    } else {
+      const micApps = Object.keys(g.mic_apps || {});
+      const tiles = [];
+      tiles.push(tile(I.mic, "Microphone", g.mic_in_use ? (micApps.length ? micApps.join(", ") : "in use") : "idle", !!g.mic_in_use, "", "Which app coreaudiod is running the mic for"));
+      tiles.push(tile(I.cam, "Camera", g.camera_in_use == null ? "unknown" : g.camera_in_use ? "on" : "off", !!g.camera_in_use, "", "Camera in use by any app"));
+      tiles.push(tile(I.radio, "Call media", (g.webrtc_apps || []).length ? g.webrtc_apps.join(", ") : "none", (g.webrtc_apps || []).length > 0, "", "Apps holding a WebRTC wake lock: a live call"));
+      const tabs = g.tabs || [];
+      tiles.push(tile(I.tabs, "Meeting tabs", tabs.length ? tabs.map(t => (providerShort[t.provider] || t.provider) + " · " + t.app.replace("Google ", "")).join(", ") : "none", tabs.length > 0, "", "Meeting links open in browser tabs"));
+      if ((g.meeting_apps_running || []).includes("zoom.us") || g.zoom_in_meeting) tiles.push(tile(I.video, "Zoom", g.zoom_in_meeting ? "in a meeting" : "open, idle", !!g.zoom_in_meeting));
+      const br = g.browsers || {};
+      Object.keys(br).forEach(name => {
+        const b = br[name];
+        let txt, on = false, extra = "";
+        if (b.applescript === "ok") { txt = "tabs readable"; on = true; }
+        else if (b.applescript === "denied") { txt = b.session_files ? "session files only" : "needs permission"; on = "warn"; extra = '<button class="btn pill" data-act="perm-probe">Grant tab access</button>'; }
+        else if (b.applescript === "timeout") { txt = "waiting for permission"; on = "warn"; }
+        else if (b.applescript === "n/a" || b.applescript === "skipped") { txt = b.session_files ? "session files" : "no session data"; on = b.session_files ? true : "warn"; }
+        else { txt = b.session_files ? "session files" : String(b.applescript); on = b.session_files ? true : "warn"; }
+        tiles.push(tile(I.globe, name.replace("Google ", ""), txt, on, extra, b.applescript === "denied" ? "AppleScript access denied; Chrome tabs are read from its session files with a few seconds of lag" : ""));
+      });
+      const act = g.screen_locked ? "screen locked" : g.idle_s != null ? "idle " + fmtShort(g.idle_s) : "—";
+      tiles.push(tile(g.screen_locked ? I.lock : I.pulse, "Activity", act, g.screen_locked ? "warn" : (g.idle_s != null && g.idle_s < 60), "", "Keyboard/mouse idle time and screen lock"));
+      body = '<div class="tiles">' + tiles.join("") + '</div>';
+      if ((g.errors || []).length) body += '<div class="hint" style="margin-top:8px" title="' + esc(g.errors.join("\n")) + '">' + g.errors.length + ' detector warning' + (g.errors.length > 1 ? "s" : "") + ' · ' + esc(g.errors[0]) + '</div>';
+    }
+    const took = g.took_ms != null ? g.took_ms + " ms" : "";
+    return '<section><div class="h"><span>Signals</span><span class="meta">' + esc(took) + '</span></div>' + body + '</section>';
+  }
+
+  // --- meeting rows -----------------------------------------------------
+  function statusCell(e) {
+    const r = e.record;
+    const t = (cls, txt, strong) => '<span class="status-text' + (strong ? " strong" : "") + '">' + dot(cls, strong && cls === "ok") + esc(txt) + '</span>';
+    if (e.kind && e.kind !== "call") {
+      if (e.phase === "upcoming") return t("", e.kind === "personal" ? "no alarms" : "heads-up only");
+      if (e.phase === "live") return t("", "now · " + kindLabel[e.kind]);
+      return t("", "not verifiable");
+    }
+    if (e.phase === "upcoming") return e.tracked ? t("", "upcoming") : t("", "not tracked");
+    if (e.phase === "live") {
+      const st = e.presence.state;
+      if (st === "in_call") return t("ok", "attending" + (e.presence.confidence && e.presence.confidence !== "high" ? " · " + e.presence.confidence : ""), true);
+      if (st === "lobby") return t("warn", "tab open, not joined", true);
+      if (r && r.skipped) return t("", "skipped");
+      if (!e.tracked) return t("", "live · not tracked");
+      const lateS = (Date.now() - parseTs(e.start).getTime()) / 1000;
+      if (!(r && r.first_in) && lateS < (state.settings.grace_min || 0) * 60) return t("warn", "starting", true);
+      return t("bad", r && r.first_in ? "dropped out" : "no-show so far", true);
+    }
+    if (!r) return e.tracked ? t("", "no data") : t("", "not tracked");
+    const v = r.verdict || "—";
+    if (v === "attended") return t("ok", "attended · " + fmtShort(r.in_s) + (r.late_s > 300 ? " · " + fmtShort(r.late_s) + " late" : ""), true);
+    if (v === "partial") return t("warn", "partial · " + fmtShort(r.in_s), true);
+    if (v === "missed") return e.tracked ? t("bad", "no-show", true) : t("", "not attended");
+    return t("", v);
+  }
+
+  function timelineBar(e, now) {
+    const r = e.record;
+    if (!r || !r.segments || !r.segments.length) return '<div class="bar none"></div>';
+    const s0 = parseTs(e.start).getTime(), s1 = parseTs(e.end).getTime(), span = Math.max(1, s1 - s0);
+    let html = '<div class="bar" title="green = in the call · amber = tab open · red = absent">';
+    let cursor = s0;
+    r.segments.forEach(seg => {
+      const a = Math.max(s0, parseTs(seg[1]).getTime() - 30000), b = Math.min(s1, parseTs(seg[2]).getTime() + 15000);
+      if (a > cursor) html += '<span style="width:' + ((a - cursor) / span * 100) + '%"></span>';
+      if (b > a) html += '<span class="' + esc(seg[0]) + '" style="width:' + ((b - a) / span * 100) + '%"></span>';
+      cursor = Math.max(cursor, b);
+    });
+    if (now.getTime() > s0 && now.getTime() < s1) html += '<span class="nowmark" style="left:' + ((now.getTime() - s0) / span * 100) + '%"></span>';
+    return html + "</div>";
+  }
+
+  function eventRow(e, s, now) {
+    const sel = params.get("sel") === e.key;
+    const link = e.links && e.links[0];
+    const live = e.phase === "live";
+    const cls = ["row", e.phase, live && e.kind === "call" ? e.presence.state : "", e.tracked ? "" : "untracked"].join(" ");
+    const dur = (parseTs(e.end) - parseTs(e.start)) / 1000;
+    const meta = [];
+    if (link) meta.push('<span class="prov">' + esc(providerShort[link.provider] || link.provider) + '</span>');
+    else meta.push('<span class="prov' + (e.kind === "needs_link" ? " needs" : "") + '">' + esc(kindLabel[e.kind] || "no link") + '</span>');
+    if (e.recurring) meta.push('<span title="Recurring">↻</span>');
+    if (e.my_partstat && e.my_partstat !== "ACCEPTED") meta.push('<span>' + esc(e.my_partstat.toLowerCase().replace("needs-action", "no reply")) + '</span>');
+    if (e.n_attendees > 1) meta.push('<span>' + e.n_attendees + ' invitees</span>');
+    if (e.kind === "in_person" && e.location) meta.push('<span>' + esc(e.location) + '</span>');
+    if (e.gone) meta.push('<span>removed from calendar</span>');
+    if (live && e.presence.other_calls && e.presence.other_calls.length && e.presence.state !== "in_call") meta.push('<span>on a call in ' + esc(e.presence.other_calls.join(", ")) + '</span>');
+    if (e.record && e.record.snoozed_until && parseTs(e.record.snoozed_until) > now) meta.push('<span>snoozed until ' + esc(fmtTime(e.record.snoozed_until)) + '</span>');
+    if (e.record && e.record.alerts && e.record.alerts.length) meta.push('<span>' + e.record.alerts.length + ' alert' + (e.record.alerts.length > 1 ? "s" : "") + '</span>');
+
+    const acts = '<span class="acts">' +
+      (link ? '<button class="btn pill" data-act="open" data-key="' + esc(e.key) + '" title="' + esc(link.url) + '">Open</button>' : "") +
+      (live && e.tracked && e.kind === "call" && e.record && !e.record.skipped && e.presence.state !== "in_call" ? '<button class="btn pill" data-act="skip" data-key="' + esc(e.key) + '">Skip</button>' : "") +
+      (e.record && e.record.skipped && e.phase !== "past" ? '<button class="btn pill" data-act="unskip" data-key="' + esc(e.key) + '">Unskip</button>' : "") +
+      '</span>';
+    let html = '<div class="' + cls + '" data-key="' + esc(e.key) + '">' +
+      '<div class="time">' + esc(fmtTime(e.start)) + '<small>' + esc(fmtShort(dur)) + '</small></div>' +
+      '<div style="min-width:0"><div class="title">' + esc(e.title) + '</div><div class="meta">' + meta.join('<span class="dim">·</span>') + '</div></div>' +
+      ((live || e.phase === "past") && e.kind === "call" ? timelineBar(e, now) : '<div class="bar none"></div>') +
+      '<div class="status' + (live ? " strong" : "") + '">' + acts + statusCell(e) + '</div>' +
+      '<button class="more" data-act="toggle" data-key="' + esc(e.key) + '" aria-label="Details" aria-expanded="' + (sel ? "true" : "false") + '">⋯</button>' +
+      '</div>';
+    if (sel) {
+      const r = e.record;
+      html += '<div class="details">';
+      html += '<div><b>' + esc(fmtTime(e.start)) + ' – ' + esc(fmtTime(e.end)) + '</b> · ' + esc(fmtDur(dur)) + (e.n_attendees ? ' · ' + e.n_attendees + ' invitee' + (e.n_attendees === 1 ? "" : "s") : "") + (e.my_partstat ? ' · your reply: ' + esc(e.my_partstat.toLowerCase().replace("needs-action", "none")) : "") + '</div>';
+      if (live && e.kind === "call") html += '<div><b>Detection</b> ' + esc(e.presence.via || "—") + (e.presence.app ? " (" + esc(e.presence.app) + ")" : "") + '</div>';
+      if (e.kind && e.kind !== "call") html += '<div><b>Kind</b> ' + (e.kind === "in_person" ? "in person — nothing to verify on this Mac, heads-up only" : e.kind === "needs_link" ? "other invitees but no meeting link — one heads-up asks you to add a link" : "personal — nobody else invited, no alarms") + '</div>';
+      if (r) html += '<div><b>In the call</b> ' + fmtDur(r.in_s) + (r.first_in ? ' · joined ' + esc(fmtTime(r.first_in)) + (r.late_s > 60 ? " (" + fmtDur(r.late_s) + " after start)" : "") : "") + (r.lobby_s > 30 ? " · in lobby " + fmtDur(r.lobby_s) : "") + '</div>';
+      if (e.links && e.links.length) html += '<div><b>Links</b> ' + e.links.map(l => '<a href="' + esc(l.url) + '" target="_blank" rel="noopener">' + esc(l.url) + '</a>').join(" · ") + '</div>';
+      if (e.location && !(link && e.location.includes(link.url))) html += '<div><b>Where</b> ' + esc(e.location) + '</div>';
+      if (e.organizer && e.organizer.email) html += '<div><b>Organizer</b> ' + esc(e.organizer.name || e.organizer.email) + '</div>';
+      if (e.description) html += '<div>' + esc(e.description) + '</div>';
+      if (r && r.alerts && r.alerts.length) html += '<div><b>Alerts</b> ' + r.alerts.map(a => esc(fmtTime(a.ts)) + " " + esc(a.kind)).join(", ") + (r.nag_level > 1 ? ' · ' + r.nag_level + ' unanswered' : "") + (r.acked_at ? ' · acknowledged ' + esc(fmtTime(r.acked_at)) : "") + '</div>';
+      html += '<div class="acts-row"><label class="check" title="Alert me if I am not in this meeting (applies to the whole series)"><input type="checkbox" data-act="track-toggle" data-uid="' + esc(e.uid) + '" ' + (e.tracked ? "checked" : "") + ' /> Track this series</label>' +
+        '<span class="dim">' + esc(e.track_reason) + '</span>' +
+        (s.settings.tracked_uids.includes(e.uid) || s.settings.ignored_uids.includes(e.uid) ? '<button class="link" data-act="track-default" data-uid="' + esc(e.uid) + '">Reset to default</button>' : "") +
+        (link ? '<button class="btn pill" data-act="open" data-key="' + esc(e.key) + '">Open ' + esc(providerShort[link.provider] || "link") + '</button>' : "") +
+        (live && e.tracked && e.kind === "call" && e.record && !e.record.skipped && e.presence.state !== "in_call" ? '<button class="btn pill" data-act="skip" data-key="' + esc(e.key) + '">Skip this one</button>' : "") +
+        (e.record && e.record.skipped && e.phase !== "past" ? '<button class="btn pill" data-act="unskip" data-key="' + esc(e.key) + '">Unskip</button>' : "") +
+        '</div>';
+      html += '<div class="mono dim">' + esc(e.key) + '</div></div>';
+    }
+    return html;
+  }
+
+  // ------------------------------------------------------------------ wire
+  function wire() {
+    const on = (id, fn) => { const el = document.getElementById(id); if (el) el.addEventListener("click", fn); };
+    on("btnRefresh", async (ev) => { ev.currentTarget.disabled = true; try { await call("refresh", {}); } catch (e) {} redraw(); });
+    on("btnSettings", openSettings);
+    on("btnSettings2", openSettings);
+    on("btnHistory", openHistory);
+    on("btnToday", () => { params.set("day", ""); params.set("sel", ""); });
+    on("btnStart", () => daemonAction(() => fused.daemon.start(), true));
+    on("btnRestart", () => daemonAction(() => fused.daemon.restart(), true));
+    on("btnAutostartOn", () => daemonAction(() => fused.daemon.setAutostart(true)));
+    on("btnAutostartDismiss", async () => { try { await call("settings", { settings: { autostart_hint_dismissed: true } }); } catch (e) {} redraw(); });
+    on("dayPrev", () => { params.set("day", addDays(currentDay(), -1)); });
+    on("dayNext", () => { params.set("day", addDays(currentDay(), 1)); });
+    on("dayToday", () => { params.set("day", ""); });
+    on("dayLabel", () => { params.set("day", ""); });
+    on("setupSave", async () => {
+      const urls = parseIcsUrls(document.getElementById("setupUrls").value);
+      if (!urls.length) { document.getElementById("setupUrls").focus(); return; }
+      const btn = document.getElementById("setupSave"); btn.disabled = true; btn.textContent = "Downloading calendar…";
+      const wantAuto = document.getElementById("setupAutostart").checked;
+      try {
+        if (wantAuto) { try { await fused.daemon.setAutostart(true); } catch (e) {} }
+        await saveSettings({ ics_urls: urls });
+        await refreshDaemon();
+      } catch (e) {}
+      redraw();
+    });
+    app.querySelectorAll("[data-act]").forEach(el => {
+      const act = el.getAttribute("data-act");
+      const key = el.getAttribute("data-key");
+      const uid = el.getAttribute("data-uid");
+      if (act === "track-toggle") {
+        el.addEventListener("change", async () => { try { await call("track", { uid, mode: el.checked ? "track" : "ignore" }); } catch (e) {} redraw(); });
+        return;
+      }
+      el.addEventListener("click", async (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        if (act === "toggle") { toggleSel(key); return; }
+        if (busy) return;
+        busy = true;
+        try {
+          if (act === "open") await call("open", { key });
+          else if (act === "snooze") await call("snooze", { key, minutes: 5 });
+          else if (act === "ack") await call("ack", { key });
+          else if (act === "skip") await call("skip", { key });
+          else if (act === "unskip") await call("unskip", { key });
+          else if (act === "track") await call("track", { uid, mode: "track" });
+          else if (act === "track-default") await call("track", { uid, mode: "default" });
+          else if (act === "perm-probe") { el.disabled = true; el.textContent = "Look for the macOS prompt…"; await call("permissions", { action: "probe" }, { noState: true }); await call("state", { day: currentDay() }); }
+        } catch (e) {}
+        busy = false;
+        redraw();
+      });
+    });
+    // a click on the row itself expands it (buttons inside stop propagation)
+    app.querySelectorAll(".row[data-key]").forEach(row => {
+      row.addEventListener("click", (ev) => {
+        if (ev.target.closest("button, a, input, label")) return;
+        toggleSel(row.getAttribute("data-key"));
+      });
+    });
+  }
+
+  document.addEventListener("keydown", (ev) => {
+    if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
+    const t = ev.target;
+    if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT")) return;
+    if (document.querySelector("dialog[open]")) return;
+    const k = ev.key.toLowerCase();
+    // shortcuts reuse the buttons' own handlers: one implementation per action
+    const click = (id) => { const b = document.getElementById(id); if (b) b.click(); };
+    if (k === "r") click("btnRefresh");
+    else if (k === "s") openSettings();
+    else if (k === "h") openHistory();
+    else if (k === "t") click("dayToday");
+    else if (ev.key === "ArrowLeft") click("dayPrev");
+    else if (ev.key === "ArrowRight") click("dayNext");
+    else return;
+    ev.preventDefault();
+  });
+
+  // -------------------------------------------------------------- settings
+  function openSettings() {
+    const dlg = document.getElementById("settingsDialog");
+    const st = state ? state.settings : null;
+    if (!st || dlg.open) return;
+    const sounds = (state.sounds && state.sounds.length ? state.sounds : ["Glass", "Sosumi", "Hero", "Ping", "Submarine"]);
+    const perms = state.permissions || { browsers: {} };
+    const pref = (label, hint, ctl) => '<div class="pref"><div class="lab">' + label + (hint ? '<small>' + hint + '</small>' : "") + '</div><div class="ctl">' + ctl + '</div></div>';
+    const chk = (k, label, hint) => pref(label, hint, '<input type="checkbox" name="' + k + '" ' + (st[k] ? "checked" : "") + ' />');
+    const num = (k, label, hint, min, step) => pref(label, hint, '<input type="number" id="f_' + k + '" name="' + k + '" value="' + esc(st[k]) + '" min="' + (min == null ? 0 : min) + '" step="' + (step || 1) + '" />');
+    dlg.innerHTML = '<form method="dialog" id="settingsForm">' +
+      '<div class="dhead"><h3>Settings</h3><span class="spacer"></span><button class="btn icon" value="cancel" formnovalidate aria-label="Close">✕</button></div>' +
+      '<div class="dbody">' +
+      '<h4>Calendar</h4>' +
+      '<div class="pref stack"><div class="lab">Calendar links<small>Google Calendar → Settings → your calendar → Integrate calendar → <b>Secret address in iCal format</b>. Outlook: Publish calendar → ICS. Also webcal:// links and local .ics paths, one per line.</small></div>' +
+      '<div class="ctl"><textarea id="f_ics" name="ics_urls" placeholder="https://calendar.google.com/calendar/ical/…/private-…/basic.ics">' + esc(st.ics_urls.join("\n")) + '</textarea></div>' +
+      (state.calendar && state.calendar.sources && state.calendar.sources.length ? '<div class="hint">' + state.calendar.sources.map(x => (x.ok ? "✓ " : x.from_cache ? "⚠ cached · " : "✗ ") + esc(x.label) + (x.calname ? " (" + esc(x.calname) + ")" : "") + " · " + x.n_events + " meetings in window" + (x.error ? " · " + esc(x.error) : "")).join("<br>") + '</div>' : "") + '</div>' +
+      pref("My email", "For your RSVP: declined meetings are not tracked. Auto-detected from the feed when empty.", '<input type="email" id="f_email" name="my_email" value="' + esc(st.my_email) + '" placeholder="' + esc(state.calendar && state.calendar.detected_email || "you@company.com") + '" />') +
+      num("calendar_refresh_min", "Re-download every", "minutes", 1) +
+      '<h4>What to track</h4>' +
+      pref("Mode", "", '<select id="f_mode" name="track_mode"><option value="all" ' + (st.track_mode === "all" ? "selected" : "") + '>All meetings except ignored</option><option value="selected" ' + (st.track_mode === "selected" ? "selected" : "") + '>Only meetings I mark</option></select>') +
+      chk("track_declined", "Track meetings I declined") +
+      chk("require_link", "Only meetings with a video-call link", "Off: in-person and link-less meetings still get heads-ups, never alarms.") +
+      '<div class="hint" style="padding:6px 0">' + st.tracked_uids.length + ' series marked tracked · ' + st.ignored_uids.length + ' ignored — use “Track this series” in a meeting’s details.</div>' +
+      '<h4>Alerts</h4>' +
+      num("grace_min", "Grace after start", "minutes before you count as missing", 0) +
+      num("repeat_min", "First repeat after", "minutes; unanswered warnings then escalate to 30 s and 15 s", 1) +
+      num("heads_up_min", "Heads-up before start", "minutes · 0 = off", 0) +
+      num("dropout_min", "Drop-out after", "minutes absent from a meeting you were in", 1) +
+      chk("alert_notification", "macOS notification") +
+      pref("Sound", "", '<select id="f_sound" name="alert_sound"><option value="">None</option>' + sounds.map(x => '<option ' + (st.alert_sound === x ? "selected" : "") + '>' + esc(x) + '</option>').join("") + '</select>') +
+      chk("alert_dialog", "Pop-up dialog", "Open · Dismiss · Skip. Gives up after 20 s if untouched, which counts as missed.") +
+      chk("escalate_unacknowledged", "Escalate unanswered warnings", "1 min → 30 s → every 15 s until you touch a warning, join, or the meeting ends.") +
+      chk("alert_voice", "Speak the alert") +
+      chk("auto_open_link", "Open the meeting link automatically", "On the first missing alert.") +
+      chk("alert_when_in_other_meeting", "Alert even when I am in another meeting", "Off: overlapping meetings stay quiet while you are verifiably in one of them.") +
+      pref("Test", "Sends a sample alert with the settings above.", '<button type="button" class="btn" id="btnTestAlert">Send a test alert</button>') +
+      '<div class="hint" id="testAlertOut"></div>' +
+      '<h4>Detection</h4>' +
+      chk("allow_applescript", "Read browser tabs via AppleScript", "Chrome, Safari, Brave, Edge, Arc. Asks once for Automation permission. Chrome and Firefox tabs are also read from their session files with no permission, with a few seconds of lag.") +
+      chk("camera_probe", "Check whether the camera is in use") +
+      num("poll_s", "Check every", "seconds when no meeting is near", 10) +
+      num("poll_live_s", "Check every, during meetings", "seconds", 5) +
+      pref("Browser access", Object.keys(perms.browsers).length ? Object.keys(perms.browsers).map(n => esc(n) + " — " + esc(perms.browsers[n].applescript) + (perms.browsers[n].session_files ? " (+" + perms.browsers[n].session_files + " session files)" : "")).join("; ") : "no browser running",
+        '<button type="button" class="btn" id="btnPermProbe">Request</button><button type="button" class="btn" id="btnPermPane">Open settings</button>') +
+      '<div class="hint" id="permOut"></div>' +
+      '<h4>Engine</h4>' +
+      pref("Start at login", "Keeps tracking after fused-render restarts.", '<input type="checkbox" id="autostart" ' + (daemon.autostart ? "checked" : "") + ' />') +
+      pref('<span class="mono">pid ' + esc(state.engine.pid) + ' · up ' + esc(fmtDur(state.engine.uptime_s)) + ' · ' + esc(state.engine.polls) + ' checks · ' + esc(state.engine.last_poll_ms) + ' ms · Python ' + esc(state.engine.python) + ' · ' + esc(state.tz) + '</span>', "",
+        '<button type="button" class="btn" id="btnEngineRestart">Restart</button><button type="button" class="btn danger" id="btnEngineStop">Stop</button>') +
+      '</div>' +
+      '<div class="dfoot"><button class="btn" value="cancel" formnovalidate>Cancel</button><button class="btn primary" value="save" id="settingsSave">Save</button></div>' +
+      '</form>';
+    dlg.showModal();
+    const form = document.getElementById("settingsForm");
+    document.getElementById("btnTestAlert").addEventListener("click", async () => {
+      const out = document.getElementById("testAlertOut"); out.textContent = "sending…";
+      try { await call("settings", { settings: collect(form) }, { noState: true }); const r = await call("test_alert", {}, { noState: true }); out.textContent = "sent: " + Object.keys(r.delivered).filter(k => r.delivered[k]).join(", "); } catch (e) { out.textContent = "failed: " + e.message; }
+    });
+    document.getElementById("btnPermProbe").addEventListener("click", async () => {
+      const out = document.getElementById("permOut"); out.textContent = "look for the macOS permission prompt (up to 45 s)…";
+      try { const r = await call("permissions", { action: "probe" }, { noState: true }); out.textContent = Object.keys(r.browsers).map(n => n + ": " + r.browsers[n].applescript).join("; ") || "no browser running"; } catch (e) { out.textContent = "failed: " + e.message; }
+    });
+    document.getElementById("btnPermPane").addEventListener("click", () => call("permissions", { action: "open_pane" }, { noState: true }).catch(() => {}));
+    document.getElementById("autostart").addEventListener("change", (ev) => daemonAction(() => fused.daemon.setAutostart(ev.target.checked)));
+    document.getElementById("btnEngineRestart").addEventListener("click", () => { dlg.close(); daemonAction(() => fused.daemon.restart(), true); });
+    document.getElementById("btnEngineStop").addEventListener("click", () => { dlg.close(); daemonAction(() => fused.daemon.stop()); });
+    form.addEventListener("submit", async (ev) => {
+      if (ev.submitter && ev.submitter.value === "cancel") return;
+      ev.preventDefault();
+      const btn = document.getElementById("settingsSave"); btn.disabled = true;
+      try { await saveSettings(collect(form)); } catch (e) {}
+      dlg.close();
+      redraw();
+    });
+    function collect(f) {
+      const out = {};
+      const fd = new FormData(f);
+      ["ics_urls", "my_email", "track_mode", "alert_sound"].forEach(k => { out[k] = fd.get(k) == null ? "" : String(fd.get(k)); });
+      out.ics_urls = parseIcsUrls(out.ics_urls);
+      ["grace_min", "repeat_min", "heads_up_min", "dropout_min", "poll_s", "poll_live_s", "calendar_refresh_min"].forEach(k => { out[k] = Number(fd.get(k)); });
+      ["track_declined", "require_link", "alert_notification", "alert_dialog", "alert_voice", "auto_open_link", "alert_when_in_other_meeting", "escalate_unacknowledged", "allow_applescript", "camera_probe"].forEach(k => { out[k] = f.elements[k] ? f.elements[k].checked : false; });
+      return out;
+    }
+  }
+
+  // --------------------------------------------------------------- history
+  async function openHistory() {
+    const dlg = document.getElementById("historyDialog");
+    if (dlg.open) return;
+    dlg.innerHTML = '<div class="dhead"><h3>Attendance history</h3><span class="spacer"></span><button class="btn icon" id="histClose" aria-label="Close">✕</button></div><div class="dbody"><div class="empty">Loading…</div></div>';
+    dlg.showModal();
+    document.getElementById("histClose").addEventListener("click", () => dlg.close());
+    let h;
+    try { h = await call("history", { days: 60 }, { noState: true }); } catch (e) { dlg.querySelector(".dbody").innerHTML = '<div class="empty">' + esc(e.message) + '</div>'; return; }
+    const days = h.days || [];
+    if (!days.length) { dlg.querySelector(".dbody").innerHTML = '<div class="empty"><h3>Nothing recorded yet</h3><div>Records appear once a tracked meeting has run while the engine was on.</div></div>'; return; }
+    const totals = { attended: 0, partial: 0, missed: 0, skipped: 0 };
+    days.forEach(d => Object.keys(totals).forEach(k => { totals[k] += d.counts[k] || 0; }));
+    const total = totals.attended + totals.partial + totals.missed + totals.skipped;
+    const tl = (k, v, cls) => '<div class="tile"><div class="k">' + k + '</div><div class="n">' + dot(cls) + '<span class="t">' + v + '</span></div></div>';
+    let html = '<h4>Last ' + days.length + ' day' + (days.length === 1 ? "" : "s") + '</h4><div class="tiles" style="margin-bottom:8px">' +
+      tl("Showed up", total ? Math.round((totals.attended + totals.partial) / total * 100) + "%" : "—", "accent") + tl("Attended", totals.attended, "ok") + tl("Partial", totals.partial, "warn") + tl("No-shows", totals.missed, "bad") + tl("Skipped", totals.skipped, "") + '</div>';
+    html += '<div class="scroll"><table><thead><tr><th>Day</th><th>Meeting</th><th>Result</th><th style="text-align:right">In call</th><th style="text-align:right">Late</th></tr></thead><tbody>';
+    days.forEach(d => {
+      d.events.forEach((e, i) => {
+        const cls = e.verdict === "attended" ? "ok" : e.verdict === "missed" ? "bad" : e.verdict === "partial" ? "warn" : "";
+        html += '<tr>' + (i === 0 ? '<td rowspan="' + d.events.length + '" style="white-space:nowrap">' + esc(fmtDate(d.day)) + '</td>' : "") +
+          '<td><span class="dim">' + esc(fmtTime(e.start)) + '</span> ' + esc(e.title) + (e.tracked ? "" : ' <span class="dim">· not tracked</span>') + '</td>' +
+          '<td><span class="status-text">' + dot(cls) + esc(e.verdict === "missed" ? "no-show" : e.verdict) + '</span></td><td class="num">' + (e.in_s ? fmtShort(e.in_s) : "—") + '</td><td class="num">' + (e.late_s > 60 ? fmtShort(e.late_s) : "—") + '</td></tr>';
+      });
+    });
+    html += '</tbody></table></div>';
+    dlg.querySelector(".dbody").innerHTML = html;
+  }
+
+  // ------------------------------------------------------------------ boot
+  params.onChange(() => { if (state && currentDay() !== state.day) loadState(); else draw(); });
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") loadState(); });
+  fused.daemon.watch((st) => { daemon = st; draw(); });
+  setInterval(tickRing, 1000);
+  (async () => {
+    await refreshDaemon();
+    await loadState();  // draws once with state + engine status (daemon.watch redraws on later changes)
+  })();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,2363 @@
+<!DOCTYPE html>
+<html lang="en" data-fused-theme="shell">
+<head>
+<meta name="fused-app" />
+<meta name="fused-api-version" content="1" />
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>OpenOCR</title>
+<style>
+  :root {
+    --accent: #1b1d21;
+    --accent-ink: #ffffff;
+    --highlight: #e5ff44;
+    --highlight-ink: #1b1d21;
+    --bg: #f4f4f1;
+    --surface: #ffffff;
+    --surface-2: #f7f7f4;
+    --sidebar-bg: rgba(255, 255, 255, 0.72);
+    --line: #e5e5df;
+    --ink: #17181a;
+    --muted: #71716b;
+    --danger: #e0364f;
+    --ok: #17a06a;
+    --shadow: 0 1px 2px rgba(16, 16, 12, 0.05), 0 8px 24px rgba(16, 16, 12, 0.06);
+    --sidebar-width: 260px;
+    --preview-width: 320px;
+    color-scheme: light;
+  }
+
+  :root[data-theme="dark"] {
+    --accent: #e5e5e0;
+    --accent-ink: #17181a;
+    --highlight: #e5ff44;
+    --highlight-ink: #17181a;
+    --bg: #17181a;
+    --surface: #1e1f22;
+    --surface-2: #26272b;
+    --sidebar-bg: rgba(30, 31, 34, 0.72);
+    --line: #33343a;
+    --ink: #f1f1ee;
+    --muted: #9a9a94;
+    --danger: #ff6b7f;
+    --ok: #48d39b;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.35);
+    color-scheme: dark;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+  html, body { height: 100%; }
+
+  body {
+    margin: 0;
+    -webkit-tap-highlight-color: transparent;
+    background: var(--bg);
+    color: var(--ink);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    overflow: hidden;
+  }
+
+  button, input, select, textarea { font: inherit; color: inherit; margin: 0; }
+  button { cursor: pointer; }
+  ::placeholder { color: var(--muted); opacity: 1; }
+  input, select, textarea, progress { accent-color: var(--highlight); }
+  img, svg, video, canvas { display: block; max-width: 100%; }
+
+  .hidden { display: none !important; }
+
+  .app { display: flex; height: 100%; position: relative; }
+
+  .edge-toggle {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 20px;
+    height: 44px;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--muted);
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: var(--shadow);
+    z-index: 6;
+  }
+
+  .edge-toggle svg { width: 12px; height: 12px; }
+
+  .edge-toggle.left { left: 0; border-radius: 0 10px 10px 0; }
+  .edge-toggle.right { right: 0; border-radius: 10px 0 0 10px; }
+
+  .sidebar-resizer {
+    flex: 0 0 6px;
+    width: 6px;
+    cursor: col-resize;
+    background: transparent;
+    position: relative;
+    touch-action: none;
+  }
+
+  .sidebar-resizer::after {
+    content: "";
+    position: absolute;
+    top: 0; bottom: 0;
+    left: 50%;
+    width: 2px;
+    margin-left: -1px;
+    border-radius: 999px;
+    background: transparent;
+  }
+
+  @media (hover: hover) {
+    .sidebar-resizer:hover::after { background: var(--line); }
+  }
+  .sidebar-resizer.active::after { background: var(--highlight); }
+
+  /* ---------- Sidebar ---------- */
+
+  .sidebar {
+    flex: 0 0 var(--sidebar-width);
+    min-width: 0;
+    max-width: 60vw;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px 12px;
+    background: var(--sidebar-bg);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-right: 1px solid var(--line);
+    overflow: hidden;
+  }
+
+  .sidebar.collapsed {
+    padding: 0;
+    border-right: 0;
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 650;
+    font-size: 14.5px;
+    padding: 0 4px 4px;
+  }
+
+  .brand-mark {
+    width: 24px; height: 24px;
+    border-radius: 7px;
+    background: var(--accent);
+    display: grid; place-items: center;
+    flex: none;
+  }
+
+  .brand-mark svg { width: 14px; height: 14px; }
+
+  .btn {
+    appearance: none;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--ink);
+    border-radius: 999px;
+    padding: 8px 14px;
+    font-size: 13px;
+    font-weight: 550;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    transition: background 0.12s ease, border-color 0.12s ease, transform 0.06s ease;
+  }
+
+  .btn:active { transform: scale(0.97); }
+  .btn.small { padding: 5px 11px; font-size: 12px; }
+  .btn.block { width: 100%; }
+  .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .btn:disabled { opacity: 0.4; cursor: default; }
+
+  @media (hover: hover) {
+    .btn:hover { border-color: var(--muted); }
+    .btn.primary:hover { opacity: 0.9; }
+    .history-item:hover { background: var(--surface); }
+  }
+
+  .search input {
+    width: 100%;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    border-radius: 10px;
+    padding: 8px 10px;
+    outline: none;
+  }
+
+  .search input:focus { border-color: var(--muted); }
+
+  .history-list {
+    flex: 1;
+    min-width: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 0 -4px;
+    padding: 0 4px;
+  }
+
+  .history-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px;
+    min-width: 0;
+    width: 100%;
+    border-radius: 12px;
+    text-align: left;
+    background: transparent;
+    border: 1px solid transparent;
+    cursor: pointer;
+    font: inherit;
+    color: inherit;
+  }
+
+  .history-item.active { background: var(--surface); border-color: var(--line); box-shadow: var(--shadow); }
+
+  .history-thumb {
+    width: 34px; height: 34px;
+    border-radius: 8px;
+    background: var(--surface-2);
+    background-size: cover;
+    background-position: center;
+    flex: none;
+    border: 1px solid var(--line);
+  }
+
+  .history-body { min-width: 0; flex: 1; }
+  .history-snippet { font-size: 12.5px; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .history-meta { font-size: 11px; color: var(--muted); display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 2px; }
+  .history-meta .model-tag { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+  .history-empty { color: var(--muted); font-size: 12.5px; padding: 16px 8px; text-align: center; }
+
+  .badge {
+    display: inline-block;
+    padding: 1px 7px;
+    border-radius: 999px;
+    background: var(--surface-2);
+    font-size: 10.5px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+  }
+
+  .badge.subtle {
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--muted);
+    text-transform: none;
+    font-weight: 550;
+    letter-spacing: 0;
+  }
+
+  .scan-model {
+    font-size: 11.5px;
+    color: var(--muted);
+  }
+
+  .section-label {
+    font-size: 10.5px;
+    font-weight: 650;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    padding: 0 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .section-label .count {
+    background: var(--highlight);
+    color: var(--highlight-ink);
+    border-radius: 999px;
+    padding: 0 6px;
+    font-size: 10px;
+    line-height: 16px;
+  }
+
+  .queue-section {
+    flex: 0 0 auto;
+    max-height: 42%;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .queue-list {
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 0 -4px;
+    padding: 0 4px;
+  }
+
+  .queue-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px;
+    min-width: 0;
+    width: 100%;
+    border-radius: 12px;
+    text-align: left;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    cursor: pointer;
+  }
+
+  .queue-item.active { border-color: var(--highlight); box-shadow: var(--shadow); }
+  .queue-body { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 4px; }
+  .queue-title { font-size: 12.5px; font-weight: 600; display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .queue-title .model-tag { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .queue-stage { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .queue-bar { height: 4px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+  .queue-fill { height: 100%; width: 4%; background: var(--highlight); border-radius: 999px; transition: width 0.3s ease; }
+  .queue-item.queued .queue-fill { background: var(--muted); opacity: 0.5; }
+
+  .queue-cancel {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    width: 24px; height: 24px;
+    border-radius: 50%;
+    display: grid; place-items: center;
+    flex: none;
+    font-size: 16px;
+    line-height: 1;
+  }
+
+  @media (hover: hover) {
+    .queue-cancel:hover { background: var(--surface-2); color: var(--danger); }
+  }
+
+  /* ---------- Main ---------- */
+
+  .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+
+  .topbar {
+    flex: 0 0 56px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 16px;
+    background: var(--sidebar-bg);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-bottom: 1px solid var(--line);
+  }
+
+  .spacer { flex: 1; }
+
+  .segmented {
+    display: inline-flex;
+    padding: 3px;
+    background: var(--surface-2);
+    border-radius: 999px;
+    gap: 2px;
+  }
+
+  .seg {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    padding: 6px 14px;
+    border-radius: 999px;
+    font-size: 12.5px;
+    font-weight: 600;
+  }
+
+  .seg.active { background: var(--accent); color: var(--accent-ink); }
+
+  .model-select {
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--ink);
+    border-radius: 999px;
+    padding: 6px 10px;
+    font-size: 12px;
+    max-width: 220px;
+  }
+
+  .model-status {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 12px;
+    color: var(--muted);
+    min-width: 0;
+  }
+
+  .model-status span:last-of-type { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex: none; }
+  .status-dot.ready { background: var(--ok); }
+  .status-dot.loading { background: var(--highlight); }
+  .status-dot.error { background: var(--danger); }
+
+  .model-progress {
+    width: 160px;
+    height: 9px;
+    border-radius: 999px;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    overflow: hidden;
+    flex: none;
+  }
+
+  .model-progress-fill {
+    height: 100%;
+    width: 0%;
+    min-width: 3px;
+    background: var(--highlight);
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+    border-radius: 999px;
+    transition: width 0.4s ease;
+  }
+
+  .filter-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+    width: 280px;
+    max-width: 36vw;
+    min-width: 120px;
+  }
+
+  .filter-input {
+    width: 100%;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    border-radius: 999px;
+    padding: 7px 64px 7px 13px;
+    font-size: 12.5px;
+    outline: none;
+  }
+
+  .filter-input:focus { border-color: var(--muted); }
+  .filter-input.has-filter { border-color: var(--highlight); }
+
+  .filter-count {
+    position: absolute;
+    right: 10px;
+    font-size: 11px;
+    color: var(--muted);
+    pointer-events: none;
+    white-space: nowrap;
+  }
+
+  .bbox-box.dimmed { opacity: 0.18; }
+
+  .content { flex: 1; min-height: 0; padding: 20px; }
+
+  /* ---------- Dropzone ---------- */
+
+  .dropzone {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    border: 2px dashed var(--line);
+    border-radius: 20px;
+    background: var(--surface);
+    color: var(--muted);
+    transition: border-color 0.15s ease, background 0.15s ease;
+  }
+
+  .dropzone.drag-over { border-color: var(--highlight); background: var(--surface-2); }
+
+  .dz-icon {
+    width: 56px; height: 56px;
+    border-radius: 16px;
+    background: var(--surface-2);
+    display: grid; place-items: center;
+  }
+
+  .dz-icon svg { width: 26px; height: 26px; color: var(--muted); }
+
+  .dz-title { font-size: 15px; font-weight: 600; color: var(--ink); }
+  .dz-hint { font-size: 12.5px; }
+  .dz-actions { display: flex; gap: 10px; margin-top: 4px; }
+
+  /* ---------- Workspace ---------- */
+
+  .workspace {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .work-toolbar {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 2px 12px;
+    min-width: 0;
+  }
+
+  .work-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  .work-meta > * { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  .work-panes {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    position: relative;
+  }
+
+  .resizer {
+    flex: 0 0 14px;
+    width: 14px;
+    cursor: col-resize;
+    background: transparent;
+    position: relative;
+    touch-action: none;
+  }
+
+  .resizer::after {
+    content: "";
+    position: absolute;
+    top: 0; bottom: 0;
+    left: 50%;
+    width: 2px;
+    margin-left: -1px;
+    border-radius: 999px;
+    background: transparent;
+  }
+
+  @media (hover: hover) {
+    .resizer:hover::after { background: var(--line); }
+  }
+  .resizer.active::after { background: var(--highlight); }
+
+  .preview-pane {
+    flex: 0 0 var(--preview-width);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    padding: 14px;
+    box-shadow: var(--shadow);
+    min-height: 0;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .workspace.collapse-preview .preview-pane {
+    flex: 0 0 0;
+    padding: 0;
+    border: 0;
+    box-shadow: none;
+  }
+
+  .workspace.collapse-output .preview-pane {
+    flex: 1 1 auto;
+  }
+
+  .preview-image-wrap {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    border-radius: 12px;
+    background: var(--surface-2);
+    overflow: hidden;
+  }
+
+  .preview-image-wrap { touch-action: none; user-select: none; -webkit-user-select: none; }
+  .preview-image-wrap.zoomed { cursor: grab; }
+  .preview-image-wrap.zoomed.panning { cursor: grabbing; }
+
+  .zoom-layer {
+    position: absolute;
+    inset: 0;
+    transform-origin: center center;
+  }
+
+  .zoom-layer img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    -webkit-user-drag: none;
+    pointer-events: none;
+  }
+
+  .zoom-controls {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    border-radius: 999px;
+    padding: 2px;
+  }
+
+  .zoom-controls .btn.small { padding: 5px 9px; }
+
+  .zoom-label {
+    font-size: 12px;
+    color: var(--muted);
+    min-width: 40px;
+    text-align: center;
+  }
+
+  .bbox-overlay {
+    position: absolute;
+    pointer-events: none;
+  }
+
+  .bbox-box {
+    position: absolute;
+    box-sizing: border-box;
+    border: 1px solid var(--bbox-color, var(--highlight));
+  }
+
+  .bbox-box::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: var(--bbox-color, var(--highlight));
+    opacity: 0.14;
+  }
+
+  .bbox-label {
+    position: absolute;
+    left: -1px;
+    bottom: 100%;
+    font-size: 6px;
+    font-weight: 650;
+    line-height: 1.3;
+    padding: 0 2px;
+    border-radius: 2px 2px 0 0;
+    background: var(--bbox-color, var(--highlight));
+    color: #10121a;
+    white-space: nowrap;
+    max-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transform-origin: bottom left;
+  }
+
+  .progress-row { display: flex; align-items: center; gap: 10px; }
+  .progress-bar { flex: 1; height: 6px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+  .progress-fill { height: 100%; width: 8%; background: var(--highlight); border-radius: 999px; transition: width 0.3s ease; position: relative; overflow: hidden; }
+  .progress-label { font-size: 11.5px; color: var(--muted); white-space: nowrap; }
+  .progress-row.stale .progress-label { color: var(--danger); }
+
+  @keyframes shimmer {
+    from { transform: translateX(-100%); }
+    to { transform: translateX(100%); }
+  }
+
+  .progress-row.live .progress-fill::after,
+  .queue-item.running .queue-fill::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.55), transparent);
+    animation: shimmer 1.4s linear infinite;
+  }
+
+  .queue-fill { position: relative; overflow: hidden; }
+  .queue-item.stale .queue-stage { color: var(--danger); }
+  .queue-elapsed { color: var(--muted); font-weight: 500; margin-left: auto; font-size: 11px; flex: none; }
+
+  .history-delete {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    width: 24px; height: 24px;
+    border-radius: 50%;
+    display: grid; place-items: center;
+    flex: none;
+    font-size: 16px;
+    line-height: 1;
+    opacity: 0;
+    transition: opacity 0.12s ease;
+  }
+
+  .history-item:hover .history-delete, .history-item.active .history-delete, .history-item:focus-within .history-delete { opacity: 1; }
+  @media (hover: none) { .history-delete { opacity: 1; } }
+  @media (hover: hover) {
+    .history-delete:hover { background: var(--surface-2); color: var(--danger); }
+  }
+  .history-item.confirm-delete { border-color: var(--danger); }
+  .history-item.confirm-delete .history-delete { opacity: 1; color: #fff; background: var(--danger); border-radius: 999px; width: auto; padding: 0 8px; font-size: 11px; font-weight: 600; }
+
+  .preview-actions { display: flex; gap: 8px; align-items: center; }
+  .preview-actions .spacer { flex: 1; }
+
+  .output-pane {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    box-shadow: var(--shadow);
+    min-height: 0;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .workspace.collapse-output .output-pane {
+    flex: 0 0 0;
+    border: 0;
+    box-shadow: none;
+  }
+
+  .tabs {
+    flex: 0 0 46px;
+    display: flex;
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: 4px;
+    padding: 0 12px;
+    border-bottom: 1px solid var(--line);
+    overflow-x: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--line) transparent;
+  }
+
+  .tabs::-webkit-scrollbar { height: 6px; }
+  .tabs::-webkit-scrollbar-thumb { background: var(--line); border-radius: 999px; }
+
+  .tabs .btn, .tabs .tab { flex: 0 0 auto; }
+
+  .tab {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    padding: 8px 10px;
+    border-radius: 8px;
+    font-size: 12.5px;
+    font-weight: 600;
+  }
+
+  .tab.active { color: var(--ink); background: var(--surface-2); }
+
+  .tab-panels { flex: 1; min-height: 0; overflow-y: auto; padding: 18px 22px; }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  #jsonPanel {
+    margin: 0;
+    font: 12.5px/1.6 ui-monospace, "SF Mono", Menlo, monospace;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .empty-note { color: var(--muted); font-size: 13px; }
+
+  #markdownPanel h1, #markdownPanel h2, #markdownPanel h3 { margin: 1.1em 0 0.4em; line-height: 1.3; }
+  #markdownPanel h1:first-child, #markdownPanel h2:first-child, #markdownPanel h3:first-child { margin-top: 0; }
+  #markdownPanel p { margin: 0.6em 0; }
+  #markdownPanel ul, #markdownPanel ol { margin: 0.4em 0; padding-left: 1.4em; }
+  #markdownPanel li { margin: 0.15em 0; }
+  #markdownPanel code { background: var(--surface-2); border-radius: 4px; padding: 1px 5px; font: 12.5px ui-monospace, "SF Mono", Menlo, monospace; }
+  .md-code { background: var(--surface-2); border-radius: 10px; padding: 12px 14px; overflow-x: auto; }
+  .md-code code { background: none; padding: 0; }
+
+  .md-table { border-collapse: collapse; width: 100%; margin: 0.8em 0; font-size: 13px; }
+  .md-table th, .md-table td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; }
+  .md-table th { background: var(--surface-2); font-weight: 650; }
+
+  .jk-key { color: #a340c9; }
+  .jk-str { color: #17a06a; }
+  .jk-num { color: #2f7de1; }
+  .jk-bool { color: #d17f00; }
+  :root[data-theme="dark"] .jk-key { color: #d38fef; }
+  :root[data-theme="dark"] .jk-str { color: #6fe0ad; }
+  :root[data-theme="dark"] .jk-num { color: #7db3f2; }
+  :root[data-theme="dark"] .jk-bool { color: #f2b04d; }
+
+  .toast {
+    position: fixed;
+    left: 50%;
+    bottom: 26px;
+    transform: translateX(-50%) translateY(8px);
+    background: var(--ink);
+    color: var(--bg);
+    padding: 9px 16px;
+    border-radius: 999px;
+    font-size: 12.5px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.18s ease, transform 0.18s ease;
+    box-shadow: var(--shadow);
+    z-index: 20;
+  }
+
+  .toast.error { background: var(--danger); color: #fff; }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <span class="brand-mark">
+        <svg viewBox="0 0 24 24" fill="none"><rect x="5" y="3" width="12" height="18" rx="1.5" fill="#f4f4f0"/><rect x="7" y="11" width="8" height="2.5" rx="1" fill="#e5ff44"/></svg>
+      </span>
+      <span>OpenOCR</span>
+    </div>
+    <button id="newScanBtn" class="btn primary block">New scan</button>
+    <div class="queue-section hidden" id="queueSection">
+      <div class="section-label">Running <span class="count" id="queueCount">0</span></div>
+      <div class="queue-list" id="queueList"></div>
+    </div>
+    <div class="search"><input id="searchInput" placeholder="Search history" /></div>
+    <div class="history-list" id="historyList"></div>
+  </aside>
+
+  <div class="sidebar-resizer" id="sidebarResizer"></div>
+
+  <button id="sidebarExpandBtn" class="edge-toggle left hidden" aria-label="Show sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg>
+  </button>
+
+  <main class="main">
+    <div class="topbar">
+      <div class="segmented" id="modeToggle">
+        <button class="seg active" data-mode="fast">Fast</button>
+        <button class="seg" data-mode="accurate">Accurate</button>
+        <button class="seg" data-mode="apple">Apple</button>
+      </div>
+      <select id="modelSelect" class="model-select"></select>
+      <div class="model-status" id="modelStatus">
+        <span class="status-dot"></span><span>Checking model…</span>
+        <div class="model-progress hidden" id="modelProgress"><div class="model-progress-fill" id="modelProgressFill"></div></div>
+        <button id="downloadBtn" class="btn small hidden">Download</button>
+      </div>
+      <div class="spacer"></div>
+    </div>
+
+    <div class="content" id="content">
+      <div class="dropzone" id="dropzone">
+        <div class="dz-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 16V4M12 4l-4 4M12 4l4 4"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
+        </div>
+        <div class="dz-title">Drop an image or PDF, or take a screenshot</div>
+        <div class="dz-hint">PNG, JPG, PDF, screenshots, scans — all processed on this Mac</div>
+        <div class="dz-actions">
+          <button id="screenshotBtn" class="btn primary">Take screenshot</button>
+          <button id="chooseFileBtn" class="btn">Choose file</button>
+        </div>
+        <input id="fileInput" type="file" accept="image/*,application/pdf" class="hidden" />
+      </div>
+
+      <div class="workspace hidden" id="workspace">
+        <div class="work-toolbar">
+          <div class="work-meta">
+            <span class="badge hidden" id="pageBadge"></span>
+            <span class="scan-model hidden" id="scanModel"></span>
+            <span class="scan-model hidden" id="runHint">Ready — click Run to extract text</span>
+          </div>
+          <div class="filter-wrap hidden" id="filterWrap">
+            <input id="filterInput" class="filter-input" placeholder="Filter boxes: table, title, or any text" title="Narrow the boxes and JSON to elements whose category or text matches. Separate terms with commas." />
+            <span class="filter-count" id="filterCount"></span>
+          </div>
+          <button id="runBtn" class="btn primary">Run OCR</button>
+        </div>
+        <div class="work-panes">
+        <button id="previewExpandBtn" class="edge-toggle left hidden" aria-label="Show preview">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 6l-6 6 6 6"/></svg>
+        </button>
+        <button id="outputExpandBtn" class="edge-toggle right hidden" aria-label="Show output">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg>
+        </button>
+
+        <div class="preview-pane">
+          <div class="preview-image-wrap" id="previewImageWrap">
+            <div class="zoom-layer" id="zoomLayer">
+              <img id="previewImg" alt="" draggable="false" />
+              <div class="bbox-overlay hidden" id="bboxOverlay"></div>
+            </div>
+          </div>
+          <div class="progress-row hidden" id="progressRow">
+            <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+            <div class="progress-label" id="progressLabel">Reading page…</div>
+            <button id="cancelBtn" class="btn small">Cancel</button>
+          </div>
+          <div class="preview-actions">
+            <div class="zoom-controls">
+              <button id="zoomOutBtn" class="btn small" aria-label="Zoom out">−</button>
+              <button id="zoomLabel" class="btn small" aria-label="Reset zoom">100%</button>
+              <button id="zoomInBtn" class="btn small" aria-label="Zoom in">+</button>
+            </div>
+            <button id="toggleBoxesBtn" class="btn small hidden">Hide boxes</button>
+            <div class="spacer"></div>
+            <button id="clearBtn" class="btn small">New scan</button>
+          </div>
+        </div>
+
+        <div class="resizer" id="paneResizer"></div>
+
+        <div class="output-pane">
+          <div class="tabs">
+            <button class="tab active" data-tab="markdown">Markdown</button>
+            <button class="tab hidden" data-tab="json" id="jsonTabBtn">JSON</button>
+            <div class="spacer"></div>
+            <button id="copyBtn" class="btn small">Copy</button>
+            <button id="exportMdBtn" class="btn small">Export .md</button>
+            <button id="exportJsonBtn" class="btn small hidden">Export .json</button>
+          </div>
+          <div class="tab-panels">
+            <div class="tab-panel active" id="markdownPanel"></div>
+            <pre class="tab-panel" id="jsonPanel"></pre>
+          </div>
+        </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  const PY = "./OpenOCR.py";
+  const $ = (id) => document.getElementById(id);
+
+  const state = {
+    mode: "fast",
+    imagePaths: [],
+    pageCount: 0,
+    viewingJobId: "",
+    markdown: "",
+    structured: null,
+    raw: "",
+    activeTab: "markdown",
+    activeRecordId: "",
+    imageUrl: "",
+    filter: "",
+    lastModelRepo: "",
+    showBoxes: true,
+    zoom: 1,
+    panX: 0,
+    panY: 0,
+  };
+
+  const warmedModes = new Set();
+  const jobs = new Map();
+  let modelPollTimer = null;
+
+  async function py(params) {
+    return fused.runPython(PY, params, { key: params.action });
+  }
+
+  async function callWorker(params) {
+    return fused.daemon.run(params);
+  }
+
+  function toast(message, isError) {
+    const node = $("toast");
+    node.textContent = message;
+    node.className = "toast show" + (isError ? " error" : "");
+    clearTimeout(toast._timer);
+    toast._timer = setTimeout(() => node.classList.remove("show"), isError ? 6000 : 2600);
+  }
+
+  function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  // ---------------------------------------------------------------- markdown
+
+  function escapeHtml(text) {
+    return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  function inlineMd(text) {
+    let out = escapeHtml(text);
+    out = out.replace(/`([^`]+)`/g, "<code>$1</code>");
+    out = out.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+    out = out.replace(/\*([^*]+)\*/g, "<em>$1</em>");
+    return out;
+  }
+
+  function isTableRow(line) {
+    return /^\s*\|.*\|\s*$/.test(line);
+  }
+
+  function isTableSeparator(line) {
+    return isTableRow(line) && /^[\s|:-]+$/.test(line) && line.includes("-");
+  }
+
+  function splitTableRow(line) {
+    const cells = line.split("|").map((cell) => cell.trim());
+    if (cells.length && cells[0] === "") cells.shift();
+    if (cells.length && cells[cells.length - 1] === "") cells.pop();
+    return cells;
+  }
+
+  function renderMarkdown(markdown) {
+    if (!markdown || !markdown.trim()) return '<div class="empty-note">No text extracted yet.</div>';
+    const lines = markdown.replace(/\r\n/g, "\n").split("\n");
+    let html = "";
+    let openList = null;
+    let i = 0;
+
+    function closeList() {
+      if (openList) { html += "</" + openList + ">"; openList = null; }
+    }
+
+    while (i < lines.length) {
+      const line = lines[i];
+
+      if (/^```/.test(line)) {
+        closeList();
+        const codeLines = [];
+        i++;
+        while (i < lines.length && !/^```/.test(lines[i])) { codeLines.push(lines[i]); i++; }
+        html += "<pre class=\"md-code\"><code>" + escapeHtml(codeLines.join("\n")) + "</code></pre>";
+        i++;
+        continue;
+      }
+
+      if (isTableRow(line) && i + 1 < lines.length && isTableSeparator(lines[i + 1])) {
+        closeList();
+        const header = splitTableRow(line);
+        i += 2;
+        const rows = [];
+        while (i < lines.length && isTableRow(lines[i])) { rows.push(splitTableRow(lines[i])); i++; }
+        html += "<table class=\"md-table\"><thead><tr>"
+          + header.map((cell) => "<th>" + inlineMd(cell) + "</th>").join("")
+          + "</tr></thead><tbody>"
+          + rows.map((row) => "<tr>" + row.map((cell) => "<td>" + inlineMd(cell) + "</td>").join("") + "</tr>").join("")
+          + "</tbody></table>";
+        continue;
+      }
+
+      const heading = line.match(/^(#{1,6})\s+(.*)$/);
+      if (heading) {
+        closeList();
+        const level = heading[1].length;
+        html += "<h" + level + ">" + inlineMd(heading[2]) + "</h" + level + ">";
+        i++;
+        continue;
+      }
+
+      const unordered = line.match(/^\s*[-*]\s+(.*)$/);
+      if (unordered) {
+        if (openList !== "ul") { closeList(); html += "<ul>"; openList = "ul"; }
+        html += "<li>" + inlineMd(unordered[1]) + "</li>";
+        i++;
+        continue;
+      }
+
+      const ordered = line.match(/^\s*\d+\.\s+(.*)$/);
+      if (ordered) {
+        if (openList !== "ol") { closeList(); html += "<ol>"; openList = "ol"; }
+        html += "<li>" + inlineMd(ordered[1]) + "</li>";
+        i++;
+        continue;
+      }
+
+      if (line.trim() === "") { closeList(); i++; continue; }
+
+      closeList();
+      html += "<p>" + inlineMd(line.trim()) + "</p>";
+      i++;
+    }
+    closeList();
+    return html;
+  }
+
+  function highlightJson(text) {
+    const escaped = escapeHtml(text);
+    return escaped.replace(/("[^"]*"(\s*:)?)|\b(true|false|null)\b|(-?\d+(?:\.\d+)?)/g,
+      (match, strWithColon, colon, bool, num) => {
+        if (strWithColon) return "<span class=\"" + (colon ? "jk-key" : "jk-str") + "\">" + strWithColon + "</span>";
+        if (bool) return "<span class=\"jk-bool\">" + bool + "</span>";
+        if (num) return "<span class=\"jk-num\">" + num + "</span>";
+        return match;
+      });
+  }
+
+  // ------------------------------------------------------------- rendering
+
+  function structuredHasContent(value) {
+    if (value === null || value === undefined) return false;
+    if (Array.isArray(value)) return value.some(structuredHasContent);
+    if (typeof value === "object") {
+      if (typeof value.text === "string" && value.text.trim()) return true;
+      if (typeof value.text_content === "string" && value.text_content.trim()) return true;
+      return Object.values(value).some(structuredHasContent);
+    }
+    return false;
+  }
+
+  function renderOutputs() {
+    $("markdownPanel").innerHTML = renderMarkdown(state.markdown);
+    const hasJson = structuredHasContent(state.structured);
+    $("jsonTabBtn").classList.toggle("hidden", !hasJson);
+    $("exportJsonBtn").classList.toggle("hidden", !hasJson);
+    if (hasJson) {
+      const terms = filterTerms();
+      const shown = terms.length ? allElements().filter((el) => elementMatches(el, terms)) : state.structured;
+      $("jsonPanel").innerHTML = highlightJson(JSON.stringify(shown, null, 2));
+    } else {
+      $("jsonPanel").innerHTML = "";
+      if (state.activeTab === "json") setTab("markdown");
+    }
+    renderFilterBar();
+    renderBboxOverlay();
+  }
+
+  // ---------------------------------------------------------------- bbox overlay
+
+  const CATEGORY_COLORS = {
+    title: "#e5484d",
+    "section-header": "#7c5cff",
+    text: "#2f7de1",
+    "list-item": "#17a06a",
+    table: "#e08a1e",
+    formula: "#c026d3",
+    caption: "#9ca3af",
+    footnote: "#9ca3af",
+    "page-header": "#9ca3af",
+    "page-footer": "#9ca3af",
+    picture: "#6b7280",
+  };
+  const DEFAULT_BOX_COLOR = "#e5ff44";
+
+  function bboxElementsForPage(structured, pageIndex) {
+    if (!structured) return [];
+    if (Array.isArray(structured)) return pageIndex === 0 ? structured : [];
+    if (Array.isArray(structured.pages)) {
+      const page = structured.pages[pageIndex];
+      if (Array.isArray(page)) return page;
+      if (page && Array.isArray(page.elements)) return page.elements;
+      return [];
+    }
+    if (Array.isArray(structured.elements)) return pageIndex === 0 ? structured.elements : [];
+    return [];
+  }
+
+  function elementsWithBoxes() {
+    return bboxElementsForPage(state.structured, 0)
+      .filter((el) => el && Array.isArray(el.bbox) && el.bbox.length === 4);
+  }
+
+  function filterTerms() {
+    return state.filter.split(",").map((t) => t.trim().toLowerCase()).filter(Boolean);
+  }
+
+  function elementMatches(el, terms) {
+    if (!terms.length) return true;
+    const category = String(el.category || "").toLowerCase();
+    const text = String(el.text || el.text_content || "").toLowerCase();
+    return terms.some((term) => category.includes(term) || text.includes(term));
+  }
+
+  function allElements() {
+    if (!state.structured) return [];
+    if (Array.isArray(state.structured)) return state.structured.filter((el) => el && typeof el === "object");
+    if (Array.isArray(state.structured.pages)) {
+      return state.structured.pages.flatMap((page) => Array.isArray(page) ? page : (page && Array.isArray(page.elements) ? page.elements : []))
+        .filter((el) => el && typeof el === "object");
+    }
+    if (Array.isArray(state.structured.elements)) return state.structured.elements.filter((el) => el && typeof el === "object");
+    return [];
+  }
+
+  function renderFilterBar() {
+    const elements = allElements();
+    const wrap = $("filterWrap");
+    const input = $("filterInput");
+    wrap.classList.toggle("hidden", !elements.length);
+    if (!elements.length) { $("filterCount").textContent = ""; return; }
+    const terms = filterTerms();
+    const matching = terms.length ? elements.filter((el) => elementMatches(el, terms)).length : elements.length;
+    input.classList.toggle("has-filter", terms.length > 0);
+    $("filterCount").textContent = terms.length ? matching + " / " + elements.length : elements.length + " items";
+  }
+
+  function computeImageRect(img) {
+    const naturalW = img.naturalWidth;
+    const naturalH = img.naturalHeight;
+    const containerW = img.clientWidth;
+    const containerH = img.clientHeight;
+    if (!naturalW || !naturalH || !containerW || !containerH) return null;
+    const containerRatio = containerW / containerH;
+    const imageRatio = naturalW / naturalH;
+    let renderW, renderH, offsetX, offsetY;
+    if (imageRatio > containerRatio) {
+      renderW = containerW;
+      renderH = containerW / imageRatio;
+      offsetX = 0;
+      offsetY = (containerH - renderH) / 2;
+    } else {
+      renderH = containerH;
+      renderW = containerH * imageRatio;
+      offsetY = 0;
+      offsetX = (containerW - renderW) / 2;
+    }
+    return { renderW, renderH, offsetX, offsetY, naturalW, naturalH };
+  }
+
+  function renderBboxOverlay() {
+    const overlay = $("bboxOverlay");
+    const img = $("previewImg");
+    const boxes = elementsWithBoxes();
+    $("toggleBoxesBtn").classList.toggle("hidden", !boxes.length);
+
+    if (!boxes.length || !state.showBoxes) {
+      overlay.classList.add("hidden");
+      overlay.innerHTML = "";
+      return;
+    }
+
+    const rect = computeImageRect(img);
+    if (!rect) {
+      overlay.classList.add("hidden");
+      return;
+    }
+
+    overlay.style.left = rect.offsetX + "px";
+    overlay.style.top = rect.offsetY + "px";
+    overlay.style.width = rect.renderW + "px";
+    overlay.style.height = rect.renderH + "px";
+
+    const terms = filterTerms();
+    overlay.innerHTML = boxes.map((el) => {
+      const dimmed = terms.length && !elementMatches(el, terms) ? " dimmed" : "";
+      const [x1, y1, x2, y2] = el.bbox;
+      const left = (x1 / rect.naturalW) * 100;
+      const top = (y1 / rect.naturalH) * 100;
+      const width = ((x2 - x1) / rect.naturalW) * 100;
+      const height = ((y2 - y1) / rect.naturalH) * 100;
+      const category = String(el.category || "").toLowerCase();
+      const color = CATEGORY_COLORS[category] || DEFAULT_BOX_COLOR;
+      const style = "left:" + left + "%;top:" + top + "%;width:" + width + "%;height:" + height + "%;--bbox-color:" + color + ";";
+      return "<div class=\"bbox-box" + dimmed + "\" style=\"" + style + "\">"
+        + "<span class=\"bbox-label\" style=\"--bbox-color:" + color + ";\">" + escapeHtml(el.category || "") + "</span>"
+        + "</div>";
+    }).join("");
+    overlay.classList.remove("hidden");
+  }
+
+  // ---------------------------------------------------------------- zoom
+
+  const ZOOM_MIN = 1;
+  const ZOOM_MAX = 8;
+  const ZOOM_STEP = 0.5;
+
+  function clamp(value, min, max) {
+    return Math.min(max, Math.max(min, value));
+  }
+
+  function clampPan() {
+    const wrap = $("previewImageWrap");
+    const maxX = ((state.zoom - 1) * wrap.clientWidth) / 2;
+    const maxY = ((state.zoom - 1) * wrap.clientHeight) / 2;
+    state.panX = clamp(state.panX, -maxX, maxX);
+    state.panY = clamp(state.panY, -maxY, maxY);
+  }
+
+  function applyZoomTransform() {
+    clampPan();
+    $("zoomLayer").style.transform = "translate(" + state.panX + "px, " + state.panY + "px) scale(" + state.zoom + ")";
+  }
+
+  function setZoom(next, anchor) {
+    const zoom = clamp(next, ZOOM_MIN, ZOOM_MAX);
+    if (zoom === state.zoom) return;
+    if (anchor) {
+      const ratio = zoom / state.zoom;
+      state.panX = anchor.x - (anchor.x - state.panX) * ratio;
+      state.panY = anchor.y - (anchor.y - state.panY) * ratio;
+    }
+    state.zoom = zoom;
+    if (zoom === ZOOM_MIN) { state.panX = 0; state.panY = 0; }
+    applyZoomTransform();
+    $("previewImageWrap").classList.toggle("zoomed", zoom > ZOOM_MIN);
+    $("zoomLabel").textContent = Math.round(zoom * 100) + "%";
+  }
+
+  function resetZoom() {
+    state.zoom = 1;
+    state.panX = 0;
+    state.panY = 0;
+    applyZoomTransform();
+    $("previewImageWrap").classList.remove("zoomed");
+    $("zoomLabel").textContent = "100%";
+  }
+
+  function setupZoom() {
+    const wrap = $("previewImageWrap");
+    wrap.addEventListener("wheel", (event) => {
+      if (!$("previewImg").getAttribute("src")) return;
+      event.preventDefault();
+      const box = wrap.getBoundingClientRect();
+      const anchor = { x: event.clientX - box.left - box.width / 2, y: event.clientY - box.top - box.height / 2 };
+      setZoom(state.zoom - event.deltaY * 0.0025, anchor);
+    }, { passive: false });
+    wrap.addEventListener("dragstart", (event) => event.preventDefault());
+
+    $("zoomInBtn").addEventListener("click", () => setZoom(state.zoom + ZOOM_STEP));
+    $("zoomOutBtn").addEventListener("click", () => setZoom(state.zoom - ZOOM_STEP));
+    $("zoomLabel").addEventListener("click", resetZoom);
+
+    let panning = false;
+    let panStartX = 0, panStartY = 0, panOriginX = 0, panOriginY = 0;
+
+    wrap.addEventListener("pointerdown", (event) => {
+      if (state.zoom <= ZOOM_MIN || event.button !== 0) return;
+      event.preventDefault();
+      panning = true;
+      panStartX = event.clientX;
+      panStartY = event.clientY;
+      panOriginX = state.panX;
+      panOriginY = state.panY;
+      wrap.classList.add("panning");
+      wrap.setPointerCapture(event.pointerId);
+    });
+    wrap.addEventListener("pointermove", (event) => {
+      if (!panning) return;
+      state.panX = panOriginX + (event.clientX - panStartX);
+      state.panY = panOriginY + (event.clientY - panStartY);
+      applyZoomTransform();
+    });
+    function stopPan() {
+      panning = false;
+      wrap.classList.remove("panning");
+    }
+    wrap.addEventListener("pointerup", stopPan);
+    wrap.addEventListener("pointercancel", stopPan);
+  }
+
+  function setTab(tab) {
+    state.activeTab = tab;
+    document.querySelectorAll(".tab").forEach((node) => node.classList.toggle("active", node.dataset.tab === tab));
+    $("markdownPanel").classList.toggle("active", tab === "markdown");
+    $("jsonPanel").classList.toggle("active", tab === "json");
+  }
+
+  function showWorkspace(show) {
+    $("dropzone").classList.toggle("hidden", show);
+    $("workspace").classList.toggle("hidden", !show);
+  }
+
+  function setMode(mode) {
+    state.mode = mode;
+    document.querySelectorAll(".seg").forEach((node) => node.classList.toggle("active", node.dataset.mode === mode));
+    renderModelSelect();
+    renderModelStatus();
+    renderRunButton();
+    autoWarmIfDownloaded(mode);
+  }
+
+  const MODE_LABELS = { fast: "Fast", accurate: "Accurate", apple: "Apple Vision" };
+  const STALE_AFTER_MS = 45000;
+
+  function formatElapsed(ms) {
+    const total = Math.max(0, Math.round(ms / 1000));
+    if (total < 60) return total + "s";
+    const minutes = Math.floor(total / 60);
+    const seconds = total % 60;
+    return minutes + "m " + (seconds < 10 ? "0" : "") + seconds + "s";
+  }
+
+  function jobIsStale(job) {
+    return job.state === "running" && job.lastUpdate && (Date.now() - job.lastUpdate) > STALE_AFTER_MS;
+  }
+
+  function jobStatusLine(job) {
+    let text = job.stage || "";
+    if (job.tokens) text += " · " + job.tokens + " tokens";
+    if (jobIsStale(job)) text = "No response for " + formatElapsed(Date.now() - job.lastUpdate) + " — " + text;
+    return text;
+  }
+
+  function renderActiveProgress() {
+    const job = activeJob();
+    const row = $("progressRow");
+    if (!job) { row.classList.remove("live", "stale"); return; }
+    row.classList.toggle("live", job.state === "running" && !jobIsStale(job));
+    row.classList.toggle("stale", jobIsStale(job));
+    setProgress(job.progress, jobStatusLine(job) + " · " + formatElapsed(Date.now() - job.startedAt));
+  }
+
+  function activeJob() {
+    return state.viewingJobId ? jobs.get(state.viewingJobId) : null;
+  }
+
+  function renderRunButton() {
+    const btn = $("runBtn");
+    const job = activeJob();
+    const hasImage = state.imagePaths && state.imagePaths.length;
+    if (job) {
+      btn.disabled = true;
+      btn.textContent = job.state === "queued" ? "Queued…" : "Running…";
+    } else {
+      btn.disabled = !hasImage;
+      btn.textContent = "Run · " + (MODE_LABELS[state.mode] || state.mode);
+    }
+    const fresh = hasImage && !job && !state.markdown && !structuredHasContent(state.structured) && !state.activeRecordId;
+    $("runHint").classList.toggle("hidden", !fresh);
+  }
+
+  // ---------------------------------------------------------------- model
+
+  let latestModels = {};
+  let latestCatalog = { choices: {}, active: {}, downloaded: {} };
+  const downloadRows = {};
+
+  function modelLabel(repo) {
+    if (!repo) return "";
+    for (const mode of Object.keys(latestCatalog.choices || {})) {
+      const match = (latestCatalog.choices[mode] || []).find((c) => c.repo === repo);
+      if (match) return match.label;
+    }
+    return repo.replace(/^mlx-community\//, "");
+  }
+
+  function renderScanCaption() {
+    const el = $("scanModel");
+    if (!state.lastModelRepo) { el.classList.add("hidden"); return; }
+    el.textContent = "Scanned with " + modelLabel(state.lastModelRepo);
+    el.classList.remove("hidden");
+  }
+
+  function renderModelSelect() {
+    const choices = latestCatalog.choices[state.mode] || [];
+    const active = latestCatalog.active[state.mode];
+    $("modelSelect").classList.toggle("hidden", !choices.length);
+    $("modelSelect").innerHTML = choices.map((choice) =>
+      "<option value=\"" + choice.repo + "\"" + (choice.repo === active ? " selected" : "") + ">"
+      + choice.label + " · " + choice.size_gb + " GB</option>"
+    ).join("");
+  }
+
+  async function refreshCatalog() {
+    try {
+      latestCatalog = await callWorker({ action: "catalog" });
+    } catch (error) {
+      console.warn("[openocr] catalog fetch failed", error);
+      return;
+    }
+    renderModelSelect();
+    renderModelStatus();
+  }
+
+  async function selectModel(repo) {
+    try {
+      await callWorker({ action: "select_model", mode: state.mode, repo });
+    } catch (error) {
+      toast(error.message || String(error), true);
+    }
+    await refreshCatalog();
+    autoWarmIfDownloaded(state.mode);
+    await pollModelStatus();
+  }
+
+  function autoWarmIfDownloaded(mode) {
+    if (latestCatalog.downloaded && latestCatalog.downloaded[mode]) warmModel(mode);
+  }
+
+  function warmKey(mode) {
+    return mode + "::" + (latestCatalog.active[mode] || "");
+  }
+
+  async function warmModel(mode) {
+    const key = warmKey(mode);
+    if (warmedModes.has(key)) return;
+    warmedModes.add(key);
+
+    const needsDownload = latestCatalog.downloaded && !latestCatalog.downloaded[mode];
+    if (needsDownload && !downloadRows[mode]) {
+      const choice = (latestCatalog.choices[mode] || []).find((c) => c.repo === latestCatalog.active[mode]);
+      downloadRows[mode] = fused.trackJob({
+        id: "openocr-download-" + key,
+        title: "Download " + (choice ? choice.label : (mode + " model")),
+        kind: "download",
+        unit: "bytes",
+        cancellable: false,
+      });
+    }
+
+    try {
+      await callWorker({ action: "warmup", mode });
+    } catch (error) {
+      warmedModes.delete(key);
+      const row = downloadRows[mode];
+      if (row) { row.fail(error.message || String(error)); downloadRows[mode] = null; }
+      console.warn("[openocr] warmup failed", error);
+    }
+    pollModelStatus();
+  }
+
+  function updateDownloadRows() {
+    for (const mode of Object.keys(downloadRows)) {
+      const row = downloadRows[mode];
+      if (!row) continue;
+      const info = latestModels[mode] || {};
+      const isDownloading = info.status === "loading" && info.total_bytes > 0 && (info.progress || 0) < 1;
+      if (isDownloading) {
+        row.update({ done: info.downloaded_bytes || 0, total: info.total_bytes || 0, detail: info.stage || "Downloading" });
+      } else if (info.status === "ready") {
+        row.finish("Ready");
+        downloadRows[mode] = null;
+      } else if (info.status === "error") {
+        row.fail(info.error || "Model failed to load");
+        downloadRows[mode] = null;
+      }
+    }
+  }
+
+  function renderModelStatus() {
+    const dot = $("modelStatus").querySelector(".status-dot");
+    const label = $("modelStatus").querySelector("span:last-of-type");
+    const downloadBtn = $("downloadBtn");
+    const progressWrap = $("modelProgress");
+
+    if (state.mode === "apple") {
+      dot.className = "status-dot ready";
+      label.textContent = "Apple Vision ready (on-device)";
+      downloadBtn.classList.add("hidden");
+      progressWrap.classList.add("hidden");
+      return;
+    }
+
+    const info = latestModels[state.mode] || {};
+    const downloaded = latestCatalog.downloaded ? latestCatalog.downloaded[state.mode] : false;
+    const progressFill = $("modelProgressFill");
+    const busy = info.status === "loading" || info.status === "queued";
+    const isDownloading = info.status === "loading" && info.total_bytes > 0 && (info.progress || 0) < 1;
+
+    dot.className = "status-dot" + (info.status === "ready" ? " ready" : info.status === "error" ? " error" : busy ? " loading" : "");
+    progressWrap.classList.toggle("hidden", !isDownloading);
+    if (isDownloading) progressFill.style.width = Math.round((info.progress || 0) * 100) + "%";
+
+    if (info.status === "ready") {
+      label.textContent = (state.mode === "fast" ? "Fast" : "Accurate") + " model ready";
+      downloadBtn.classList.add("hidden");
+    } else if (isDownloading) {
+      const doneGb = ((info.downloaded_bytes || 0) / 1e9).toFixed(1);
+      const totalGb = ((info.total_bytes || 0) / 1e9).toFixed(1);
+      label.textContent = Math.round((info.progress || 0) * 100) + "% · " + doneGb + "/" + totalGb + " GB";
+      downloadBtn.classList.add("hidden");
+    } else if (busy) {
+      label.textContent = info.stage || (info.status === "loading" ? "Loading model…" : "Starting model…");
+      downloadBtn.classList.add("hidden");
+    } else if (info.status === "error") {
+      label.textContent = "Model error — see console";
+      downloadBtn.textContent = "Retry";
+      downloadBtn.classList.remove("hidden");
+    } else if (downloaded) {
+      label.textContent = "Model cached — starting…";
+      downloadBtn.classList.add("hidden");
+    } else {
+      const choice = (latestCatalog.choices[state.mode] || []).find((c) => c.repo === latestCatalog.active[state.mode]);
+      label.textContent = "Not downloaded" + (choice ? " (" + choice.size_gb + " GB)" : "");
+      downloadBtn.textContent = "Download";
+      downloadBtn.classList.remove("hidden");
+    }
+  }
+
+  async function pollModelStatus() {
+    try {
+      const result = await callWorker({ action: "status" });
+      latestModels = result.models || {};
+    } catch (error) {
+      console.warn("[openocr] status poll failed", error);
+    }
+    for (const [mode, info] of Object.entries(latestModels)) {
+      if (info.status === "error") warmedModes.delete(warmKey(mode));
+    }
+    if (state.mode !== "apple" && !(latestCatalog.choices[state.mode] || []).length) await refreshCatalog();
+    updateDownloadRows();
+    renderModelStatus();
+    const busy = Object.values(latestModels).some((m) => m.status === "loading" || m.status === "queued");
+    clearTimeout(modelPollTimer);
+    modelPollTimer = setTimeout(pollModelStatus, busy ? 1200 : 6000);
+  }
+
+  // ---------------------------------------------------------------- ingest
+
+  function isSupportedFile(file) {
+    if (!file) return false;
+    if (/^image\//.test(file.type || "")) return true;
+    if (file.type === "application/pdf") return true;
+    return /\.pdf$/i.test(file.name || "");
+  }
+
+  async function ingestFile(file) {
+    if (!isSupportedFile(file)) { toast("Drop an image or a PDF", true); return; }
+    const dataUrl = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(new Error("Could not read that file"));
+      reader.readAsDataURL(file);
+    });
+    try {
+      const result = await py({ action: "ingest", image_data: dataUrl });
+      applyImage(fused.rawUrl(result.paths[0]) + "&_t=" + Date.now(), result.paths, result.page_count);
+    } catch (error) {
+      toast(error.message || String(error), true);
+    }
+  }
+
+  async function ingestFromPath(path) {
+    try {
+      const result = await py({ action: "ingest", path });
+      applyImage(fused.rawUrl(result.paths[0]) + "&_t=" + Date.now(), result.paths, result.page_count);
+    } catch (error) {
+      toast(error.message || String(error), true);
+    }
+  }
+
+  function applyImage(url, paths, pageCount) {
+    state.viewingJobId = "";
+    $("progressRow").classList.add("hidden");
+    state.imagePaths = paths;
+    state.pageCount = pageCount || paths.length;
+    state.activeRecordId = "";
+    state.markdown = "";
+    state.structured = null;
+    state.raw = "";
+    state.lastModelRepo = "";
+    state.showBoxes = true;
+    $("toggleBoxesBtn").textContent = "Hide boxes";
+    resetZoom();
+    state.imageUrl = url;
+    $("previewImg").src = url;
+    $("pageBadge").textContent = state.pageCount > 1 ? state.pageCount + " pages" : "";
+    $("pageBadge").classList.toggle("hidden", state.pageCount <= 1);
+    renderOutputs();
+    renderScanCaption();
+    renderRunButton();
+    renderQueue();
+    setTab("markdown");
+    showWorkspace(true);
+  }
+
+  // ---------------------------------------------------------------- ocr run
+
+  function setProgress(fraction, label) {
+    $("progressFill").style.width = Math.max(4, Math.round(fraction * 100)) + "%";
+    $("progressLabel").textContent = label;
+  }
+
+  async function runOcr() {
+    if (!state.imagePaths || !state.imagePaths.length) { toast("Load an image first", true); return; }
+
+    // Captured once, up front: this run must save and report on ITS OWN data
+    // even if the person switches mode, opens a history entry, or starts a
+    // second scan before this one finishes -- it does not re-read `state`
+    // after this point except to check whether it's still the active view.
+    const mode = state.mode;
+    const imagePaths = state.imagePaths.slice();
+    const jobId = "ocr-" + Date.now();
+
+    function isActiveView() {
+      return state.viewingJobId === jobId;
+    }
+
+    const job = {
+      id: jobId,
+      mode: mode,
+      modelRepo: mode === "apple" ? "" : (latestCatalog.active[mode] || ""),
+      imagePaths: imagePaths,
+      imageUrl: state.imageUrl,
+      pageCount: state.pageCount,
+      state: "queued",
+      stage: "Starting…",
+      progress: 0.05,
+      queuedBehind: 0,
+      cancelRequested: false,
+      startedAt: Date.now(),
+      lastUpdate: Date.now(),
+      tokens: 0,
+      lastServerUpdate: 0,
+    };
+    jobs.set(jobId, job);
+
+    state.viewingJobId = jobId;
+    state.activeRecordId = "";
+    state.markdown = "";
+    state.structured = null;
+    state.raw = "";
+    state.lastModelRepo = "";
+    renderOutputs();
+    renderScanCaption();
+    $("progressRow").classList.remove("hidden");
+    setProgress(0.05, "Starting…");
+    renderRunButton();
+    renderQueue();
+
+    const row = fused.trackJob({ id: jobId, title: "OpenOCR · " + (MODE_LABELS[mode] || mode), kind: "task", cancellable: true });
+    let terminated = false;
+
+    function syncJob(status) {
+      job.state = status.state === "queued" ? "queued" : "running";
+      job.progress = status.progress || 0.05;
+      job.stage = status.stage || (job.state === "queued" ? "Queued" : "Working…");
+      job.tokens = status.tokens || 0;
+      if (status.updated_at && status.updated_at !== job.lastServerUpdate) {
+        job.lastServerUpdate = status.updated_at;
+        job.lastUpdate = Date.now();
+      }
+      if (job.state === "queued" && job.queuedBehind > 0) job.stage = "Queued behind " + job.queuedBehind + " scan" + (job.queuedBehind === 1 ? "" : "s");
+      renderQueue();
+      if (isActiveView()) { renderActiveProgress(); renderRunButton(); }
+    }
+
+    try {
+      const started = await callWorker({
+        action: "ocr_start",
+        mode: mode,
+        image_paths: JSON.stringify(imagePaths),
+        job_id: jobId,
+      });
+      job.queuedBehind = (started && started.queued_behind) || 0;
+      syncJob({ state: "queued", progress: 0.05, stage: "Queued" });
+
+      while (true) {
+        await sleep(1000);
+        if (row.cancelRequested || job.cancelRequested) {
+          await callWorker({ action: "ocr_cancel", job_id: jobId });
+          row.cancelled();
+          terminated = true;
+          if (isActiveView()) { $("progressRow").classList.remove("live", "stale"); setProgress(0, "Cancelled"); toast("Cancelled"); }
+          return;
+        }
+
+        const status = await callWorker({ action: "ocr_poll", job_id: jobId });
+        if (status.model && state.mode === mode) { latestModels[mode] = status.model; renderModelStatus(); }
+
+        if (status.state === "running" || status.state === "queued") {
+          if (status.state === "running") job.queuedBehind = 0;
+          row.update({ done: Math.round((status.progress || 0.05) * 100), total: 100, detail: status.stage || "Working" });
+          syncJob(status);
+        } else if (status.state === "done") {
+          const modelRepo = (status.model && status.model.model) || latestCatalog.active[mode] || "";
+          row.finish("Finished in " + (status.elapsed || 0) + "s");
+          terminated = true;
+          if (isActiveView()) {
+            state.markdown = status.markdown || "";
+            state.structured = status.structured || null;
+            state.raw = status.raw || "";
+            state.lastModelRepo = modelRepo;
+            $("progressRow").classList.remove("live", "stale");
+            setProgress(1, "Done in " + (status.elapsed || 0) + "s");
+            renderOutputs();
+            renderScanCaption();
+          } else {
+            toast((MODE_LABELS[mode] || mode) + " scan finished — see history");
+          }
+          persistToHistory(mode, modelRepo, imagePaths, status.markdown || "",
+                          status.structured || null, status.raw || "", status.elapsed || 0);
+          break;
+        } else if (status.state === "error") {
+          throw new Error(status.error || "OCR failed");
+        } else if (status.state === "cancelled") {
+          row.cancelled();
+          terminated = true;
+          if (isActiveView()) toast("Cancelled");
+          break;
+        } else if (status.state === "unknown") {
+          throw new Error("Worker restarted mid-run — try again");
+        }
+      }
+    } catch (error) {
+      if (!terminated) row.fail(error.message || String(error));
+      if (isActiveView()) toast(error.message || String(error), true);
+      else toast((MODE_LABELS[mode] || mode) + " scan failed: " + (error.message || String(error)), true);
+    } finally {
+      jobs.delete(jobId);
+      renderQueue();
+      if (isActiveView()) {
+        state.viewingJobId = "";
+        renderRunButton();
+        setTimeout(() => $("progressRow").classList.add("hidden"), 900);
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------- queue
+
+  function queueItemHtml(job) {
+    const thumbStyle = job.imageUrl ? "background-image:url('" + job.imageUrl.replace(/'/g, "%27") + "')" : "";
+    const modelTag = job.modelRepo ? '<span class="badge subtle model-tag">' + escapeHtml(modelLabel(job.modelRepo)) + '</span>' : "";
+    const pages = job.pageCount > 1 ? '<span class="badge subtle">' + job.pageCount + ' pages</span>' : "";
+    const pct = Math.max(4, Math.round((job.progress || 0) * 100));
+    const stale = jobIsStale(job) ? " stale" : "";
+    const elapsed = '<span class="queue-elapsed">' + formatElapsed(Date.now() - job.startedAt) + '</span>';
+    return '<div class="queue-item ' + job.state + stale + (job.id === state.viewingJobId ? ' active' : '') + '" data-id="' + job.id + '" role="button" tabindex="0">'
+      + '<span class="history-thumb" style="' + thumbStyle + '"></span>'
+      + '<span class="queue-body">'
+      + '<span class="queue-title"><span class="badge">' + escapeHtml(job.mode) + '</span>' + modelTag + pages + elapsed + '</span>'
+      + '<span class="queue-stage">' + escapeHtml(jobStatusLine(job)) + '</span>'
+      + '<span class="queue-bar"><span class="queue-fill" style="width:' + pct + '%"></span></span>'
+      + '</span>'
+      + '<button class="queue-cancel" data-cancel="' + job.id + '" aria-label="Cancel scan" title="Cancel">×</button>'
+      + '</div>';
+  }
+
+  function renderQueue() {
+    const section = $("queueSection");
+    const list = $("queueList");
+    const ordered = Array.from(jobs.values()).sort((a, b) => a.startedAt - b.startedAt);
+    section.classList.toggle("hidden", !ordered.length);
+    $("queueCount").textContent = String(ordered.length);
+    list.innerHTML = ordered.map(queueItemHtml).join("");
+    list.querySelectorAll(".queue-cancel").forEach((node) => {
+      node.addEventListener("click", (event) => {
+        event.stopPropagation();
+        const job = jobs.get(node.dataset.cancel);
+        if (job) { job.cancelRequested = true; job.stage = "Cancelling…"; renderQueue(); }
+      });
+    });
+    list.querySelectorAll(".queue-item").forEach((node) => {
+      node.addEventListener("click", () => viewJob(node.dataset.id));
+      node.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); viewJob(node.dataset.id); } });
+    });
+  }
+
+  function viewJob(jobId) {
+    const job = jobs.get(jobId);
+    if (!job) return;
+    state.viewingJobId = jobId;
+    state.activeRecordId = "";
+    state.imagePaths = job.imagePaths.slice();
+    state.pageCount = job.pageCount;
+    state.markdown = "";
+    state.structured = null;
+    state.raw = "";
+    state.lastModelRepo = "";
+    state.showBoxes = true;
+    $("toggleBoxesBtn").textContent = "Hide boxes";
+    resetZoom();
+    state.imageUrl = job.imageUrl;
+    $("previewImg").src = job.imageUrl || "";
+    $("pageBadge").textContent = job.pageCount > 1 ? job.pageCount + " pages" : "";
+    $("pageBadge").classList.toggle("hidden", job.pageCount <= 1);
+    document.querySelectorAll(".history-item").forEach((node) => node.classList.remove("active"));
+    $("progressRow").classList.remove("hidden");
+    renderActiveProgress();
+    renderOutputs();
+    renderScanCaption();
+    renderRunButton();
+    renderQueue();
+    setTab("markdown");
+    showWorkspace(true);
+  }
+
+  async function persistToHistory(mode, modelRepo, imagePaths, markdown, structured, raw, elapsed) {
+    try {
+      await py({
+        action: "history_save",
+        mode: mode,
+        model: modelRepo || "",
+        image_paths: JSON.stringify(imagePaths),
+        markdown: markdown,
+        structured_json: structured ? JSON.stringify(structured) : "",
+        raw: raw,
+        elapsed: String(elapsed),
+      });
+      loadHistory();
+    } catch (error) {
+      console.warn("[openocr] failed to save history", error);
+    }
+  }
+
+  // ---------------------------------------------------------------- history
+
+  function historyItemHtml(record) {
+    const date = new Date(record.created_at * 1000);
+    const time = date.toLocaleDateString(undefined, { month: "short", day: "numeric" }) + " · "
+      + date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+    const thumbStyle = record.thumb_path ? "background-image:url('" + fused.rawUrl(record.thumb_path) + "')" : "";
+    const modelTag = record.model_repo
+      ? '<span class="badge subtle model-tag">' + escapeHtml(modelLabel(record.model_repo)) + '</span>'
+      : "";
+    return '<div class="history-item" data-id="' + record.id + '" role="button" tabindex="0">'
+      + '<span class="history-thumb" style="' + thumbStyle + '"></span>'
+      + '<span class="history-body">'
+      + '<div class="history-snippet">' + escapeHtml(record.snippet || "(empty)") + '</div>'
+      + '<div class="history-meta"><span class="badge">' + record.mode + '</span>' + modelTag + '<span>' + time + '</span></div>'
+      + '</span>'
+      + '<button class="history-delete" data-delete="' + record.id + '" aria-label="Delete scan" title="Delete">×</button>'
+      + '</div>';
+  }
+
+  let pendingDeleteId = "";
+
+  async function deleteHistoryRecord(id) {
+    try {
+      await py({ action: "history_delete", record_id: id });
+      if (state.activeRecordId === id) {
+        state.activeRecordId = "";
+        renderRunButton();
+      }
+      toast("Deleted");
+      await loadHistory($("searchInput").value);
+    } catch (error) {
+      toast(error.message || String(error), true);
+    }
+  }
+
+  function wireHistoryItems() {
+    document.querySelectorAll(".history-item").forEach((node) => {
+      node.addEventListener("click", () => loadHistoryRecord(node.dataset.id));
+      node.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") { event.preventDefault(); loadHistoryRecord(node.dataset.id); }
+        if (event.key === "Delete" || event.key === "Backspace") { event.preventDefault(); deleteHistoryRecord(node.dataset.id); }
+      });
+      node.classList.toggle("active", node.dataset.id === state.activeRecordId);
+    });
+    document.querySelectorAll(".history-delete").forEach((btn) => {
+      btn.addEventListener("click", (event) => {
+        event.stopPropagation();
+        const id = btn.dataset.delete;
+        const item = btn.closest(".history-item");
+        if (pendingDeleteId === id) {
+          pendingDeleteId = "";
+          deleteHistoryRecord(id);
+          return;
+        }
+        document.querySelectorAll(".history-item.confirm-delete").forEach((n) => {
+          n.classList.remove("confirm-delete");
+          n.querySelector(".history-delete").textContent = "×";
+        });
+        pendingDeleteId = id;
+        item.classList.add("confirm-delete");
+        btn.textContent = "Delete?";
+        setTimeout(() => {
+          if (pendingDeleteId !== id) return;
+          pendingDeleteId = "";
+          item.classList.remove("confirm-delete");
+          btn.textContent = "×";
+        }, 3000);
+      });
+    });
+  }
+
+  async function loadHistory(query) {
+    try {
+      const result = await py({ action: "history_list", query: query || "" });
+      const records = result.records || [];
+      pendingDeleteId = "";
+      $("historyList").innerHTML = records.length
+        ? records.map(historyItemHtml).join("")
+        : '<div class="history-empty">No scans yet — drop an image or take a screenshot.</div>';
+      wireHistoryItems();
+    } catch (error) {
+      console.warn("[openocr] failed to load history", error);
+    }
+  }
+
+  async function loadHistoryRecord(id) {
+    try {
+      const record = await py({ action: "history_get", record_id: id });
+      const imagePaths = record.image_paths || [];
+      state.viewingJobId = "";
+      $("progressRow").classList.add("hidden");
+      state.activeRecordId = id;
+      state.imagePaths = imagePaths;
+      state.pageCount = imagePaths.length;
+      state.markdown = record.markdown || "";
+      state.structured = record.structured || null;
+      state.raw = record.raw || "";
+      state.lastModelRepo = record.model_repo || "";
+      state.showBoxes = true;
+      $("toggleBoxesBtn").textContent = "Hide boxes";
+      resetZoom();
+      $("pageBadge").textContent = imagePaths.length > 1 ? imagePaths.length + " pages" : "";
+      $("pageBadge").classList.toggle("hidden", imagePaths.length <= 1);
+      const records = document.querySelectorAll(".history-item");
+      records.forEach((node) => node.classList.toggle("active", node.dataset.id === id));
+      state.imageUrl = imagePaths.length ? fused.rawUrl(imagePaths[0]) + "&_t=" + Date.now() : "";
+      $("previewImg").src = state.imageUrl;
+      renderOutputs();
+      renderScanCaption();
+      renderRunButton();
+      renderQueue();
+      setTab("markdown");
+      showWorkspace(true);
+    } catch (error) {
+      toast(error.message || String(error), true);
+    }
+  }
+
+  // ---------------------------------------------------------------- export
+
+  async function exportOutput(fmt) {
+    const content = fmt === "json"
+      ? JSON.stringify(state.structured || { markdown: state.markdown }, null, 2)
+      : state.markdown;
+    if (!content) { toast("Nothing to export yet", true); return; }
+    try {
+      const result = await py({ action: "export", content, fmt, name: "openocr-" + Date.now() });
+      const anchor = document.createElement("a");
+      anchor.href = fused.rawUrl(result.path);
+      anchor.download = result.name;
+      anchor.click();
+    } catch (error) {
+      toast(error.message || String(error), true);
+    }
+  }
+
+  // ---------------------------------------------------------------- wiring
+
+  function trackDrag(handle, { onStart, onMove, onEnd }) {
+    let startX = 0;
+    let dragging = false;
+    let moved = false;
+
+    handle.addEventListener("pointerdown", (event) => {
+      dragging = true;
+      moved = false;
+      startX = event.clientX;
+      handle.setPointerCapture(event.pointerId);
+      handle.classList.add("active");
+      if (onStart) onStart();
+    });
+
+    handle.addEventListener("pointermove", (event) => {
+      if (!dragging) return;
+      const dx = event.clientX - startX;
+      if (Math.abs(dx) > 3) moved = true;
+      onMove(dx);
+    });
+
+    function stop() {
+      if (!dragging) return;
+      dragging = false;
+      handle.classList.remove("active");
+      onEnd(moved);
+    }
+    handle.addEventListener("pointerup", stop);
+    handle.addEventListener("pointercancel", stop);
+  }
+
+  function setupSidebarResizer() {
+    const handle = $("sidebarResizer");
+    const MIN = 200, MAX = 560, COLLAPSE_BELOW = 120, DEFAULT = 260;
+    let startSize = 0;
+    let lastExpanded = DEFAULT;
+
+    function currentSize() {
+      return parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--sidebar-width")) || 0;
+    }
+    function setSize(px) {
+      document.documentElement.style.setProperty("--sidebar-width", px + "px");
+      $("sidebar").classList.toggle("collapsed", px <= 0);
+      $("sidebarExpandBtn").classList.toggle("hidden", px > 0);
+    }
+    function persistSize() {
+      if (isPreview()) return;
+      try { fused.params.set("sidebarWidth", String(Math.round(currentSize()))); } catch (error) { /* ignore */ }
+    }
+
+    trackDrag(handle, {
+      onStart: () => { startSize = currentSize(); if (startSize > 0) lastExpanded = startSize; },
+      onMove: (dx) => {
+        const raw = startSize + dx;
+        setSize(raw < COLLAPSE_BELOW ? 0 : Math.min(MAX, Math.max(MIN, Math.round(raw))));
+      },
+      onEnd: (moved) => {
+        if (!moved) setSize(currentSize() > 0 ? 0 : lastExpanded);
+        const size = currentSize();
+        if (size > 0) lastExpanded = size;
+        persistSize();
+      },
+    });
+
+    $("sidebarExpandBtn").addEventListener("click", () => {
+      setSize(lastExpanded || DEFAULT);
+      persistSize();
+    });
+  }
+
+  function setupPaneResizer() {
+    const handle = $("paneResizer");
+    const MIN = 220, MAX = 640, COLLAPSE_BELOW = 120, DEFAULT = 320;
+    let startSize = 0;
+    let lastExpanded = DEFAULT;
+
+    function currentSize() {
+      return parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--preview-width")) || 0;
+    }
+    function collapseSide() {
+      const workspace = $("workspace");
+      if (workspace.classList.contains("collapse-preview")) return "preview";
+      if (workspace.classList.contains("collapse-output")) return "output";
+      return "";
+    }
+    function updateToggles() {
+      const workspace = $("workspace");
+      $("previewExpandBtn").classList.toggle("hidden", !workspace.classList.contains("collapse-preview"));
+      $("outputExpandBtn").classList.toggle("hidden", !workspace.classList.contains("collapse-output"));
+    }
+    function applyNormal(px) {
+      $("workspace").classList.remove("collapse-preview", "collapse-output");
+      document.documentElement.style.setProperty("--preview-width", Math.round(px) + "px");
+      updateToggles();
+    }
+    function applyCollapse(side) {
+      const workspace = $("workspace");
+      workspace.classList.remove("collapse-preview", "collapse-output");
+      workspace.classList.add("collapse-" + side);
+      updateToggles();
+    }
+    function persist() {
+      if (isPreview()) return;
+      try {
+        const side = collapseSide();
+        fused.params.set("paneCollapse", side);
+        if (!side) fused.params.set("previewWidth", String(Math.round(currentSize())));
+      } catch (error) { /* ignore */ }
+    }
+
+    trackDrag(handle, {
+      onStart: () => { startSize = currentSize(); if (startSize > 0) lastExpanded = startSize; },
+      onMove: (dx) => {
+        const raw = startSize + dx;
+        const containerWidth = handle.parentElement.clientWidth;
+        if (raw < COLLAPSE_BELOW) applyCollapse("preview");
+        else if (raw > containerWidth - COLLAPSE_BELOW) applyCollapse("output");
+        else applyNormal(Math.min(MAX, Math.max(MIN, raw)));
+      },
+      onEnd: (moved) => {
+        if (!moved) {
+          if (collapseSide()) applyNormal(lastExpanded);
+          else applyCollapse("output");
+        }
+        const size = currentSize();
+        if (size > 0) lastExpanded = size;
+        persist();
+      },
+    });
+
+    $("previewExpandBtn").addEventListener("click", () => { applyNormal(lastExpanded); persist(); });
+    $("outputExpandBtn").addEventListener("click", () => { applyNormal(lastExpanded); persist(); });
+  }
+
+  function restorePanelSizes() {
+    const sidebarWidth = parseInt(fused.params.get("sidebarWidth"), 10);
+    if (!isNaN(sidebarWidth)) {
+      document.documentElement.style.setProperty("--sidebar-width", Math.max(0, sidebarWidth) + "px");
+      $("sidebar").classList.toggle("collapsed", sidebarWidth <= 0);
+    }
+    $("sidebarExpandBtn").classList.toggle("hidden", !$("sidebar").classList.contains("collapsed"));
+
+    const previewWidth = parseInt(fused.params.get("previewWidth"), 10);
+    if (!isNaN(previewWidth) && previewWidth > 0) {
+      document.documentElement.style.setProperty("--preview-width", previewWidth + "px");
+    }
+
+    const paneCollapse = fused.params.get("paneCollapse");
+    if (paneCollapse === "preview" || paneCollapse === "output") {
+      $("workspace").classList.add("collapse-" + paneCollapse);
+    }
+    $("previewExpandBtn").classList.toggle("hidden", !$("workspace").classList.contains("collapse-preview"));
+    $("outputExpandBtn").classList.toggle("hidden", !$("workspace").classList.contains("collapse-output"));
+  }
+
+  function wire() {
+    setupSidebarResizer();
+    setupPaneResizer();
+    setupZoom();
+
+    document.querySelectorAll(".seg").forEach((node) => node.addEventListener("click", () => setMode(node.dataset.mode)));
+    document.querySelectorAll(".tab").forEach((node) => node.addEventListener("click", () => setTab(node.dataset.tab)));
+
+    function leaveView() {
+      state.viewingJobId = "";
+      state.activeRecordId = "";
+      state.imagePaths = [];
+      state.imageUrl = "";
+      $("progressRow").classList.add("hidden");
+      document.querySelectorAll(".history-item").forEach((node) => node.classList.remove("active"));
+      renderRunButton();
+      renderQueue();
+      showWorkspace(false);
+    }
+    $("newScanBtn").addEventListener("click", leaveView);
+    $("clearBtn").addEventListener("click", leaveView);
+    $("runBtn").addEventListener("click", () => {
+      if (activeJob()) return;
+      if (state.imagePaths && state.imagePaths.length) runOcr();
+      else toast("Drop an image or take a screenshot first", true);
+    });
+    $("filterInput").addEventListener("input", (event) => {
+      state.filter = event.target.value;
+      renderFilterBar();
+      renderOutputs();
+    });
+    $("filterInput").addEventListener("keydown", (event) => {
+      if (event.key === "Escape") { event.target.value = ""; state.filter = ""; renderOutputs(); }
+    });
+    $("cancelBtn").addEventListener("click", () => {
+      const job = activeJob();
+      if (job) { job.cancelRequested = true; job.stage = "Cancelling…"; renderQueue(); }
+    });
+
+    $("toggleBoxesBtn").addEventListener("click", () => {
+      state.showBoxes = !state.showBoxes;
+      $("toggleBoxesBtn").textContent = state.showBoxes ? "Hide boxes" : "Show boxes";
+      renderBboxOverlay();
+    });
+    $("previewImg").addEventListener("load", renderBboxOverlay);
+    if (typeof ResizeObserver !== "undefined") {
+      new ResizeObserver(() => renderBboxOverlay()).observe($("previewImageWrap"));
+    }
+
+    $("modelSelect").addEventListener("change", (event) => selectModel(event.target.value));
+    $("downloadBtn").addEventListener("click", () => warmModel(state.mode));
+
+    $("chooseFileBtn").addEventListener("click", () => $("fileInput").click());
+    $("fileInput").addEventListener("change", (event) => { const file = event.target.files[0]; if (file) ingestFile(file); event.target.value = ""; });
+
+    let screenshotJobId = null;
+
+    $("screenshotBtn").addEventListener("click", async () => {
+      if (screenshotJobId) return;
+      try {
+        const sources = await fused.capture.sources();
+        if (!sources.screenshot.available) {
+          toast(sources.screenshot.reason || "Screenshot capture unavailable on this machine", true);
+          return;
+        }
+      } catch (error) {
+        toast("Could not check screenshot availability: " + ((error && error.message) || error), true);
+        return;
+      }
+
+      const originalLabel = $("screenshotBtn").textContent;
+      try {
+        const started = await callWorker({ action: "screenshot_start" });
+        screenshotJobId = started.job_id;
+        $("screenshotBtn").disabled = true;
+        $("screenshotBtn").textContent = "Selecting… (Esc to cancel)";
+        toast("Drag a region, or press space to click any window — Esc to cancel");
+
+        while (true) {
+          await sleep(600);
+          const status = await callWorker({ action: "screenshot_poll", job_id: screenshotJobId });
+          if (status.state === "done") { await ingestFromPath(status.path); break; }
+          if (status.state === "cancelled") { toast("Screenshot cancelled"); break; }
+          if (status.state === "unknown") { toast("Screenshot session lost — try again", true); break; }
+        }
+      } catch (error) {
+        toast((error && error.message) || "Screenshot failed", true);
+      } finally {
+        screenshotJobId = null;
+        $("screenshotBtn").disabled = false;
+        $("screenshotBtn").textContent = originalLabel;
+      }
+    });
+
+    const dropzone = $("dropzone");
+    ["dragenter", "dragover"].forEach((eventName) => dropzone.addEventListener(eventName, (event) => {
+      event.preventDefault();
+      dropzone.classList.add("drag-over");
+    }));
+    ["dragleave", "drop"].forEach((eventName) => dropzone.addEventListener(eventName, (event) => {
+      event.preventDefault();
+      dropzone.classList.remove("drag-over");
+    }));
+    dropzone.addEventListener("drop", (event) => { const file = event.dataTransfer.files[0]; if (file) ingestFile(file); });
+
+    $("copyBtn").addEventListener("click", async () => {
+      const content = state.activeTab === "json"
+        ? JSON.stringify(state.structured || {}, null, 2)
+        : state.markdown;
+      try {
+        await navigator.clipboard.writeText(content || "");
+        toast("Copied");
+      } catch (error) {
+        toast("Could not copy", true);
+      }
+    });
+
+    $("exportMdBtn").addEventListener("click", () => exportOutput("md"));
+    $("exportJsonBtn").addEventListener("click", () => exportOutput("json"));
+
+    let searchTimer = null;
+    $("searchInput").addEventListener("input", (event) => {
+      clearTimeout(searchTimer);
+      const value = event.target.value;
+      searchTimer = setTimeout(() => loadHistory(value), 220);
+    });
+  }
+
+  function isPreview() {
+    if (new URLSearchParams(location.search).get("_preview") === "1") return true;
+    try {
+      let w = window;
+      while (w.parent && w.parent !== w) {
+        w = w.parent;
+        if (new URLSearchParams(w.location.search).get("_preview") === "1") return true;
+      }
+    } catch (error) { /* cross-origin ancestor: the climb ends here */ }
+    return false;
+  }
+
+  async function init() {
+    wire();
+    restorePanelSizes();
+    renderOutputs();
+    renderRunButton();
+    renderQueue();
+    setInterval(() => { if (jobs.size) { renderQueue(); renderActiveProgress(); } }, 1000);
+
+    if (isPreview()) {
+      $("screenshotBtn").disabled = true;
+      $("modelStatus").querySelector("span:last-of-type").textContent = "Local OCR, on this Mac";
+      return;
+    }
+
+    try {
+      const sources = await fused.capture.sources();
+      if (!sources.screenshot.available) $("screenshotBtn").title = sources.screenshot.reason || "Screenshot capture unavailable";
+    } catch (error) {
+      console.warn("[openocr] capture sources check failed", error);
+    }
+
+    await loadHistory();
+    await refreshCatalog();
+    await pollModelStatus();
+    autoWarmIfDownloaded(state.mode);
+  }
+
+  init();
+</script>
+</body>
+</html>

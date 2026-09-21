@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "name": "OpenOCR",
+  "description": "A local, Raycast-inspired OCR tool: turn screenshots or scans into Markdown or structured JSON entirely on-device via Apple MLX.",
+  "author": { "name": "Aman", "github": "amanbagrecha" },
+  "tags": ["ocr", "mlx", "vision", "productivity"],
+  "category": "productivity",
+  "version": "1.0.0",
+  "requires_python": true
+}
