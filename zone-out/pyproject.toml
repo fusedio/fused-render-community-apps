@@ -1,0 +1,8 @@
+# Background app manifest (fused-render). No [project] table on purpose: the
+# daemon runs on fused-render's bundled interpreter, which already ships
+# python-dateutil (recurrence expansion) and PyObjC (camera state).
+[tool.fused-render.app]
+# Own HTTP daemon: polls the calendar + this Mac's meeting signals around the
+# clock, with or without the page open. Resident (never idle-reaped).
+daemon = "daemon.py"
+idle_timeout_s = 0
