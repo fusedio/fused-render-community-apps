@@ -228,6 +228,8 @@ def _load_model_here(mode: str) -> None:
             progress_thread.join(timeout=2)
 
         with _models_lock:
+            if _active_repo[mode] != repo:
+                return
             _models[mode] = (model, processor)
             _model_state[mode].update(status="ready", stage="Model resident", loaded_at=time.time(),
                                       progress=1.0)
@@ -238,7 +240,8 @@ def _load_model_here(mode: str) -> None:
         if started_download:
             _report(job_id, {"state": "error", "detail": f"{type(error).__name__}: {error}"})
         with _models_lock:
-            _model_state[mode].update(status="error", stage="", error=f"{type(error).__name__}: {error}")
+            if _active_repo[mode] == repo:
+                _model_state[mode].update(status="error", stage="", error=f"{type(error).__name__}: {error}")
         print(f"[openocr] {mode} model load failed\n" + traceback.format_exc())
 
 

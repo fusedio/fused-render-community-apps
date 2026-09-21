@@ -1481,6 +1481,7 @@
       toast(error.message || String(error), true);
     }
     await refreshCatalog();
+    autoWarmIfDownloaded(state.mode);
     await pollModelStatus();
   }
 
@@ -1575,13 +1576,15 @@
       downloadBtn.classList.add("hidden");
     } else if (info.status === "error") {
       label.textContent = "Model error — see console";
-      downloadBtn.classList.add("hidden");
+      downloadBtn.textContent = "Retry";
+      downloadBtn.classList.remove("hidden");
     } else if (downloaded) {
       label.textContent = "Model cached — starting…";
       downloadBtn.classList.add("hidden");
     } else {
       const choice = (latestCatalog.choices[state.mode] || []).find((c) => c.repo === latestCatalog.active[state.mode]);
       label.textContent = "Not downloaded" + (choice ? " (" + choice.size_gb + " GB)" : "");
+      downloadBtn.textContent = "Download";
       downloadBtn.classList.remove("hidden");
     }
   }
@@ -1592,6 +1595,9 @@
       latestModels = result.models || {};
     } catch (error) {
       console.warn("[openocr] status poll failed", error);
+    }
+    for (const [mode, info] of Object.entries(latestModels)) {
+      if (info.status === "error") warmedModes.delete(warmKey(mode));
     }
     if (state.mode !== "apple" && !(latestCatalog.choices[state.mode] || []).length) await refreshCatalog();
     updateDownloadRows();
