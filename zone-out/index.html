@@ -352,8 +352,9 @@
       if (res && res.ok === false) throw new Error(res.error || ("daemon: " + route + " failed"));
       lastError = "";
       if (res && res.events && !(opts && opts.noState)) {
-        // hide entries where nobody but you is invited (solo blocks, reminders, focus time)
-        res.events = res.events.filter(e => e.gone || e.n_others > 0);
+        // hide entries where nobody but you is invited (solo blocks, reminders, focus time) —
+        // but keep calls with a link even when the feed omits attendees
+        res.events = res.events.filter(e => e.gone || e.kind !== "personal");
         state = res;
       }
       return res;

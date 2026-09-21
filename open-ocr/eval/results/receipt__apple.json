@@ -1,0 +1,167 @@
+[
+  {
+    "bbox": [
+      38,
+      38,
+      254,
+      68
+    ],
+    "category": "Text",
+    "text": "Corner Bakery Cafe",
+    "confidence": 1.0
+  },
+  {
+    "bbox": [
+      38,
+      78,
+      308,
+      102
+    ],
+    "category": "Text",
+    "text": "482 Market Street, San Francisco",
+    "confidence": 1.0
+  },
+  {
+    "bbox": [
+      38,
+      116,
+      210,
+      134
+    ],
+    "category": "Text",
+    "text": "2026-09-14 7:42 AM",
+    "confidence": 1.0
+  },
+  {
+    "bbox": [
+      238,
+      180,
+      294,
+      204
+    ],
+    "category": "Text",
+    "text": "$9.00",
+    "confidence": 1.0
+  },
+  {
+    "bbox": [
+      38,
+      182,
+      206,
+      204
+    ],
+    "category": "Text",
+    "text": "2x Cold Brew Coffee",
+    "confidence": 1.0
+  },
+  {
+    "bbox": [
+      38,
+      212,
+      212,
+      238
+    ],
+    "category": "Text",
+    "text": "1x Almond Croissant",
+    "confidence": 1.0
+  },
+  {
+    "bbox": [
+      238,
+      214,
+      296,
+      240
+    ],
+    "category": "Text",
+    "text": "$4.50",
+    "confidence": 1.0
+  },
+  {
+    "bbox": [
+      236,
+      248,
+      288,
+      272
+    ],
+    "category": "Text",
+    "text": "$8.75",
+    "confidence": 1.0
+  },
+  {
+    "bbox": [
+      38,
+      250,
+      188,
+      270
+    ],
+    "category": "Text",
+    "text": "1x Avocado Toast",
+    "confidence": 1.0
+  },
+  {
+    "bbox": [
+      190,
+      316,
+      254,
+      340
+    ],
+    "category": "Text",
+    "text": "$22.25",
+    "confidence": 1.0
+  },
+  {
+    "bbox": [
+      38,
+      320,
+      108,
+      338
+    ],
+    "category": "Text",
+    "text": "Subtotal",
+    "confidence": 1.0
+  },
+  {
+    "bbox": [
+      184,
+      350,
+      238,
+      376
+    ],
+    "category": "Text",
+    "text": "$1.95",
+    "confidence": 1.0
+  },
+  {
+    "bbox": [
+      38,
+      354,
+      72,
+      372
+    ],
+    "category": "Text",
+    "text": "Tax",
+    "confidence": 1.0
+  },
+  {
+    "bbox": [
+      178,
+      382,
+      244,
+      412
+    ],
+    "category": "Text",
+    "text": "$24.20",
+    "confidence": 1.0
+  },
+  {
+    "bbox": [
+      38,
+      384,
+      86,
+      406
+    ],
+    "category": "Text",
+    "text": "Total",
+    "confidence": 1.0
+  }
+]

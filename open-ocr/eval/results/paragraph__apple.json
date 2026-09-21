@@ -1,0 +1,68 @@
+[
+  {
+    "bbox": [
+      50,
+      42,
+      442,
+      70
+    ],
+    "category": "Text",
+    "text": "Quarterly Infrastructure Review",
+    "confidence": 1.0
+  },
+  {
+    "bbox": [
+      50,
+      96,
+      560,
+      116
+    ],
+    "category": "Text",
+    "text": "Uptime across the fleet held at 99.94 percent for the third",
+    "confidence": 1.0
+  },
+  {
+    "bbox": [
+      48,
+      128,
+      558,
+      150
+    ],
+    "category": "Text",
+    "text": "quarter, with two incidents traced to a misconfigured load",
+    "confidence": 1.0
+  },
+  {
+    "bbox": [
+      45,
+      154,
+      563,
+      187
+    ],
+    "category": "Text",
+    "text": "balancer in the eu-west region. Both were resolved within",
+    "confidence": 1.0
+  },
+  {
+    "bbox": [
+      45,
+      187,
+      548,
+      217
+    ],
+    "category": "Text",
+    "text": "eleven minutes of detection. The on-call rotation logged",
+    "confidence": 1.0
+  },
+  {
+    "bbox": [
+      46,
+      224,
+      572,
+      246
+    ],
+    "category": "Text",
+    "text": "forty-two pages, down from sixty-one the previous quarter.",
+    "confidence": 1.0
+  }
+]

@@ -1,0 +1,1 @@
+[{"bbox": [49, 28, 290, 51], "category": "Section-header", "text": "Purchase Order 4471"}, {"bbox": [47, 84, 719, 226], "category": "Text", "text": "| Item | Qty | Unit Price | Total |\n|---|---|---|---|\n| USB-C Cable | 12 | $8.00 | $96.00 |\n| Wireless Mouse | 5 | $22.50 | $112.50 |\n| Monitor Stand | 3 | $41.00 | $123.00 |"}]

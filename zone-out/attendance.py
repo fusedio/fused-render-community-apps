@@ -443,7 +443,7 @@ def live_summary(events: list[dict], now: dt.datetime, settings: dict) -> dict:
     live = [e for e in events if e["phase"] == "live"]
 
     def in_meeting(e):
-        since = e["record"].get("first_in") or e["start"]
+        since = (e["record"] or {}).get("first_in") or e["start"]
         return {"status": "in_meeting", "key": e["key"], "title": e["title"], "since": since, "end": e["end"],
                 "detail": e["presence"]["via"], "confidence": e["presence"]["confidence"]}
 
@@ -452,7 +452,7 @@ def live_summary(events: list[dict], now: dt.datetime, settings: dict) -> dict:
             return in_meeting(e)
     grace = settings["grace_min"] * 60
     for e in live:
-        if e["tracked"] and not e["record"].get("skipped") and e["presence"]["state"] != "in_call" and e.get("kind", "call") == "call":
+        if e["tracked"] and not (e["record"] or {}).get("skipped") and e["presence"]["state"] != "in_call" and e.get("kind", "call") == "call":
             late = (now - parse_ts(e["start"])).total_seconds()
             if e["presence"]["state"] == "lobby":
                 return {"status": "lobby", "key": e["key"], "title": e["title"], "since": e["start"], "end": e["end"], "detail": e["presence"]["via"], "late_s": late}

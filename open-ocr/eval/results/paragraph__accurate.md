@@ -1,0 +1,3 @@
+## Quarterly Infrastructure Review
+
+Uptime across the fleet held at 99.94 percent for the third quarter, with two incidents traced to a misconfigured load balancer in the eu-west region. Both were resolved within eleven minutes of detection. The on-call rotation logged forty-two pages, down from sixty-one the previous quarter.

@@ -22,7 +22,11 @@ EVENTS = os.path.join(DATA, "reminder_events.jsonl")
 
 TITLE = "Open Relax ✿"
 DEFAULT_MSG = "Time for a cozy break — breathe for a few minutes ♡"
-DAY = 86400
+
+
+def _add_days(epoch, n):
+    lt = time.localtime(epoch)
+    return time.mktime((lt.tm_year, lt.tm_mon, lt.tm_mday + n, lt.tm_hour, lt.tm_min, lt.tm_sec, 0, 0, -1))
 
 
 def _write_atomic(path, text):
@@ -122,7 +126,7 @@ def _worker(rid, fire, repeat, message):
             f.write(json.dumps({"id": rid, "at": time.time(), "type": "fired"}) + "\n")
         if not repeat:
             return
-        fire = max(fire + DAY, time.time() + 60)
+        fire = max(_add_days(fire, 1), time.time() + 60)
 
 
 def _spawn(rid, fire, repeat, message):
@@ -150,7 +154,7 @@ def _view():
         if r.get("repeat"):
             nxt = fire
             while nxt <= now:
-                nxt += DAY
+                nxt = _add_days(nxt, 1)
             status = "pending" if alive else "stopped"
             rows.append({**r, "next": nxt, "status": status, "lastFired": last})
         else:
@@ -169,7 +173,7 @@ def _next_at(hhmm):
     lt = time.localtime()
     fire = time.mktime((lt.tm_year, lt.tm_mon, lt.tm_mday, hh, mm, 0, 0, 0, -1))
     if fire <= time.time() + 5:
-        fire += DAY
+        fire = _add_days(fire, 1)
     return fire
 
 

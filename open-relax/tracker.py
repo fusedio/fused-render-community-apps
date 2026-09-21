@@ -21,7 +21,6 @@ SESSIONS = os.path.join(DATA, "sessions.jsonl")
 EXERCISES = os.path.join(DATA, "exercises.jsonl")
 SETTINGS = os.path.join(DATA, "settings.json")
 
-DAY = 86400
 SESSION_GAP = 300          # a gap this long starts a new "session"
 EXPLORER_MIN = 25   # distinct sounds tried; the library holds about three hundred
 ALL_EXERCISES = ["sigh", "box", "478", "coherent"]
@@ -71,6 +70,11 @@ def _daystr(epoch):
 def _midnight(epoch):
     lt = time.localtime(epoch)
     return time.mktime((lt.tm_year, lt.tm_mon, lt.tm_mday, 0, 0, 0, 0, 0, -1))
+
+
+def _add_days(epoch, n):
+    lt = time.localtime(epoch)
+    return time.mktime((lt.tm_year, lt.tm_mon, lt.tm_mday + n, lt.tm_hour, lt.tm_min, lt.tm_sec, 0, 0, -1))
 
 
 # ---------- stats ----------
@@ -134,11 +138,11 @@ def _stats():
         n, cur = 0, anchor
         while by_day.get(_daystr(cur), 0) >= 60:
             n += 1
-            cur -= DAY
+            cur = _add_days(cur, -1)
         return n
 
     midnight = _midnight(now)
-    streak = _streak_from(midnight) or _streak_from(midnight - DAY)
+    streak = _streak_from(midnight) or _streak_from(_add_days(midnight, -1))
 
     best = run = 0
     for d in sorted(by_day):
@@ -152,14 +156,14 @@ def _stats():
 
     days = []
     for i in range(34, -1, -1):
-        ts = midnight - i * DAY
+        ts = _add_days(midnight, -i)
         d = _daystr(ts)
         secs = by_day.get(d, 0)
         days.append({"d": d, "s": round(secs), "goal": secs >= goal_secs})
 
     total = sum(by_day.values())
     goal_days = sum(1 for s in by_day.values() if s >= goal_secs)
-    week = sum(by_day.get(_daystr(midnight - i * DAY), 0) for i in range(7))
+    week = sum(by_day.get(_daystr(_add_days(midnight, -i)), 0) for i in range(7))
     today_secs = by_day.get(today, 0)
 
     fav = max(by_sound.items(), key=lambda kv: kv[1])[0] if by_sound else None
