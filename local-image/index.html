@@ -387,11 +387,17 @@
     transition: background .15s var(--ease), color .15s var(--ease);
   }
   .shape:hover { color: var(--text); }
-  .shape .sw { display: block; border: 1.5px solid currentColor; border-radius: 2px; flex: none; opacity: .8; }
+  /* Filled, not outlined: a hollow square sitting next to a label reads as an
+     empty checkbox, which is the wrong affordance entirely. A solid block at a
+     soft tint reads as a proportion and nothing else. */
+  .shape .sw { display: block; background: currentColor; border-radius: 2px; flex: none; opacity: .4;
+    transition: opacity .15s var(--ease), background .15s var(--ease); }
+  .shape:hover .sw { opacity: .55; }
   /* Selected state is never colour alone (WCAG) — the weight step to 600 is
      what actually carries "this one is chosen" for anyone who can't read the
      colour difference. */
   .shape[aria-pressed="true"] { background: var(--surface-3); color: var(--text); font-weight: 600; }
+  .shape[aria-pressed="true"] .sw { background: var(--accent); opacity: 1; }
 
   /* Wraps rather than scrolls: a rail that clips hides a third of the styles
      behind a gesture a beginner has no reason to try. */
