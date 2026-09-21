@@ -1,3 +1,6 @@
+# /// script
+# dependencies = ["httpx"]
+# ///
 """Real recordings for Open Relax's tiles, cached under .fused/cache/audio.
 
 catalog.json — built by research.py — lists, for every tile that plays a

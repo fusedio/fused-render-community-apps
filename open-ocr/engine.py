@@ -228,13 +228,14 @@ def _load_model_here(mode: str) -> None:
             progress_thread.join(timeout=2)
 
         with _models_lock:
-            if _active_repo[mode] != repo:
-                return
-            _models[mode] = (model, processor)
-            _model_state[mode].update(status="ready", stage="Model resident", loaded_at=time.time(),
-                                      progress=1.0)
+            still_selected = _active_repo[mode] == repo
+            if still_selected:
+                _models[mode] = (model, processor)
+                _model_state[mode].update(status="ready", stage="Model resident", loaded_at=time.time(),
+                                          progress=1.0)
         if started_download:
-            _report(job_id, {"state": "done", "done": 100, "total": 100, "detail": "Ready"})
+            _report(job_id, {"state": "done", "done": 100, "total": 100,
+                             "detail": "Ready" if still_selected else "Downloaded"})
     except BaseException as error:  # noqa: BLE001
         stop_progress.set()
         if started_download:
