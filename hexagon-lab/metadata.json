@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "name": "Hexagon Lab",
+  "description": "Six live-sandbox steps explaining H3 hexagons: globe, neighbors, hierarchy, building counts, raster stats, change detection.",
+  "author": { "name": "Fused team" },
+  "tags": ["maps", "geospatial", "h3", "duckdb"],
+  "category": "geospatial",
+  "version": "1.0.0",
+  "requires_python": true
+}
