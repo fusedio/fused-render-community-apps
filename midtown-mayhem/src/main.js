@@ -51,7 +51,11 @@ function setCfg(k, v) { cfg[k] = v; try { P && P.set(k, v); } catch (e) { /* out
 const STEP = 1 / 60, ri = (n) => (Math.random() * n) | 0, pick = (a) => a[ri(a.length)];
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a)), dist = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 const nodePt = ([i, j]) => ({ x: i * BLOCK, z: j * BLOCK });
-const fmt = (t) => `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, '0')}`;
+const fmt = (t) => {
+  let m = Math.floor(t / 60), s = (t - m * 60).toFixed(1);
+  if (s === '60.0') { m += 1; s = '0.0'; }
+  return `${m}:${s.padStart(4, '0')}`;
+};
 const SKILL = { easy: [0.84, 12, 1.07], normal: [0.93, 15, 1.05], hard: [1.0, 18, 1.02] }; // top-speed share, corner speed, catch-up cap
 let state = 'menu', T = 0, countT = 0, lastCount = 0, camMode = 0, camH = 0, resetCool = 0, copCool = 0, bustT = 0, pending = null, pendingT = 0, course = null;
 let player = null, cars = [], cops = [], racers = [], robbers = [], race = null, cnr = null, cruise = null;
@@ -62,6 +66,7 @@ function clearAll() {
   for (const c of cars) c.remove(scene);
   cars = []; cops = []; racers = []; robbers = []; player = null; race = cnr = cruise = null; pending = null; bustT = 0; copCool = 0;
   markers.clear(); city.resetProps(); audio.stopLoops();
+  hud.el.heat.className = 'heat'; arrow.visible = false;
 }
 function placeRandom(car, avoid, minD) {
   for (let k = 0; k < 50; k++) {
