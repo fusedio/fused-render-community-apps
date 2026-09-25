@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "name": "Midtown Mayhem",
+  "description": "Arcade city racer in tribute to Midtown Madness: rival racers, cops, traffic, five modes, all built in three.js with no Python or assets.",
+  "author": { "name": "Aman Bagrecha", "github": "amanbagrecha" },
+  "tags": ["game", "racing", "three.js"],
+  "category": "starters",
+  "version": "1.0.0",
+  "requires_python": false
+}
