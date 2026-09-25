@@ -458,7 +458,7 @@
       <button id="resetView" title="Centre on the pin"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="3"/><path d="M8 1v2.5M8 12.5V15M1 8h2.5M12.5 8H15"/></svg></button>
     </div>
 
-    <div class="attrib">Basemap © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> © <a href="https://carto.com/attributions" target="_blank" rel="noopener">CARTO</a></div>
+    <div class="attrib">Basemap © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors</div>
 
     <section class="glass dock shut" id="dock">
       <!-- the bar stays usable on its own: location, year range and Run all live
@@ -596,7 +596,7 @@
   // ---- map ------------------------------------------------------------------
   const cartoStyle = {
     version: 8,
-    sources: { c: { type: "raster", tiles: ["a", "b", "c", "d"].map(s => `https://${s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}@2x.png`), tileSize: 256, attribution: '© OpenStreetMap © CARTO' } },
+    sources: { c: { type: "raster", tiles: ["a", "b", "c"].map(s => `https://${s}.tile.openstreetmap.org/{z}/{x}/{y}.png`), tileSize: 256, attribution: '© OpenStreetMap contributors' } },
     layers: [{ id: "c", type: "raster", source: "c" }],
   };
   const mapEl = document.getElementById("map");
