@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="fused-app" />
+<meta name="fused-api-version" content="1" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Midtown Mayhem</title>
+<style>
+:root { --ink: #fff; --shade: rgba(10, 14, 24, .62); --accent: #ffd32a; --red: #ff4d4d; --blue: #4da3ff; --muted: #9aa3b2; }
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; }
+button, input, select, textarea { font: inherit; color: inherit; margin: 0; }
+::placeholder { color: var(--muted); opacity: 1; }
+input, select, textarea, progress { accent-color: var(--accent, currentColor); }
+img, svg, video, canvas { display: block; max-width: 100%; }
+
+html, body { height: 100%; overflow: hidden; background: #0b1230; color: var(--ink); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; -webkit-user-select: none; user-select: none; }
+canvas#c { position: fixed; inset: 0; width: 100vw; height: 100vh; max-width: none; }
+#hud { position: fixed; inset: 0; pointer-events: none; text-shadow: 0 2px 4px rgba(0, 0, 0, .6); }
+#hud.hidden { display: none; }
+.tl, .tr, .bl { position: absolute; }
+.tl { left: 24px; top: 18px; } .tr { right: 24px; top: 18px; text-align: right; } .bl { left: 24px; bottom: 22px; }
+.big { font-size: 46px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+.big small { font-size: 22px; opacity: .8; }
+.sub { font-size: 16px; font-weight: 600; opacity: .9; margin-top: 4px; }
+.red { color: var(--red); } .blue { color: var(--blue); }
+.lbl { font-size: 13px; font-weight: 700; letter-spacing: 2px; opacity: .8; }
+.bar { width: 170px; height: 8px; margin-top: 8px; background: rgba(0, 0, 0, .45); border-radius: 4px; overflow: hidden; }
+.bar i { display: block; height: 100%; width: 100%; background: #2ecc71; }
+.bar.low i { background: var(--red); }
+#minimap { position: absolute; right: 20px; bottom: 20px; width: 200px; height: 200px; border-radius: 10px; border: 2px solid rgba(255, 255, 255, .7); box-shadow: 0 4px 18px rgba(0, 0, 0, .4); }
+.msg { position: absolute; left: 0; right: 0; top: 26%; text-align: center; font-size: 30px; font-weight: 700; opacity: 0; transition: opacity .15s; }
+.msg.show { opacity: 1; }
+.msg.big { font-size: 84px; color: var(--accent); }
+.msg.warn { color: var(--red); font-size: 46px; }
+.msg.small { font-size: 22px; top: 34%; }
+.msg b { color: var(--accent); }
+.heat { position: absolute; left: 50%; top: 18px; width: 220px; margin-left: -110px; text-align: center; font-size: 18px; font-weight: 700; letter-spacing: 2px; color: var(--red); display: none; }
+.heat.on { display: block; }
+.bust { height: 6px; margin-top: 6px; background: rgba(0, 0, 0, .45); border-radius: 3px; overflow: hidden; }
+.bust i { display: block; height: 100%; background: var(--red); }
+
+.screen { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(5, 8, 20, .45); overflow: auto; }
+.screen.show { display: flex; }
+#menu { flex-direction: column; justify-content: space-between; padding: 5vh 20px 2.5vh; background: linear-gradient(rgba(5, 8, 20, .6), rgba(5, 8, 20, 0) 32%, rgba(5, 8, 20, 0) 58%, rgba(5, 8, 20, .75)); }
+.title { text-align: center; }
+h1 { margin: 0; font-weight: 700; line-height: .86; text-transform: uppercase; }
+h1 .w1 { display: block; font-size: clamp(22px, 3.2vw, 38px); letter-spacing: .38em; padding-left: .38em; color: #fff; text-shadow: 0 2px 0 #1a2140, 0 8px 22px rgba(0, 0, 0, .6); }
+h1 .w2 { display: block; font-size: clamp(64px, 11vw, 124px); font-style: italic; letter-spacing: -.02em; color: var(--accent); text-shadow: 0 3px 0 #b48800, 0 6px 0 #6e5200, 0 9px 0 #3a2b00, 0 18px 34px rgba(0, 0, 0, .6); }
+.tag { margin-top: 14px; font-size: 12px; font-weight: 600; letter-spacing: .32em; text-transform: uppercase; color: rgba(255, 255, 255, .78); text-shadow: 0 1px 3px rgba(0, 0, 0, .7); }
+.tag::before, .tag::after { content: ''; display: inline-block; width: 46px; height: 1px; background: rgba(255, 255, 255, .5); vertical-align: middle; margin: 0 14px; }
+.bottom { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; text-shadow: 0 1px 4px rgba(0, 0, 0, .7); }
+.pick { font-size: 13px; font-weight: 700; letter-spacing: .22em; text-transform: uppercase; color: #fff; }
+.pick em { font-style: normal; color: var(--accent); margin: 0 10px; }
+.desc { margin-top: -6px; font-size: 14px; color: rgba(255, 255, 255, .72); }
+.play { margin-top: 6px; padding: 15px 70px 16px 80px; border: 0; border-radius: 999px; font-size: 30px; font-weight: 700; letter-spacing: .2em; color: #1d1600; text-shadow: none; cursor: pointer;
+  background: linear-gradient(#ffe36a, #f7bf0e); box-shadow: 0 6px 0 #9a7300, 0 14px 34px rgba(0, 0, 0, .5), inset 0 1px 0 rgba(255, 255, 255, .6); transition: transform .08s, box-shadow .08s; }
+.play:hover { background: linear-gradient(#fff0a0, #ffd02a); }
+.play:active { transform: translateY(5px); box-shadow: 0 1px 0 #9a7300, 0 6px 18px rgba(0, 0, 0, .5); }
+.muted { color: var(--muted); font-size: 13px; }
+.muted kbd { font: inherit; font-weight: 700; color: #ddd; }
+.options summary { list-style: none; display: inline-block; padding: 5px 12px; border-radius: 8px; font-size: 12px; font-weight: 700; letter-spacing: .18em; text-transform: uppercase; color: var(--muted); cursor: pointer; }
+.options summary::-webkit-details-marker { display: none; }
+.options summary:hover { color: #fff; background: rgba(255, 255, 255, .08); }
+.options summary::after { content: ''; display: inline-block; width: 6px; height: 6px; margin-left: 9px; border-right: 2px solid; border-bottom: 2px solid; transform: translateY(-3px) rotate(45deg); }
+.options[open] summary::after { transform: translateY(1px) rotate(-135deg); }
+.row { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 10px; margin-top: 10px; padding: 12px 14px; background: var(--shade); border: 1px solid rgba(255, 255, 255, .14); border-radius: 14px; -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); text-shadow: none; }
+.sel { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0; }
+.sel span { font-size: 10px; font-weight: 700; letter-spacing: .18em; text-transform: uppercase; color: var(--muted); }
+.sel select { -webkit-appearance: none; appearance: none; padding: 6px 30px 6px 11px; border: 1px solid rgba(255, 255, 255, .16); border-radius: 8px; background: rgba(255, 255, 255, .09); color: #fff; font-size: 14px; font-weight: 600; cursor: pointer; }
+.sel select:hover { background: rgba(255, 255, 255, .16); }
+.sel select:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.sel select option { color: #111; background: #fff; }
+.sel::after { content: ''; position: absolute; right: 12px; bottom: 14px; width: 6px; height: 6px; border-right: 2px solid #fff; border-bottom: 2px solid #fff; transform: rotate(45deg); pointer-events: none; }
+.keys { font-size: 11px; color: rgba(255, 255, 255, .55); letter-spacing: .02em; }
+.keys kbd { font: inherit; font-weight: 700; color: #fff; padding: 0 4px; border-radius: 3px; background: rgba(255, 255, 255, .12); }
+.panel { width: min(420px, 92vw); padding: 26px 28px 22px; text-align: center; background: var(--shade); border: 1px solid rgba(255, 255, 255, .15); border-radius: 18px; box-shadow: 0 20px 60px rgba(0, 0, 0, .5); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
+h2 { margin: 0 0 12px; font-size: 34px; font-style: italic; text-transform: uppercase; letter-spacing: -.01em; color: var(--accent); text-shadow: 0 2px 0 #6e5200, 0 8px 20px rgba(0, 0, 0, .5); }
+.btn { padding: 10px 14px; border: 0; border-radius: 10px; background: rgba(255, 255, 255, .1); cursor: pointer; font-size: 15px; font-weight: 600; }
+.btn:hover { background: rgba(255, 255, 255, .18); }
+.btn.go { background: linear-gradient(#ffe36a, #f7bf0e); color: #1d1600; font-size: 18px; letter-spacing: .06em; box-shadow: 0 3px 0 #9a7300; }
+.btn.go:hover { background: linear-gradient(#fff0a0, #ffd02a); }
+.col { display: flex; flex-direction: column; gap: 8px; align-items: stretch; margin-top: 14px; }
+.stats { font-size: 18px; line-height: 1.7; } .stats b { color: var(--accent); }
+.preview-card { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: linear-gradient(#a8d8f0, #6d8f4e); color: #111; }
+.preview-card h1 span { color: #b8860b; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud" class="hidden">
+  <div class="tl"><div id="h-pos" class="big"></div><div id="h-sub" class="sub"></div></div>
+  <div class="tr"><div id="h-time" class="big"></div><div id="h-best" class="sub"></div></div>
+  <div class="bl"><div id="h-speed" class="big">0</div><div class="lbl">MPH</div><div class="bar"><i id="h-dmg"></i></div></div>
+  <div id="h-heat" class="heat"></div>
+  <div id="h-msg" class="msg"></div>
+  <canvas id="minimap" width="200" height="200"></canvas>
+</div>
+
+<div id="menu" class="screen">
+  <div class="title"><h1><span class="w1">Midtown</span><span class="w2">Mayhem</span></h1><div class="tag">Arcade city racer</div></div>
+  <div class="bottom">
+    <div class="pick"><span id="m-car"></span><em>&middot;</em><span id="m-mode"></span></div>
+    <div class="desc" id="m-desc"></div>
+    <button class="play" id="go">PLAY</button>
+    <div class="muted" id="m-best"></div>
+    <details class="options"><summary>Options</summary><div class="row" id="m-opts"></div></details>
+    <div class="keys"><kbd>&uarr;&darr;</kbd> gas / brake &middot; <kbd>&larr;&rarr;</kbd> steer &middot; <kbd>Space</kbd> slide &middot; <kbd>H</kbd> horn &middot; <kbd>R</kbd> reset &middot; <kbd>C</kbd> camera &middot; <kbd>M</kbd> mute &middot; <kbd>Esc</kbd> pause &middot; gamepad works</div>
+  </div>
+</div>
+
+<div id="pause" class="screen">
+  <div class="panel"><h2>Paused</h2>
+    <div class="col"><button class="btn go" id="resume">Resume</button><button class="btn" id="restart">Restart</button><button class="btn" id="end-cruise">End cruise and score it</button><button class="btn" id="quit">Quit to menu</button></div>
+  </div>
+</div>
+
+<div id="results" class="screen">
+  <div class="panel"><div id="results-body"></div>
+    <div class="col"><button class="btn go" id="again">Retry this course</button><button class="btn" id="fresh">New course</button><button class="btn" id="menu-btn">Menu</button></div>
+  </div>
+</div>
+
+<script>
+// Boot. The page is served from /render?path=..., not its own folder, so every file goes through
+// fused.rawUrl. An import map sends three and each module's relative imports to their raw URLs.
+(function () {
+  function isPreview() {
+    if (new URLSearchParams(location.search).get("_preview") === "1") return true;
+    try {
+      let w = window;
+      while (w.parent && w.parent !== w) {
+        w = w.parent;
+        if (new URLSearchParams(w.location.search).get("_preview") === "1") return true;
+      }
+    } catch (e) { /* cross-origin ancestor: the climb ends here */ }
+    return false;
+  }
+  if (isPreview()) {
+    document.getElementById('c').remove();
+    document.body.insertAdjacentHTML('beforeend', '<div class="preview-card"><h1>MIDTOWN <span>MAYHEM</span></h1><p>Arcade city racer: rivals, traffic, cops</p></div>');
+    return;
+  }
+  const bust = Date.now(), raw = (p) => { const u = (window.fused && fused.rawUrl) ? fused.rawUrl(p) : p; return u + (u.includes('?') ? '&' : '?') + 'v=' + bust; }; // fresh modules on every load
+  const main = new URL(raw('src/main.js'), location.href).href;
+  const imports = { three: new URL(raw('vendor/three.module.js'), location.href).href };
+  for (const m of ['city', 'car', 'ai', 'hud', 'audio']) imports[new URL('./' + m + '.js', main).href] = new URL(raw('src/' + m + '.js'), location.href).href;
+  const map = document.createElement('script'); map.type = 'importmap'; map.textContent = JSON.stringify({ imports });
+  document.head.appendChild(map);
+  import(main).catch((err) => { console.error(err); document.body.insertAdjacentHTML('beforeend', '<div class="preview-card"><h1>Failed to load</h1><p></p></div>'); document.querySelector('.preview-card p').textContent = err.message; });
+})();
+</script>
+</body>
+</html>
