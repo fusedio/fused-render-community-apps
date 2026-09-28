@@ -14,8 +14,8 @@ files.
 
 | | |
 |---|---|
-| ![Overture Map Explorer — live DuckDB queries over Overture's public S3 parquet](.github/images/overture-explorer.png) | ![Disk usage treemap of a scanned directory](.github/images/disk-usage.png) |
-| ![Sine starter — minimal view with a frequency slider](.github/images/sine-starter.png) | |
+| ![Overture Map Explorer — live DuckDB queries over Overture's public S3 parquet](overture-explorer/preview.png) | ![Disk usage treemap of a scanned directory](disk-usage/preview.png) |
+| ![Pano Viewer — 360° equirectangular photo viewer](pano-viewer/preview.png) | ![Temperature Explorer — historical climate normals on a map](temperature-explorer/preview.png) |
 
 ## App layout
 
