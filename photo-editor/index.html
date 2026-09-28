@@ -3021,10 +3021,11 @@
     if (!state.weights) {
       // Hold the upscaling flag across the await so a second click can't start a run too.
       state.upscaling = true;
-      try { await ensureWeights(); } finally { state.upscaling = false; }
-      if (activeImage() !== layer) { renderProps(); return; }
+      // Repaint once the flag is clear: every exit below returns without rendering.
+      try { await ensureWeights(); } finally { state.upscaling = false; renderProps(); }
+      if (activeImage() !== layer) return;
     }
-    if (upscalerMissing()) { renderProps(); toast("Download the upscaler first — the button is in this panel", true); return; }
+    if (upscalerMissing()) { toast("Download the upscaler first — the button is in this panel", true); return; }
     const factor = upscaleFactor(layer);
     if (factor <= 1) { toast("This image's short edge is already 2160 px or larger", true); return; }
     const w = Math.round(layer.naturalWidth * factor), h = Math.round(layer.naturalHeight * factor);
