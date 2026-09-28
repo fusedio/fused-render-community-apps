@@ -1,0 +1,36 @@
+[project]
+name = "photo-editor"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    # SeedVR2 3B upscaler on Apple MLX. PyPI name is "mlx-gen"; it imports as
+    # "mflux". Apple Silicon only. (FLUX edits go through fused.ai instead.)
+    "mlx-gen>=0.37",
+    "mlx-sam",
+    "numpy>=1.26",
+    "pillow>=11",
+    # One-click background removal uses macOS's own Vision framework
+    # (VNGenerateForegroundInstanceMaskRequest) rather than a downloaded model.
+    # Quartz is needed to read the CVPixelBuffer Vision returns the mask in.
+    "pyobjc-framework-Cocoa>=10",
+    "pyobjc-framework-Quartz>=10",
+    "pyobjc-framework-Vision>=10",
+]
+
+# Keep the model resident between calls. A fresh subprocess per request would
+# reload the weights every time; the shipped warm worker calls worker.py's
+# main() in one long-lived interpreter.
+[tool.fused-render.app]
+main = "worker.py"
+# Default is 15 minutes. Loading these weights is expensive enough that being
+# reaped mid-session is worse than holding the memory, so give a working
+# session an hour of idle room.
+idle_timeout_s = 3600
+
+# Not a distribution — this folder is a set of scripts, not something to build
+# and install. Without this uv would try to build the "project" itself and fail.
+[tool.uv]
+package = false
+
+[tool.uv.sources]
+mlx-sam = { path = "vendor/mlx_sam-0.3.0-py3-none-any.whl" }

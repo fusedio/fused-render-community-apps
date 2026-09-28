@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "name": "Photo Editor",
+  "description": "A local, Canva-style photo editor: layers, print-ready page setup and export, plus on-device AI edit, smart select, upscale and background removal on Apple MLX.",
+  "author": { "name": "Aman Bagrecha", "github": "amanbagrecha" },
+  "tags": ["photos", "image-editing", "flux", "mlx", "print"],
+  "category": "local-ai",
+  "version": "1.0.0",
+  "requires_python": true
+}
