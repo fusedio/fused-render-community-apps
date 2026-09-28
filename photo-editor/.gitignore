@@ -1,0 +1,4 @@
+# Machine-local app state: session working images, generated frames, exports.
+# Rebuildable and specific to this Mac, so it never belongs in the repo.
+.fused/
+.venv/
