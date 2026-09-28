@@ -49,6 +49,8 @@
   .pill.final { background: #eaf3de; color: #3b6d11; }
   .pill.unpaid { background: #faeeda; color: #854f0b; }
   .pill.paid { background: #eaf3de; color: #3b6d11; }
+  .pill.sent { background: #e9f0f8; color: var(--accent); }
+  .pill.unsent { background: var(--hover); color: var(--ink-2); }
 
   input, select, textarea { font: inherit; color: var(--ink); background: #fff;
     border: 0.5px solid var(--hair); border-radius: var(--radius); padding: 6px 8px; width: 100%; }
@@ -83,14 +85,43 @@
     border: 0.5px solid var(--hair); border-radius: var(--radius-lg); overflow: hidden; }
   .inv-table th { text-align: left; font-size: 11.5px; font-weight: 500; color: var(--ink-2);
     padding: 9px 14px; border-bottom: 0.5px solid var(--hair); }
-  .inv-table td { padding: 10px 14px; border-bottom: 0.5px solid var(--hair); }
+  .inv-table td { padding: 9px 14px; border-bottom: 0.5px solid var(--hair); }
   .inv-table tbody tr { cursor: pointer; }
-  .inv-table tbody tr:hover { background: #fafaf8; }
+  .inv-table tbody tr:hover { background: #f5f5f2; }
   .inv-table tbody tr:last-child td { border-bottom: none; }
   .inv-table .num { font-weight: 600; }
   .inv-table td.ops { text-align: right; white-space: nowrap; }
   .inv-table td.ops .icon-btn { opacity: 0; }
   .inv-table tr:hover td.ops .icon-btn { opacity: 1; }
+
+  .inv-scroll { overflow-x: auto; background: var(--card); border: 0.5px solid var(--hair);
+    border-radius: var(--radius-lg); }
+  .inv-scroll .inv-table { border: none; border-radius: 0; }
+  .inv-table th, .inv-table td { white-space: nowrap; }
+  .inv-table .r { text-align: right; font-variant-numeric: tabular-nums; }
+  .inv-table th.flag, .inv-table td.flag { width: 1%; text-align: center; padding-left: 6px; padding-right: 6px; }
+  .inv-table tfoot td { border-top: 0.5px solid var(--hair); border-bottom: none; background: #fafaf8;
+    font-size: 12px; color: var(--ink-2); padding-top: 8px; padding-bottom: 8px; }
+  .inv-table tfoot td.r { color: var(--ink); font-weight: 650; font-size: 13px; }
+  .inv-table .overdue { color: #a33; }
+
+  /* Linear-style view tabs */
+  .view-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 12px; }
+  .view-tab { display: inline-flex; align-items: center; gap: 6px; border: 0.5px solid var(--hair);
+    background: transparent; color: var(--ink-2); border-radius: 6px; padding: 4px 10px; font-size: 12.5px;
+    white-space: nowrap; }
+  .view-tab:hover { background: var(--hover); color: var(--ink); }
+  .view-tab .ct { font-size: 11.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+  .view-tab.on { background: var(--card); color: var(--ink); font-weight: 600; border-color: #cfcfca;
+    box-shadow: 0 1px 2px rgba(20, 20, 15, .06); }
+  .view-tab.on .ct { color: var(--ink-2); }
+  .lib-stats { display: flex; flex-wrap: wrap; gap: 4px 18px; margin: -10px 0 18px; font-size: 12px;
+    color: var(--ink-2); font-variant-numeric: tabular-nums; }
+  .lib-stats b { color: var(--ink); font-weight: 600; margin-left: 4px; }
+  .lib-stats .owed b { color: #854f0b; }
+  .filter-empty { color: var(--ink-3); padding: 28px 4px; text-align: center; }
+  #sideTotal { padding: 8px; font-size: 11.5px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+  #sideTotal b { display: block; color: var(--ink); font-size: 13px; font-weight: 650; }
 
   .empty { text-align: center; color: var(--ink-2); padding: 90px 20px; }
   .empty p { margin: 0 0 14px; }
@@ -272,6 +303,7 @@
     </div>
     <div id="clientList"></div>
     <button class="link-btn" id="newClientBtn">+ New client</button>
+    <div id="sideTotal"></div>
     <div class="foot">
       <button class="btn sm" id="settingsBtn" style="width:100%;justify-content:flex-start">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
@@ -293,6 +325,8 @@
     </button>
     <span class="pill draft" id="statusPill">Draft</span>
     <button class="btn sm" id="statusBtn">Mark as final</button>
+    <span class="pill unsent" id="sentPill">Not sent</span>
+    <button class="btn sm" id="sentBtn">Mark as sent</button>
     <span class="pill unpaid" id="paidPill">Unpaid</span>
     <button class="btn sm" id="paidBtn">Mark as paid</button>
     <span id="saveState"></span>
@@ -325,11 +359,28 @@ const CURRENCIES = [
   ["BRL", "R$"], ["MXN", "MX$"], ["KRW", "₩"], ["THB", "฿"], ["IDR", "Rp"], ["PLN", "zł"],
 ];
 
+// Library filters. Paid implies sent, so the three unpaid/paid buckets never overlap.
+const FILTERS = [
+  { key: "outstanding", label: "Outstanding", test: (i) => !i.paid, empty: "Nothing outstanding — every invoice is paid." },
+  { key: "awaiting", label: "Awaiting payment", test: (i) => i.sent && !i.paid, empty: "No sent invoices awaiting payment." },
+  { key: "unsent", label: "Not sent", test: (i) => !i.sent && !i.paid, empty: "Every unpaid invoice has been sent." },
+  { key: "paid", label: "Paid", test: (i) => i.paid, empty: "No paid invoices yet." },
+  { key: "all", label: "All", test: () => true, empty: "" },
+];
+
 const state = {
   clients: [], selClient: "",
   client: "", routeId: "", doc: null, attachDir: "",
   pending: null,          // {client, doc, attach_dir} composed but unsaved
+  filter: loadFilter(),   // library filter key, remembered across sessions
 };
+
+function loadFilter() {
+  try { const f = localStorage.getItem("invoices.filter"); if (FILTERS.some((x) => x.key === f)) return f; }
+  catch {}
+  return "outstanding";
+}
+function saveFilter(f) { try { localStorage.setItem("invoices.filter", f); } catch {} }
 
 // ---------- plumbing ----------
 function py(params, opts) {
@@ -363,6 +414,22 @@ function todayLocal() {
 
 function fmtMoney(n, cur) {
   return new Intl.NumberFormat(undefined, { style: "currency", currency: cur || "USD" }).format(n || 0);
+}
+// {currency: amount} — invoices in different currencies are never added together.
+function sumByCur(invs) {
+  const out = {};
+  for (const i of invs) out[i.currency] = (out[i.currency] || 0) + (+i.total || 0);
+  return out;
+}
+function mergeSums(maps) {
+  const out = {};
+  for (const m of maps) for (const [c, n] of Object.entries(m || {})) out[c] = (out[c] || 0) + n;
+  return out;
+}
+function sumLines(map, fallbackCur) {
+  const e = Object.entries(map).filter(([, n]) => n);
+  if (!e.length) return [fmtMoney(0, fallbackCur)];
+  return e.sort((a, b) => b[1] - a[1]).map(([c, n]) => fmtMoney(n, c));
 }
 const curOpts = (sel) => {
   const known = CURRENCIES.some(([c]) => c === sel);
@@ -785,6 +852,9 @@ async function openLibrary() {
 function renderClients() {
   const list = $("clientList");
   list.innerHTML = "";
+  const owed = mergeSums(state.clients.map((c) => c.outstanding));
+  $("sideTotal").innerHTML = Object.values(owed).some((n) => n)
+    ? `Outstanding, all clients${sumLines(owed).map((l) => `<b>${esc(l)}</b>`).join("")}` : "";
   if (!state.clients.length) {
     list.innerHTML = `<div class="side-empty">No clients yet</div>`;
     return;
@@ -863,16 +933,24 @@ async function renderLibMain() {
 function buildInvTable(host, client, invoices) {
   const table = document.createElement("table");
   table.className = "inv-table";
-  table.innerHTML = `<thead><tr><th>Number</th><th>Issued</th><th>Total</th><th>Status</th><th>Paid</th><th></th></tr></thead><tbody></tbody>`;
+  table.innerHTML = `<thead><tr><th>Number</th><th>Issued</th><th>Due</th><th class="r">Total</th><th>Status</th><th class="flag">Sent</th><th class="flag">Paid</th><th></th></tr></thead><tbody></tbody>`;
   const tbody = table.querySelector("tbody");
   for (const inv of invoices) {
     const tr = document.createElement("tr");
     const paidTitle = inv.paid
       ? `Paid${inv.paid_date ? " on " + inv.paid_date : ""} — click to mark unpaid`
       : "Mark as paid";
-    tr.innerHTML = `<td class="num"></td><td class="muted"></td><td></td>
+    const sentTitle = inv.sent
+      ? `Sent${inv.sent_date ? " on " + inv.sent_date : ""} — click to mark not sent`
+      : "Mark as sent to client";
+    tr.innerHTML = `<td class="num"></td><td class="muted"></td><td class="muted"></td><td class="r"></td>
       <td><span class="pill ${inv.status === "final" ? "final" : "draft"}">${inv.status === "final" ? "Final" : "Draft"}</span></td>
-      <td><button class="icon-btn" data-op="paid" title="${esc(paidTitle)}" style="color:${inv.paid ? "#3b6d11" : "var(--ink-3)"}">
+      <td class="flag"><button class="icon-btn" data-op="sent" title="${esc(sentTitle)}" style="color:${inv.sent ? "var(--accent)" : "var(--ink-3)"}">
+        <svg viewBox="0 0 24 24" fill="${inv.sent ? "currentColor" : "none"}" fill-opacity=".15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4z"/>
+        </svg>
+      </button></td>
+      <td class="flag"><button class="icon-btn" data-op="paid" title="${esc(paidTitle)}" style="color:${inv.paid ? "#3b6d11" : "var(--ink-3)"}">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="9"/>${inv.paid ? '<path d="M8.5 12.5l2.2 2.2 4.3-4.3"/>' : ""}
         </svg>
@@ -894,19 +972,25 @@ function buildInvTable(host, client, invoices) {
       tr.children[0].appendChild(clip);
     }
     tr.children[1].textContent = inv.issue_date;
-    tr.children[2].textContent = fmtMoney(inv.total, inv.currency);
+    tr.children[2].textContent = inv.due_date || "—";
+    if (!inv.paid && inv.due_date && inv.due_date < todayLocal()) {
+      tr.children[2].className = "overdue";
+      tr.children[2].textContent += " · overdue";
+      tr.children[2].title = "Overdue";
+    }
+    tr.children[3].textContent = fmtMoney(inv.total, inv.currency);
     tr.addEventListener("click", (e) => {
       const op = e.target.closest("[data-op]");
       if (op) {
         e.stopPropagation();
-        if (op.dataset.op === "paid") act(async () => {
+        if (op.dataset.op === "paid" || op.dataset.op === "sent") act(async () => {
           const r = await py({ action: "load_invoice", client: client.slug, id: inv.id });
           const d = asObj(r.doc);
-          d.paid = !d.paid;
-          d.paid_date = d.paid ? todayLocal() : "";
+          toggleFlag(d, op.dataset.op);
           await py({ action: "save_invoice", client: client.slug, doc: JSON.stringify(d) });
           const r2 = await py({ action: "list_invoices", client: client.slug });
           renderInvTable(host, client, r2.invoices || []);
+          await refreshClients();
         });
         else if (op.dataset.op === "dup") act(async () => {
           const r = await py({ action: "duplicate_invoice", client: client.slug, id: inv.id });
@@ -926,7 +1010,16 @@ function buildInvTable(host, client, invoices) {
     });
     tbody.appendChild(tr);
   }
-  return table;
+  const foot = document.createElement("tfoot");
+  const n = invoices.length;
+  foot.innerHTML = `<tr><td colspan="3">${n} invoice${n === 1 ? "" : "s"}</td>
+    <td class="r">${sumLines(sumByCur(invoices), invoices[0].currency).map(esc).join("<br>")}</td>
+    <td colspan="4"></td></tr>`;
+  table.appendChild(foot);
+  const wrap = document.createElement("div");
+  wrap.className = "inv-scroll";
+  wrap.appendChild(table);
+  return wrap;
 }
 
 function renderInvTable(host, client, invoices) {
@@ -937,32 +1030,61 @@ function renderInvTable(host, client, invoices) {
       document.querySelector("#newInvBtn").click());
     return;
   }
-  const prevPaidSection = host.querySelector(".paid-section");
-  const paidWasOpen = prevPaidSection ? prevPaidSection.open : false;
   host.innerHTML = "";
-  const unpaid = invoices.filter((inv) => !inv.paid);
-  const paid = invoices.filter((inv) => inv.paid);
-  if (unpaid.length) {
-    host.appendChild(buildInvTable(host, client, unpaid));
+  const f = FILTERS.find((x) => x.key === state.filter) || FILTERS[0];
+  const fallbackCur = invoices[0].currency;
+  const money = (rows) => sumLines(sumByCur(rows), fallbackCur).join(" + ");
+  const stats = document.createElement("div");
+  stats.className = "lib-stats";
+  const owed = invoices.filter(FILTERS[0].test);
+  stats.innerHTML = `<span class="owed">To be paid<b>${esc(money(owed))}</b></span>
+    <span>Paid<b>${esc(money(invoices.filter((i) => i.paid)))}</b></span>
+    <span>Invoiced<b>${esc(money(invoices))}</b></span>`;
+  host.appendChild(stats);
+  const tabs = document.createElement("div");
+  tabs.className = "view-tabs";
+  for (const flt of FILTERS) {
+    const b = document.createElement("button");
+    b.className = "view-tab" + (flt === f ? " on" : "");
+    b.innerHTML = `<span></span><span class="ct">${invoices.filter(flt.test).length}</span>`;
+    b.firstElementChild.textContent = flt.label;
+    b.addEventListener("click", () => {
+      state.filter = flt.key;
+      saveFilter(flt.key);
+      renderInvTable(host, client, invoices);
+    });
+    tabs.appendChild(b);
+  }
+  host.appendChild(tabs);
+  const shown = invoices.filter(f.test);
+  if (shown.length) {
+    host.appendChild(buildInvTable(host, client, shown));
   } else {
-    const p = document.createElement("p");
-    p.className = "muted";
-    p.textContent = "All invoices for this client are marked paid.";
+    const p = document.createElement("div");
+    p.className = "filter-empty";
+    p.textContent = f.empty;
     host.appendChild(p);
   }
-  if (paid.length) {
-    const det = document.createElement("details");
-    det.className = "disc paid-section";
-    det.style.marginTop = "12px";
-    det.open = paidWasOpen;
-    const summary = document.createElement("summary");
-    summary.textContent = `Paid (${paid.length})`;
-    const body = document.createElement("div");
-    body.className = "disc-body";
-    body.appendChild(buildInvTable(host, client, paid));
-    det.append(summary, body);
-    host.appendChild(det);
+}
+
+// Paid implies sent; un-sending a paid invoice un-pays it too.
+function toggleFlag(d, flag) {
+  const today = todayLocal();
+  if (flag === "paid") {
+    d.paid = !d.paid;
+    d.paid_date = d.paid ? today : "";
+    if (d.paid && !d.sent) { d.sent = true; d.sent_date = today; }
+  } else {
+    d.sent = !d.sent;
+    d.sent_date = d.sent ? today : "";
+    if (!d.sent && d.paid) { d.paid = false; d.paid_date = ""; }
   }
+}
+
+async function refreshClients() {
+  const r = await py({ action: "list_clients" });
+  state.clients = r.clients || [];
+  renderClients();
 }
 
 function newClient() {
@@ -1080,6 +1202,11 @@ function updateTopbar() {
   pill.className = "pill " + (fin ? "final" : "draft");
   pill.textContent = fin ? "Final" : "Draft";
   $("statusBtn").textContent = fin ? "Mark as draft" : "Mark as final";
+  const sentPill = $("sentPill");
+  sentPill.className = "pill " + (d.sent ? "sent" : "unsent");
+  sentPill.textContent = d.sent ? "Sent" : "Not sent";
+  sentPill.title = d.sent && d.sent_date ? "Sent on " + d.sent_date : "";
+  $("sentBtn").textContent = d.sent ? "Mark as not sent" : "Mark as sent";
   const paidPill = $("paidPill");
   paidPill.className = "pill " + (d.paid ? "paid" : "unpaid");
   paidPill.textContent = d.paid ? "Paid" : "Unpaid";
@@ -1106,14 +1233,14 @@ $("statusBtn").addEventListener("click", () => {
   updateTopbar();
   onDocChange();
 });
-$("paidBtn").addEventListener("click", () => {
-  const d = state.doc;
-  if (!d) return;
-  d.paid = !d.paid;
-  d.paid_date = d.paid ? todayLocal() : "";
-  updateTopbar();
-  onDocChange();
-});
+for (const flag of ["sent", "paid"])
+  $(flag + "Btn").addEventListener("click", () => {
+    const d = state.doc;
+    if (!d) return;
+    toggleFlag(d, flag);
+    updateTopbar();
+    onDocChange();
+  });
 $("pdfBtn").addEventListener("click", () => act(async () => {
   await attachImagesReady();
   const prev = document.title;

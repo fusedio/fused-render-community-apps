@@ -14,13 +14,14 @@ Actions
   health                       -> {ok: true}
   get_settings                 -> {settings}  (schema-filled)
   save_settings(settings)      -> {ok: true}
-  list_clients                 -> {clients:[{slug, name, invoice_count, modified}]}
+  list_clients                 -> {clients:[{slug, name, invoice_count, modified,
+                                             outstanding: {currency: unpaid total}}]}
   create_client(name)          -> {slug, name}
   rename_client(client, name)  -> {slug, name}  (slug unchanged)
   delete_client(client)        -> {ok: true}
   list_invoices(client)        -> {invoices:[{id, number, issue_date, status,
-                                              total, currency, modified,
-                                              paid, paid_date}]}
+                                              due_date, total, currency, modified,
+                                              sent, sent_date, paid, paid_date}]}
   new_invoice(client)          -> {doc}  (composed, not saved)
   duplicate_invoice(client,id) -> {doc}  (fresh id/number/date, not saved)
   load_invoice(client, id)     -> {doc}
@@ -80,6 +81,8 @@ DOC_SCHEMA = {
     "id": "",
     "number": "",
     "status": "draft",
+    "sent": False,
+    "sent_date": "",
     "paid": False,
     "paid_date": "",
     "issue_date": "",
@@ -135,6 +138,9 @@ def _fill_doc(doc):
         doc[party]["custom"] = [_fill(KV, e) for e in doc[party]["custom"]]
     doc["payment"] = [_fill(KV, e) for e in doc["payment"]]
     doc["attachments"] = [_fill_attachment(a) for a in doc["attachments"]]
+    if doc["paid"] and not doc["sent"]:
+        doc["sent"] = True
+        doc["sent_date"] = doc["sent_date"] or doc["paid_date"]
     return doc
 
 
@@ -261,8 +267,12 @@ def _list_clients():
             files = [os.path.join(inv_dir, n) for n in os.listdir(inv_dir)
                      if n.endswith(".json")] if os.path.isdir(inv_dir) else []
             mtime = max([os.path.getmtime(cpath)] + [os.path.getmtime(p) for p in files])
+            outstanding = {}
+            for d in _invoices(slug):
+                if not d["paid"]:
+                    outstanding[d["currency"]] = round(outstanding.get(d["currency"], 0) + _total(d), 2)
             clients.append({"slug": slug, "name": info.get("name", slug),
-                            "invoice_count": len(files),
+                            "invoice_count": len(files), "outstanding": outstanding,
                             "modified": datetime.fromtimestamp(mtime).isoformat(timespec="seconds")})
     clients.sort(key=lambda c: c["modified"], reverse=True)
     return {"clients": clients}
@@ -297,6 +307,7 @@ def _delete_client(client):
 
 def _list_invoices(client):
     rows = [{"id": d["id"], "number": d["number"], "issue_date": d["issue_date"],
+             "due_date": d["due_date"], "sent": d["sent"], "sent_date": d["sent_date"],
              "status": d["status"], "total": round(_total(d), 2),
              "currency": d["currency"], "modified": d["modified"],
              "paid": d["paid"], "paid_date": d["paid_date"],
@@ -331,6 +342,8 @@ def _new_invoice(client):
     doc["po"] = ""
     doc["notes"] = ""
     doc["status"] = "draft"
+    doc["sent"] = False
+    doc["sent_date"] = ""
     doc["paid"] = False
     doc["paid_date"] = ""
     doc["created"] = doc["modified"] = _now()
@@ -345,6 +358,8 @@ def _duplicate_invoice(client, inv_id):
     doc["issue_date"] = date.today().isoformat()
     doc["due_date"] = ""
     doc["status"] = "draft"
+    doc["sent"] = False
+    doc["sent_date"] = ""
     doc["paid"] = False
     doc["paid_date"] = ""
     doc["created"] = doc["modified"] = _now()
