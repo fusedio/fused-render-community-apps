@@ -2350,7 +2350,8 @@
     const layer = maskOwner;
     if (!layer || state.smart.busy) return;
     const caps = state.capabilities || {};
-    const noSam = caps.sam === false || samMissing();
+    if (!state.weights && caps.sam !== false) await ensureWeights();
+    const noSam = caps.sam === false || !state.weights || samMissing();
     const useVision = noSam && !!caps.vision;
     if (noSam && !useVision) { toast(caps.sam === false ? "Smart select needs mlx-sam or macOS 14 Vision" : "Download the Smart select weights first — the button is in this panel", true); return; }
     const x = clamp(Math.round(point.x), 0, layer.naturalWidth - 1), y = clamp(Math.round(point.y), 0, layer.naturalHeight - 1);
@@ -2807,6 +2808,22 @@
     $("dl-" + key + "-pct").textContent = dl.total ? pct + "%" : "";
   }
 
+  // Until the first status reply lands, whether weights are on disk is
+  // unknown -- and unknown must not read as "downloaded". Callers that act on
+  // it await this first.
+  // `passive` is the panel render asking: it retries an unreachable worker at
+  // most every 30 s instead of on every re-render.
+  let weightsPending = null, weightsTriedAt = 0;
+  function ensureWeights(passive) {
+    if (state.weights) return Promise.resolve(state.weights);
+    if (!weightsPending) {
+      if (passive && Date.now() - weightsTriedAt < 30000) return Promise.resolve(null);
+      weightsTriedAt = Date.now();
+      weightsPending = refreshWeights().finally(() => { weightsPending = null; renderProps(); });
+    }
+    return weightsPending;
+  }
+
   let weightsPoll = null;
   async function refreshWeights() {
     const before = state.weights;
@@ -2923,8 +2940,16 @@
       const hint = state.removeHint.trim().replace(/\.+$/, "");
       const prompt = mode === "insert" ? aiInsertPrompt(state.prompt.trim()) : AI_REMOVE_PROMPT + (hint ? AI_REMOVE_HINT + hint + "." : "");
       // FLUX and the upscaler are both multi-GB: never keep both resident.
+      // An unreachable worker holds no weights, so a failed call is safe to pass.
       if (state.weights && state.weights.upscaler && state.weights.upscaler.loaded) setAiStage("Unloading the upscaler", 0.03);
-      const upscaler = await callWorker({ action: "unload_upscaler" }).catch(() => null);
+      let upscaler = await callWorker({ action: "unload_upscaler" }).catch(() => null);
+      const busyUntil = Date.now() + 180000;
+      while (upscaler && upscaler.freed === false) {
+        if (abort.signal.aborted) throw Object.assign(new Error("Cancelled"), { type: "cancelled" });
+        if (Date.now() > busyUntil) throw new Error("The upscaler is still busy — try again once it finishes");
+        setAiStage("Waiting for the upscaler to finish", 0.03);
+        upscaler = await callWorker({ action: "unload_upscaler" }).catch(() => null);
+      }
       if (upscaler && state.weights) state.weights.upscaler = upscaler;
       setAiStage("Starting model", 0.05);
       const result = await fused.ai.image({
@@ -2984,6 +3009,7 @@
     if (state.upscaling) return;
     if (state.generating) { toast("Wait for the AI edit to finish first", true); return; }
     if (!layer) { toast("Select an image layer first", true); return; }
+    if (!state.weights) await ensureWeights();
     if (upscalerMissing()) { toast("Download the upscaler first — the button is in this panel", true); return; }
     const factor = upscaleFactor(layer);
     if (factor <= 1) { toast("This image's short edge is already 2160 px or larger", true); return; }
@@ -4032,6 +4058,8 @@
 
   function upscaleSection(layer) {
     const u = state.upscale;
+    if (!state.weights) ensureWeights(true);
+    const checking = !state.weights && !!weightsPending;
     const up = state.weights && state.weights.upscaler;
     const notice = upscalerMissing()
       ? downloadBox("upscaler", "Download the upscaler first",
@@ -4041,8 +4069,9 @@
     return notice + '<div class="seg">' + [["2x", "2×"], ["3x", "3×"], ["2160", "Short edge 2160"]].map(([id, label]) =>
         '<button data-scale="' + id + '" class="' + (u.scale === id ? "active" : "") + '">' + label + "</button>").join("") + "</div>" +
       '<div class="tool-tip" id="upscaleSize">' + esc(upscaleSizeText(layer)) + "</div>" +
+      (checking ? '<div class="tool-tip">Checking whether the upscaler is downloaded…</div>' : "") +
       slider("upscaleSoftness", "Denoise", u.softness, 0, 50, " %") +
-      '<button class="big-btn" id="upscaleBtn"' + (state.upscaling || state.generating || !layer || upscalerMissing() ? " disabled" : "") + ">" + icon(I.upscale) + (state.upscaling ? "Upscaling…" : "Upscale") + "</button>" +
+      '<button class="big-btn" id="upscaleBtn"' + (state.upscaling || state.generating || !layer || checking || upscalerMissing() ? " disabled" : "") + ">" + icon(I.upscale) + (state.upscaling ? "Upscaling…" : "Upscale") + "</button>" +
       '<div class="progress" id="upProgress"><div class="track"><div class="fill" id="upFill"></div></div><div class="label"><span id="upLabel"></span><span id="upPct"></span></div></div>' +
       '<div class="fineprint">SeedVR2 3B · runs on this Mac</div>';
   }

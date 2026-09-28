@@ -130,29 +130,31 @@ def _free_mlx_memory() -> None:
         pass
 
 
-def unload_upscaler(timeout: float = 30.0) -> dict:
+def unload_upscaler(timeout: float = 45.0) -> dict:
     """Drop the upscaler so the page's FLUX edit has the memory to itself.
 
-    Runs on the MLX thread that owns the weights, after any queued render, and
-    waits for it so the page only starts FLUX once the memory is back.
+    Always queued on the MLX thread, even when nothing is resident yet: a
+    cancelled upscale may still be loading weights there, and only a task
+    queued behind it sees the model it ends up holding. `freed` is False when
+    that thread is still busy after `timeout`; the page asks again rather than
+    starting FLUX next to a resident SeedVR2.
     """
-    if _upscaler is None:
-        return upscaler_status()
     done = threading.Event()
 
     def task() -> None:
         global _upscaler
         try:
-            with _model_lock:
-                _upscaler = None
-                _upscaler_state.update(status="idle", stage="Unloaded to make room for AI edit", loaded_at=0.0)
-            _free_mlx_memory()
+            if _upscaler is not None:
+                with _model_lock:
+                    _upscaler = None
+                    _upscaler_state.update(status="idle", stage="Unloaded to make room for AI edit", loaded_at=0.0)
+                _free_mlx_memory()
         finally:
             done.set()
 
     _submit(task)
-    done.wait(timeout)
-    return upscaler_status()
+    freed = done.wait(timeout)
+    return {**upscaler_status(), "freed": freed}
 
 
 # --- Weights on disk ---------------------------------------------------------
@@ -255,7 +257,8 @@ def _run_download(which: str) -> None:
                 _report(job_id, {"state": "running", "unit": "bytes", "done": done,
                                  "total": total or None, "detail": repo}, title)
 
-        threading.Thread(target=progress, daemon=True).start()
+        ticker = threading.Thread(target=progress, daemon=True)
+        ticker.start()
         try:
             if which == "upscaler":
                 snapshot_download(repo_id=repo, allow_patterns=patterns)
@@ -263,6 +266,8 @@ def _run_download(which: str) -> None:
                 hf_hub_download(repo, SAM_FILE)
         finally:
             finished.set()
+            # A late "running" tick must not land after the terminal report.
+            ticker.join(timeout=5)
         update(state="done", done=total)
         _report(job_id, {"state": "done", "unit": "bytes", "done": total, "total": total or None,
                          "detail": "Downloaded"}, title)
@@ -404,7 +409,8 @@ def _sam_features_for(source_path: str):
         _sam_features.move_to_end(key)
         return entry
     with Image.open(source_path) as handle:
-        image = handle.convert("RGB")
+        # A cut-out's transparent pixels would otherwise read as black.
+        image, _ = imaging.split_alpha(handle)
     width, height = image.size
     encoded = _sam.encode_image(mx.array(preprocess_image(image, SAM_IMAGE_SIZE)))
     mx.eval(encoded["vision_features"], *encoded["high_res_features"])
