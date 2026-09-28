@@ -2350,7 +2350,13 @@
     const layer = maskOwner;
     if (!layer || state.smart.busy) return;
     const caps = state.capabilities || {};
-    if (!state.weights && caps.sam !== false) await ensureWeights();
+    if (!state.weights && caps.sam !== false) {
+      // Claim the slot before awaiting, so a second click can't start a run too.
+      state.smart.busy = true;
+      setMaskNote("Checking Smart select…");
+      try { await ensureWeights(); } finally { state.smart.busy = false; state.smart.note = ""; updateMaskReadout(); }
+      if (maskOwner !== layer) return;
+    }
     const noSam = caps.sam === false || !state.weights || samMissing();
     const useVision = noSam && !!caps.vision;
     if (noSam && !useVision) { toast(caps.sam === false ? "Smart select needs mlx-sam or macOS 14 Vision" : "Download the Smart select weights first — the button is in this panel", true); return; }
@@ -2942,13 +2948,16 @@
       // FLUX and the upscaler are both multi-GB: never keep both resident.
       // An unreachable worker holds no weights, so a failed call is safe to pass.
       if (state.weights && state.weights.upscaler && state.weights.upscaler.loaded) setAiStage("Unloading the upscaler", 0.03);
+      // Once the worker has said "still busy", only an explicit freed: true
+      // lets FLUX start; a failed retry proves nothing and is retried too.
       let upscaler = await callWorker({ action: "unload_upscaler" }).catch(() => null);
       const busyUntil = Date.now() + 180000;
       while (upscaler && upscaler.freed === false) {
         if (abort.signal.aborted) throw Object.assign(new Error("Cancelled"), { type: "cancelled" });
         if (Date.now() > busyUntil) throw new Error("The upscaler is still busy — try again once it finishes");
         setAiStage("Waiting for the upscaler to finish", 0.03);
-        upscaler = await callWorker({ action: "unload_upscaler" }).catch(() => null);
+        const reply = await callWorker({ action: "unload_upscaler" }).catch(() => null);
+        if (reply) upscaler = reply; else await sleep(2000);
       }
       if (upscaler && state.weights) state.weights.upscaler = upscaler;
       setAiStage("Starting model", 0.05);
@@ -3009,8 +3018,13 @@
     if (state.upscaling) return;
     if (state.generating) { toast("Wait for the AI edit to finish first", true); return; }
     if (!layer) { toast("Select an image layer first", true); return; }
-    if (!state.weights) await ensureWeights();
-    if (upscalerMissing()) { toast("Download the upscaler first — the button is in this panel", true); return; }
+    if (!state.weights) {
+      // Hold the upscaling flag across the await so a second click can't start a run too.
+      state.upscaling = true;
+      try { await ensureWeights(); } finally { state.upscaling = false; }
+      if (activeImage() !== layer) { renderProps(); return; }
+    }
+    if (upscalerMissing()) { renderProps(); toast("Download the upscaler first — the button is in this panel", true); return; }
     const factor = upscaleFactor(layer);
     if (factor <= 1) { toast("This image's short edge is already 2160 px or larger", true); return; }
     const w = Math.round(layer.naturalWidth * factor), h = Math.round(layer.naturalHeight * factor);
