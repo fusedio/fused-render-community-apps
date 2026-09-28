@@ -138,6 +138,9 @@ def _fill_doc(doc):
         doc[party]["custom"] = [_fill(KV, e) for e in doc[party]["custom"]]
     doc["payment"] = [_fill(KV, e) for e in doc["payment"]]
     doc["attachments"] = [_fill_attachment(a) for a in doc["attachments"]]
+    if doc["paid"] and not doc["sent"]:
+        doc["sent"] = True
+        doc["sent_date"] = doc["sent_date"] or doc["paid_date"]
     return doc
 
 

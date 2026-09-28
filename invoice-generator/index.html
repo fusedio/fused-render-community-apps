@@ -359,13 +359,6 @@ const CURRENCIES = [
   ["BRL", "R$"], ["MXN", "MX$"], ["KRW", "₩"], ["THB", "฿"], ["IDR", "Rp"], ["PLN", "zł"],
 ];
 
-const state = {
-  clients: [], selClient: "",
-  client: "", routeId: "", doc: null, attachDir: "",
-  pending: null,          // {client, doc, attach_dir} composed but unsaved
-  filter: loadFilter(),   // library filter key, remembered across sessions
-};
-
 // Library filters. Paid implies sent, so the three unpaid/paid buckets never overlap.
 const FILTERS = [
   { key: "outstanding", label: "Outstanding", test: (i) => !i.paid, empty: "Nothing outstanding — every invoice is paid." },
@@ -374,6 +367,14 @@ const FILTERS = [
   { key: "paid", label: "Paid", test: (i) => i.paid, empty: "No paid invoices yet." },
   { key: "all", label: "All", test: () => true, empty: "" },
 ];
+
+const state = {
+  clients: [], selClient: "",
+  client: "", routeId: "", doc: null, attachDir: "",
+  pending: null,          // {client, doc, attach_dir} composed but unsaved
+  filter: loadFilter(),   // library filter key, remembered across sessions
+};
+
 function loadFilter() {
   try { const f = localStorage.getItem("invoices.filter"); if (FILTERS.some((x) => x.key === f)) return f; }
   catch {}
