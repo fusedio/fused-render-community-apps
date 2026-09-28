@@ -3,8 +3,8 @@ name = "photo-editor"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
-    # FLUX.2 Klein 4B on Apple MLX. PyPI name is "mlx-gen"; it imports as
-    # "mflux". Apple Silicon only -- it is the whole point of this app.
+    # SeedVR2 3B upscaler on Apple MLX. PyPI name is "mlx-gen"; it imports as
+    # "mflux". Apple Silicon only. (FLUX edits go through fused.ai instead.)
     "mlx-gen>=0.37",
     "mlx-sam",
     "numpy>=1.26",

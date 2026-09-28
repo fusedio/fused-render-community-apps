@@ -9,6 +9,10 @@ resolves from `sys.modules` instead, so the weights below survive edits to
 Generative remove/insert does not live here: the page calls fused-render's
 own `fused.ai.image` edit runner, so the FLUX weights are shared with every
 other app instead of being loaded a second time in this process.
+
+Nothing here downloads weights on its own. The page shows what is missing and
+the user starts `start_download` explicitly; until then SAM falls back to the
+page's Vision path and the upscaler refuses to start.
 """
 
 from __future__ import annotations
@@ -38,6 +42,11 @@ SAM_FILE = "sam2.1_hiera_base_plus_image_segmenter.safetensors"
 SAM_MODEL_ID = "facebook/sam2.1-hiera-base-plus"
 SAM_IMAGE_SIZE = 1024
 
+#: Shown on the Download button before the first byte arrives; the real total
+#: comes from the Hub once the download starts.
+UPSCALER_SIZE_GB = 4.7
+SAM_SIZE_GB = 0.35
+
 MAX_UPSCALE_EDGE = 8192
 MAX_UPSCALE_PIXELS = 48_000_000
 UPSCALE_SCALES = {"2x": 2, "3x": 3, "2160": 2160}
@@ -53,6 +62,9 @@ _sam_features: "OrderedDict[tuple, tuple]" = OrderedDict()
 _sam_queue: "queue.Queue" = queue.Queue()
 _sam_thread: "threading.Thread | None" = None
 _sam_thread_lock = threading.Lock()
+
+_downloads_lock = threading.Lock()
+_downloads: dict[str, dict] = {}
 
 _jobs_lock = threading.Lock()
 _jobs: dict[str, dict] = {}
@@ -118,9 +130,152 @@ def _free_mlx_memory() -> None:
         pass
 
 
+def unload_upscaler(timeout: float = 30.0) -> dict:
+    """Drop the upscaler so the page's FLUX edit has the memory to itself.
+
+    Runs on the MLX thread that owns the weights, after any queued render, and
+    waits for it so the page only starts FLUX once the memory is back.
+    """
+    if _upscaler is None:
+        return upscaler_status()
+    done = threading.Event()
+
+    def task() -> None:
+        global _upscaler
+        try:
+            with _model_lock:
+                _upscaler = None
+                _upscaler_state.update(status="idle", stage="Unloaded to make room for AI edit", loaded_at=0.0)
+            _free_mlx_memory()
+        finally:
+            done.set()
+
+    _submit(task)
+    done.wait(timeout)
+    return upscaler_status()
+
+
+# --- Weights on disk ---------------------------------------------------------
+
+def _upscaler_patterns() -> list[str]:
+    from mflux.models.common.config import ModelConfig
+    from mflux.models.seedvr2.weights.seedvr2_weight_definition import SeedVR2WeightDefinition
+
+    return SeedVR2WeightDefinition.get_download_patterns_for_source(ModelConfig.seedvr2_3b(), UPSCALER_REPO)
+
+
+def upscaler_downloaded() -> bool:
+    """True when mflux would load the upscaler without touching the network."""
+    try:
+        from mflux.models.common.resolution.path_resolution import PathResolution
+
+        patterns = _upscaler_patterns()
+        return any(PathResolution._check(check, UPSCALER_REPO, patterns)
+                   for check in ("exists_locally", "has_local_prepared_hf", "is_hf_cached"))
+    except Exception:
+        return False
+
+
+def sam_downloaded() -> bool:
+    try:
+        from huggingface_hub import try_to_load_from_cache
+
+        return isinstance(try_to_load_from_cache(SAM_REPO, SAM_FILE), str)
+    except Exception:
+        return False
+
+
+def _cache_bytes(repo: str) -> int:
+    """Bytes of `repo` in the Hub cache so far, partial files included."""
+    from huggingface_hub import constants
+
+    blobs = os.path.join(constants.HF_HUB_CACHE, "models--" + repo.replace("/", "--"), "blobs")
+    total = 0
+    try:
+        with os.scandir(blobs) as entries:
+            for entry in entries:
+                try:
+                    total += entry.stat().st_size
+                except OSError:
+                    pass
+    except OSError:
+        pass
+    return total
+
+
+def download_status(which: str) -> dict:
+    with _downloads_lock:
+        return dict(_downloads.get(which) or {"state": "idle"})
+
+
+def start_download(which: str) -> dict:
+    """Fetch the upscaler or SAM weights -- only ever on the user's click."""
+    if which not in ("upscaler", "sam"):
+        raise ValueError(f"Unknown download: {which!r}")
+    with _downloads_lock:
+        current = _downloads.get(which)
+        if current and current["state"] == "running":
+            return dict(current)
+        _downloads[which] = {"state": "running", "done": 0, "total": 0, "error": "",
+                             "job_id": f"photo-editor-download-{which}", "started_at": time.time()}
+    threading.Thread(target=_run_download, args=(which,), name=f"download-{which}", daemon=True).start()
+    return download_status(which)
+
+
+def _run_download(which: str) -> None:
+    import fnmatch
+
+    from huggingface_hub import HfApi, hf_hub_download, snapshot_download
+
+    job_id = f"photo-editor-download-{which}"
+    title = "Upscaler weights" if which == "upscaler" else "Smart select weights"
+    repo = UPSCALER_REPO if which == "upscaler" else SAM_REPO
+
+    def update(**fields) -> None:
+        with _downloads_lock:
+            _downloads[which].update(fields)
+
+    try:
+        patterns = _upscaler_patterns() if which == "upscaler" else [SAM_FILE]
+        try:
+            info = HfApi().model_info(repo, files_metadata=True)
+            total = sum(f.size or 0 for f in info.siblings
+                        if any(fnmatch.fnmatch(f.rfilename, pattern) for pattern in patterns))
+        except Exception:
+            total = 0
+        baseline = _cache_bytes(repo)
+        update(total=total)
+        finished = threading.Event()
+
+        def progress() -> None:
+            while not finished.wait(1.0):
+                done = max(0, _cache_bytes(repo) - baseline)
+                done = min(done, total) if total else done
+                update(done=done)
+                _report(job_id, {"state": "running", "unit": "bytes", "done": done,
+                                 "total": total or None, "detail": repo}, title)
+
+        threading.Thread(target=progress, daemon=True).start()
+        try:
+            if which == "upscaler":
+                snapshot_download(repo_id=repo, allow_patterns=patterns)
+            else:
+                hf_hub_download(repo, SAM_FILE)
+        finally:
+            finished.set()
+        update(state="done", done=total)
+        _report(job_id, {"state": "done", "unit": "bytes", "done": total, "total": total or None,
+                         "detail": "Downloaded"}, title)
+    except BaseException as error:
+        message = f"{type(error).__name__}: {error}"
+        update(state="error", error=message)
+        _report(job_id, {"state": "error", "detail": message}, title)
+        print(f"[photo_editor] {which} download failed\n" + traceback.format_exc())
+
+
 # --- Job-row reporting -----------------------------------------------------
 
-def _report(job_id: str, payload: dict, title: str = "AI Edit") -> dict:
+def _report(job_id: str, payload: dict, title: str) -> dict:
     """Best-effort progress POST to the shell's download manager.
 
     The worker outlives the page, so it -- not the page -- is the only thing
@@ -149,6 +304,9 @@ def upscaler_status() -> dict:
         state = dict(_upscaler_state)
     state["loaded"] = _upscaler is not None
     state["model"] = UPSCALER_REPO
+    state["downloaded"] = state["loaded"] or upscaler_downloaded()
+    state["size_gb"] = UPSCALER_SIZE_GB
+    state["download"] = download_status("upscaler")
     if state["status"] == "loading" and state["started_at"]:
         state["elapsed"] = round(time.time() - state["started_at"], 1)
     return state
@@ -184,6 +342,9 @@ def sam_status() -> dict:
         state = dict(_sam_state)
     state["loaded"] = _sam is not None
     state["model"] = SAM_REPO
+    state["downloaded"] = state["loaded"] or sam_downloaded()
+    state["size_gb"] = SAM_SIZE_GB
+    state["download"] = download_status("sam")
     if state["status"] == "loading" and state["started_at"]:
         state["elapsed"] = round(time.time() - state["started_at"], 1)
     return state
@@ -192,12 +353,7 @@ def sam_status() -> dict:
 def _sam_checkpoint() -> str:
     from huggingface_hub import hf_hub_download
 
-    try:
-        return hf_hub_download(SAM_REPO, SAM_FILE, local_files_only=True)
-    except Exception:
-        with _sam_lock:
-            _sam_state["stage"] = "Downloading Smart select weights"
-        return hf_hub_download(SAM_REPO, SAM_FILE)
+    return hf_hub_download(SAM_REPO, SAM_FILE, local_files_only=True)
 
 
 def _load_sam_here() -> None:
@@ -225,6 +381,8 @@ def _load_sam_here() -> None:
 
 
 def ensure_sam() -> dict:
+    if not sam_downloaded():
+        return sam_status()
     with _sam_lock:
         idle = _sam is None and _sam_state["status"] not in ("loading", "queued")
         if idle:
@@ -291,7 +449,7 @@ def _smart_mask_here(session_id: str, source_path: str, points, labels) -> dict:
 def smart_mask(session_id: str, source: str = "", points=None, labels=None) -> dict:
     status = ensure_sam()
     if status["status"] != "ready":
-        return {"ready": False, "status": status}
+        return {"ready": False, "downloaded": status["downloaded"], "status": status}
     source_path = imaging.resolve_source(session_id, source)
     if not os.path.exists(source_path):
         raise FileNotFoundError(f"No such image: {source_path}")
@@ -468,6 +626,8 @@ def start_upscale(session_id: str, source: str = "", scale: str = "2x", softness
                   job_id: str = "") -> dict:
     from PIL import Image
 
+    if _upscaler is None and not upscaler_downloaded():
+        raise RuntimeError("The upscaler weights are not downloaded yet -- use Download in the Upscale panel")
     folder = imaging.session_dir(session_id)
     source_path = imaging.resolve_source(session_id, source)
     if not os.path.exists(source_path):

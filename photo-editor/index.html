@@ -248,7 +248,6 @@
   #stage { position: absolute; inset: 0; }
   #stage.cursor-crosshair { cursor: crosshair; }
   #stage.cursor-grab { cursor: grab; }
-  #stage.cursor-grabbing { cursor: grabbing; }
   #stage.cursor-text { cursor: text; }
   #stage.cursor-brush { cursor: cell; }
 
@@ -506,7 +505,6 @@
   .modal-foot { display: flex; align-items: center; gap: 8px; padding: 10px 18px; border-top: 1px solid var(--line); background: var(--surface-2); }
   .modal-foot .spacer { flex: 1; }
   .modal .mini { margin-bottom: 0; }
-  .modal .stack { display: flex; flex-direction: column; gap: 10px; }
   .modal .seg button { flex-direction: row; justify-content: center; padding: 5px 8px; font-size: 11.5px; }
 
   .nd-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 160px 1fr 300px; }
@@ -546,6 +544,10 @@
   .warnings { display: flex; flex-direction: column; gap: 5px; }
   .warnings .note { margin: 0; }
   .note.info { border-color: var(--accent); color: var(--ink); }
+  .note.download { border-color: var(--accent); color: var(--ink); margin: 0 0 10px; }
+  .note.download .progress { margin-top: 8px; }
+  .note.download .dl-error { margin-top: 6px; color: var(--danger); word-break: break-word; }
+  .note.download .dl-btn { margin-top: 8px; width: 100%; justify-content: center; }
   @media (max-width: 900px) {
     .nd-body, .ex-body { grid-template-columns: 1fr; overflow-y: auto; }
     .nd-cats { flex-direction: row; flex-wrap: wrap; border-right: 0; border-bottom: 1px solid var(--line); }
@@ -858,7 +860,8 @@
     aiModels: [],
     aiUnavailable: "",
     aiAbort: null,
-    aiUsed: false,
+    aiDownload: null,
+    weights: null,
     bgBusy: false,
     generating: false,
     smart: { points: [], labels: [], busy: false, note: "" },
@@ -2347,8 +2350,9 @@
     const layer = maskOwner;
     if (!layer || state.smart.busy) return;
     const caps = state.capabilities || {};
-    const useVision = caps.sam === false && !!caps.vision;
-    if (caps.sam === false && !useVision) { toast("Smart select needs mlx-sam or macOS 14 Vision", true); return; }
+    const noSam = caps.sam === false || samMissing();
+    const useVision = noSam && !!caps.vision;
+    if (noSam && !useVision) { toast(caps.sam === false ? "Smart select needs mlx-sam or macOS 14 Vision" : "Download the Smart select weights first — the button is in this panel", true); return; }
     const x = clamp(Math.round(point.x), 0, layer.naturalWidth - 1), y = clamp(Math.round(point.y), 0, layer.naturalHeight - 1);
     const add = !useVision && !!(evt && evt.shiftKey), subtract = !useVision && !!(evt && evt.altKey);
     if (!add && !subtract) { state.smart.points = []; state.smart.labels = []; }
@@ -2364,6 +2368,7 @@
       } else {
         const request = { action: "smart_mask", session_id: layer.sessionId, source: layer.workingPath, points: JSON.stringify(state.smart.points), labels: JSON.stringify(state.smart.labels) };
         result = await callWorker(request);
+        if (!result.ready && result.downloaded === false) { refreshWeights(); throw new Error("Smart select weights are not downloaded yet"); }
         if (!result.ready) {
           setMaskNote("Loading Smart select (first use takes ~30 s)…");
           const deadline = Date.now() + 120000;
@@ -2753,16 +2758,119 @@
   async function warmModel() {
     if (warmed) return;
     warmed = true;
-    try { await callWorker({ action: "warmup" }); } catch (error) { warmed = false; console.warn("[photo_editor] warmup failed", error); }
+    try {
+      state.weights = await callWorker({ action: "warmup" });
+      renderProps();
+      // A download started before a reload is still running in the worker.
+      if (["upscaler", "sam"].some((key) => (workerDownload(key) || {}).state === "running")) refreshWeights();
+    } catch (error) { warmed = false; console.warn("[photo_editor] warmup failed", error); }
+  }
+
+  // ---------------------------------------------------------------- weight downloads
+  //
+  // Nothing downloads without a click. The edit model comes through fused.ai
+  // (its catalog says what is on disk); the upscaler and SAM weights are the
+  // worker's, which reports them in `state.weights`.
+
+  const samMissing = () => !!(state.weights && state.weights.sam && state.weights.sam.downloaded === false);
+  const upscalerMissing = () => !!(state.weights && state.weights.upscaler && state.weights.upscaler.downloaded === false);
+  const currentAiModel = () => state.aiModels.find((m) => m.id === state.aiModel) || null;
+  const workerDownload = (key) => (state.weights && state.weights[key] && state.weights[key].download) || null;
+  const fmtGb = (gb) => (gb >= 1 ? gb.toFixed(1) + " GB" : Math.round(gb * 1000) + " MB");
+
+  function downloadText(dl) {
+    if (!dl || !dl.total) return "Starting download…";
+    if (dl.total > 1e5) return fmtGb(dl.done / 1e9) + " of " + fmtGb(dl.total / 1e9);
+    return dl.done + " / " + dl.total;
+  }
+
+  function downloadBox(key, title, body, sizeGb, dl) {
+    const running = !!dl && dl.state === "running";
+    const pct = running && dl.total ? Math.round(100 * clamp(dl.done / dl.total, 0, 1)) : 0;
+    return '<div class="note download"><b>' + title + "</b><br />" + body +
+      (dl && dl.state === "error" ? '<div class="dl-error">Download failed: ' + esc(dl.error || "unknown error") + "</div>" : "") +
+      (running
+        ? '<div class="progress show"><div class="track"><div class="fill" id="dl-' + key + '-fill" style="width:' + pct + '%"></div></div>' +
+          '<div class="label"><span id="dl-' + key + '-label">' + esc(downloadText(dl)) + '</span><span id="dl-' + key + '-pct">' + (dl.total ? pct + "%" : "") + "</span></div></div>"
+        : '<button class="ghost-btn dl-btn" data-download="' + key + '">Download' + (sizeGb ? " (" + fmtGb(sizeGb) + ")" : "") + "</button>") +
+      "</div>";
+  }
+
+  // Progress ticks update the bar in place: a full renderProps would wipe
+  // whatever the user is typing into the prompt.
+  function updateDownloadBar(key, dl) {
+    const fill = $("dl-" + key + "-fill");
+    if (!fill || !dl) return;
+    const pct = dl.total ? Math.round(100 * clamp(dl.done / dl.total, 0, 1)) : 0;
+    fill.style.width = pct + "%";
+    $("dl-" + key + "-label").textContent = downloadText(dl);
+    $("dl-" + key + "-pct").textContent = dl.total ? pct + "%" : "";
+  }
+
+  let weightsPoll = null;
+  async function refreshWeights() {
+    const before = state.weights;
+    try { state.weights = await callWorker({ action: "status" }); } catch (error) { console.warn("[photo_editor] weight status failed", error); return; }
+    const was = (key) => before && before[key] && before[key].download && before[key].download.state;
+    const now = (key) => workerDownload(key) && workerDownload(key).state;
+    let changed = false;
+    for (const key of ["upscaler", "sam"]) {
+      if (was(key) === now(key)) { updateDownloadBar(key, workerDownload(key)); continue; }
+      changed = true;
+      if (was(key) === "running" && now(key) === "done") {
+        toast((key === "sam" ? "Smart select" : "Upscaler") + " weights downloaded");
+        if (key === "sam") { warmed = false; warmModel(); }
+      }
+    }
+    if (changed) renderProps();
+    if (["upscaler", "sam"].some((key) => now(key) === "running") && !weightsPoll) {
+      weightsPoll = setTimeout(() => { weightsPoll = null; refreshWeights(); }, 1500);
+    }
+  }
+
+  async function downloadWeights(key) {
+    try { state.weights = await callWorker({ action: "download", which: key }); }
+    catch (error) { toast(error.message || String(error), true); return; }
+    renderProps();
+    refreshWeights();
+  }
+
+  async function downloadAiModel() {
+    const model = currentAiModel();
+    if (!model || (state.aiDownload && state.aiDownload.state === "running")) return;
+    state.aiDownload = { model: model.id, state: "running", done: 0, total: 0, error: "" };
+    renderProps();
+    try {
+      const { jobId } = await fused.ai.models.download(model.id, { capability: "text-to-image" });
+      const final = await fused.watchJob(jobId).watch((job) => {
+        Object.assign(state.aiDownload, { done: job.done || 0, total: job.total || 0 });
+        updateDownloadBar("flux", state.aiDownload);
+      }, 1000);
+      if (final && final.state !== "done") throw new Error(final.detail || final.error || "Download " + final.state);
+      state.aiDownload = null;
+      await loadAiModels();
+      const now = state.aiModels.find((m) => m.id === model.id);
+      if (now && now.downloaded) toast((model.label || model.id) + " downloaded");
+    } catch (error) {
+      state.aiDownload = { model: model.id, state: "error", error: error.message || String(error) };
+      renderProps();
+    }
+  }
+
+  function startDownload(key) {
+    if (key === "flux") downloadAiModel(); else downloadWeights(key);
   }
 
   // ---------------------------------------------------------------- AI edit
 
+  // Remove sends the photo with the selection already filled from its
+  // surroundings (imaging.prepare_ai_edit), so the model only has to turn that
+  // soft patch back into real background.
   const AI_REMOVE_PROMPT =
-    "Fill the solid magenta area with the background that would naturally be behind it, continuing the " +
-    "surrounding surfaces, textures and lighting seamlessly. No magenta may remain and nothing new may " +
-    "appear there. Keep everything else exactly the same.";
-  const AI_REMOVE_HINT = " The filled area shows: ";
+    "Part of this photo is a soft, blurred patch where an object was erased. Repair that patch so it " +
+    "matches the surrounding background, continuing the nearby surfaces, textures, edges and lighting " +
+    "naturally, with no blur or smudge left. Do not add any new object. Keep everything else exactly the same.";
+  const AI_REMOVE_HINT = " The repaired area shows: ";
   const aiInsertPrompt = (what) =>
     "Replace the solid magenta area with " + what + ". No magenta may remain. " +
     "Match the photo's lighting, perspective and style. Keep everything else exactly the same.";
@@ -2787,7 +2895,7 @@
 
   function aiModelLabel(m) {
     const size = m.size_gb ? " · " + m.size_gb + " GB" : "";
-    return (m.label || m.id) + size + (m.downloaded ? "" : " · downloads on first use");
+    return (m.label || m.id) + size + (m.downloaded ? "" : " · not downloaded");
   }
 
   async function runAiEdit() {
@@ -2798,10 +2906,12 @@
     if (maskOwner !== layer || maskIsEmpty()) { toast("Paint over the part you want changed first", true); return; }
     if (state.aiMode === "insert" && !state.prompt.trim()) { toast("Describe what to insert", true); return; }
     if (!state.aiModel) { toast(state.aiUnavailable || "No local edit model is available", true); return; }
+    const model = currentAiModel();
+    if (model && !model.downloaded) { toast("Download the edit model first — the button is in this panel", true); return; }
 
     const mode = state.aiMode;
     const abort = new AbortController();
-    state.generating = true; state.aiAbort = abort; state.aiUsed = true;
+    state.generating = true; state.aiAbort = abort;
     renderProps();
     const started = performance.now();
     let finalStage = null;
@@ -2812,6 +2922,10 @@
       const prep = await py({ action: "ai_prepare", session_id: layer.sessionId, source: layer.workingPath, mode });
       const hint = state.removeHint.trim().replace(/\.+$/, "");
       const prompt = mode === "insert" ? aiInsertPrompt(state.prompt.trim()) : AI_REMOVE_PROMPT + (hint ? AI_REMOVE_HINT + hint + "." : "");
+      // FLUX and the upscaler are both multi-GB: never keep both resident.
+      if (state.weights && state.weights.upscaler && state.weights.upscaler.loaded) setAiStage("Unloading the upscaler", 0.03);
+      const upscaler = await callWorker({ action: "unload_upscaler" }).catch(() => null);
+      if (upscaler && state.weights) state.weights.upscaler = upscaler;
       setAiStage("Starting model", 0.05);
       const result = await fused.ai.image({
         prompt, model: state.aiModel, image: prep.marked_rel, steps: state.steps, abortSignal: abort.signal,
@@ -2821,12 +2935,14 @@
         },
       });
       setAiStage("Blending into the photo", 0.97);
-      const composite = await py({ action: "ai_composite", session_id: layer.sessionId, source: layer.workingPath, generated: result.images[0].path, mask: prep.mask, feather: String(state.feather) });
+      const composite = await py({ action: "ai_composite", session_id: layer.sessionId, source: layer.workingPath, generated: result.images[0].path, mask: prep.mask, feather: String(state.feather), mode });
       await swapLayerImage(layer, composite.path);
       clearMask();
       commitHistory("generative " + mode);
       finalStage = ["Done in " + Math.round((performance.now() - started) / 1000) + "s", 1];
-      toast("Generative edit applied");
+      toast(composite.unfilled > 0.2
+        ? "The model left part of the area unfilled; that part was blended with its surroundings. Try more Quality steps or a clearer description."
+        : "Generative edit applied");
     } catch (error) {
       if (error && error.type === "cancelled") { finalStage = ["Cancelled", 0]; toast("Generation cancelled"); }
       else { finalStage = ["Failed", 0]; toast(error && error.message ? error.message : String(error), true); }
@@ -2868,6 +2984,7 @@
     if (state.upscaling) return;
     if (state.generating) { toast("Wait for the AI edit to finish first", true); return; }
     if (!layer) { toast("Select an image layer first", true); return; }
+    if (upscalerMissing()) { toast("Download the upscaler first — the button is in this panel", true); return; }
     const factor = upscaleFactor(layer);
     if (factor <= 1) { toast("This image's short edge is already 2160 px or larger", true); return; }
     const w = Math.round(layer.naturalWidth * factor), h = Math.round(layer.naturalHeight * factor);
@@ -2881,10 +2998,8 @@
     try {
       setUpStage("Starting upscaler", 0.02);
       row.update({ done: 2, total: 100, detail: "Starting upscaler" });
-      if (state.aiUsed) {
-        state.aiUsed = false;
-        await fused.ai.models.unload({ capability: "text-to-image" }).catch(() => {});
-      }
+      // FLUX and the upscaler are both multi-GB: never keep both resident.
+      await fused.ai.models.unload({ capability: "text-to-image" }).catch(() => {});
       await callWorker({ action: "upscale_start", session_id: layer.sessionId, source: layer.workingPath, scale: state.upscale.scale, softness: String(state.upscale.softness / 100), job_id: jobId });
       let result = null;
       while (true) {
@@ -2897,6 +3012,7 @@
         const fraction = Number(status.progress || 0);
         setUpStage(status.stage || status.state, fraction);
         row.update({ done: Math.round(fraction * 100), total: 100, detail: status.stage || "" });
+        if (status.upscaler && state.weights) state.weights.upscaler = status.upscaler;
         if (status.state === "done") { result = status; break; }
         if (status.state === "error") throw new Error(status.error || "Upscale failed");
         if (status.state === "cancelled") { row.cancelled(); return; }
@@ -3879,6 +3995,11 @@
       '<div class="ai-row"><select class="compact" id="maskToolSelect">' + MASK_TOOLS.map(([id, label]) => '<option value="' + id + '"' + (tool === id ? " selected" : "") + ">" + label + "</option>").join("") + "</select>" +
       '<button class="ghost-btn" id="clearMask">Clear</button></div>' +
       '<div class="tool-tip">' + MASK_TIPS[tool] + "</div>" +
+      (tool === "smart" && samMissing() && state.capabilities && state.capabilities.sam
+        ? downloadBox("sam", "Smart select is using macOS Vision",
+            "One click picks one whole subject. For point-by-point selection (Shift-click adds, Option-click subtracts), download SAM 2.1 once from Hugging Face.",
+            state.weights.sam.size_gb, workerDownload("sam"))
+        : "") +
       (tool === "brush" || tool === "eraser" ? slider("brushSize", "Brush size", state.brushSize, 4, 400, " px") : "") +
       '<div class="mask-state" id="maskState"></div>' +
       (insert
@@ -3888,19 +4009,40 @@
         ? '<div class="field"><label>Model</label><select class="compact" id="aiModelSelect"' + (state.generating ? " disabled" : "") + ">" +
           state.aiModels.map((m) => '<option value="' + esc(m.id) + '"' + (m.id === state.aiModel ? " selected" : "") + ">" + esc(aiModelLabel(m)) + "</option>").join("") + "</select></div>"
         : "") +
-      '<button class="big-btn" id="generateBtn"' + (state.upscaling && !state.generating ? " disabled" : "") + ">" + icon(I.sparkle) + (state.generating ? "Cancel" : insert ? "Generate" : "Remove") + "</button>" +
+      aiDownloadNotice() +
+      '<button class="big-btn" id="generateBtn"' + ((state.upscaling || aiNeedsDownload()) && !state.generating ? " disabled" : "") + ">" + icon(I.sparkle) + (state.generating ? "Cancel" : insert ? "Generate" : "Remove") + "</button>" +
       '<div class="progress" id="aiProgress"><div class="track"><div class="fill" id="aiFill"></div></div><div class="label"><span id="aiLabel"></span><span id="aiPct"></span></div></div>' +
       '<div class="fineprint">Runs on this Mac through fused.ai</div></div>' +
       section("aiRefine", "Refine", slider("feather", "Feather", state.feather, 0, 60, " px") + slider("grow", "Expand / contract", state.grow, -40, 40, " px") + slider("steps", "Quality", state.steps, 1, 10, " steps"), false);
   }
 
+  function aiNeedsDownload() {
+    const model = currentAiModel();
+    return !!model && !model.downloaded;
+  }
+
+  function aiDownloadNotice() {
+    if (!aiNeedsDownload()) return "";
+    const model = currentAiModel();
+    const dl = state.aiDownload && state.aiDownload.model === model.id ? state.aiDownload : null;
+    return downloadBox("flux", "Download the edit model first",
+      esc(model.label || model.id) + " isn't on this Mac yet. Remove and Insert run it locally, so it needs a one-time download from Hugging Face. You can also get it from fused-render's AI Models page.",
+      model.size_gb, dl);
+  }
+
   function upscaleSection(layer) {
     const u = state.upscale;
-    return '<div class="seg" id="upscaleScale">' + [["2x", "2×"], ["3x", "3×"], ["2160", "Short edge 2160"]].map(([id, label]) =>
+    const up = state.weights && state.weights.upscaler;
+    const notice = upscalerMissing()
+      ? downloadBox("upscaler", "Download the upscaler first",
+          "SeedVR2 3B isn't on this Mac yet. Upscale runs it locally, so it needs a one-time download from Hugging Face (" + esc(up.model) + ").",
+          up.size_gb, workerDownload("upscaler"))
+      : "";
+    return notice + '<div class="seg">' + [["2x", "2×"], ["3x", "3×"], ["2160", "Short edge 2160"]].map(([id, label]) =>
         '<button data-scale="' + id + '" class="' + (u.scale === id ? "active" : "") + '">' + label + "</button>").join("") + "</div>" +
       '<div class="tool-tip" id="upscaleSize">' + esc(upscaleSizeText(layer)) + "</div>" +
       slider("upscaleSoftness", "Denoise", u.softness, 0, 50, " %") +
-      '<button class="big-btn" id="upscaleBtn"' + (state.upscaling || state.generating || !layer ? " disabled" : "") + ">" + icon(I.upscale) + (state.upscaling ? "Upscaling…" : "Upscale") + "</button>" +
+      '<button class="big-btn" id="upscaleBtn"' + (state.upscaling || state.generating || !layer || upscalerMissing() ? " disabled" : "") + ">" + icon(I.upscale) + (state.upscaling ? "Upscaling…" : "Upscale") + "</button>" +
       '<div class="progress" id="upProgress"><div class="track"><div class="fill" id="upFill"></div></div><div class="label"><span id="upLabel"></span><span id="upPct"></span></div></div>' +
       '<div class="fineprint">SeedVR2 3B · runs on this Mac</div>';
   }
@@ -4091,6 +4233,7 @@
     };
     body.querySelectorAll("[data-scale]").forEach((b) => { b.onclick = () => { state.upscale.scale = b.dataset.scale; renderProps(); }; });
     body.querySelectorAll("[data-action]").forEach((b) => { b.onclick = () => chooseAiAction(b.dataset.action); });
+    body.querySelectorAll("[data-download]").forEach((b) => { b.onclick = () => startDownload(b.dataset.download); });
     const prompt = $("prompt");
     if (prompt) prompt.oninput = () => { state.prompt = prompt.value; };
     const removeHint = $("removeHint");

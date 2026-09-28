@@ -15,13 +15,22 @@ import engine
 
 def main(action: str = "status", session_id: str = "", job_id: str = "",
          source: str = "", points: str = "[]", labels: str = "[]",
-         scale: str = "2x", softness: float = 0.0) -> dict:
+         scale: str = "2x", softness: float = 0.0, which: str = "") -> dict:
     if action == "status":
         return {"upscaler": engine.upscaler_status(), "sam": engine.sam_status()}
 
     if action == "warmup":
         # Fire-and-forget: returns the current state, does not wait for weights.
-        return {"sam": engine.ensure_sam()}
+        # Loads SAM only if it is already on disk -- never downloads.
+        return {"sam": engine.ensure_sam(), "upscaler": engine.upscaler_status()}
+
+    if action == "download":
+        # Only ever sent from a Download button the user pressed.
+        engine.start_download(which)
+        return {"upscaler": engine.upscaler_status(), "sam": engine.sam_status()}
+
+    if action == "unload_upscaler":
+        return engine.unload_upscaler()
 
     if action == "sam_status":
         return engine.sam_status()
@@ -31,9 +40,6 @@ def main(action: str = "status", session_id: str = "", job_id: str = "",
             session_id=session_id, source=source,
             points=_as_list(points), labels=_as_list(labels),
         )
-
-    if action == "upscaler_status":
-        return engine.upscaler_status()
 
     if action == "upscale_start":
         started = engine.start_upscale(

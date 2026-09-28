@@ -37,7 +37,7 @@ def main(action: str = "status", session_id: str = "", image_data: str = "",
                                  source_path=_resolve(session_id, source), grow=grow)
 
     if action == "ai_prepare":
-        prepared = imaging.prepare_ai_edit(session_id, _resolve(session_id, source), expand=mode == "remove")
+        prepared = imaging.prepare_ai_edit(session_id, _resolve(session_id, source), mode=mode or "remove")
         return {**prepared, "marked_rel": os.path.relpath(prepared["marked"], APP_DIR)}
 
     if action == "ai_composite":
@@ -48,7 +48,8 @@ def main(action: str = "status", session_id: str = "", image_data: str = "",
         mask_path = _resolve(session_id, mask)
         output = os.path.join(folder, f"result-{int(time.time() * 1000)}.png")
         return imaging.feathered_composite(_resolve(session_id, source), generated_path,
-                                           mask_path, output, feather=float(feather))
+                                           mask_path, output, feather=float(feather),
+                                           mode=mode or "remove")
 
     if action == "remove_background":
         import bgremove
@@ -117,7 +118,7 @@ def _status() -> dict:
     """What the page needs to decide which features to offer."""
     import importlib.util
 
-    report = {"app_dir": APP_DIR, "vision": False, "vision_message": "",
+    report = {"vision": False, "vision_message": "",
               "sam": False, "seedvr2": False}
 
     try:
