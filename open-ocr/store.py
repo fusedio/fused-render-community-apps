@@ -24,7 +24,7 @@ def _record_dir(record_id: str, create: bool = False) -> Path:
 
 
 def save(mode: str, source_paths: list[str], markdown: str, structured, raw: str, elapsed: float,
-        model_repo: str = "") -> dict:
+        model_repo: str = "", doc_type: str = "") -> dict:
     """Keeps a full-resolution copy of every source page (not just a thumbnail)
     under this record, so a history entry can be re-run later -- possibly with
     a different model -- without the original scratch file still existing."""
@@ -59,6 +59,7 @@ def save(mode: str, source_paths: list[str], markdown: str, structured, raw: str
         "model_repo": model_repo,
         "created_at": time.time(),
         "elapsed": elapsed,
+        "doc_type": doc_type,
         "snippet": " ".join(markdown.split())[:160],
         "markdown": markdown,
         "structured": structured,
@@ -82,7 +83,8 @@ def list_records(query: str = "", limit: int = 200) -> list[dict]:
             continue
         with record_path.open("r", encoding="utf-8") as file:
             record = json.load(file)
-        haystack = (record.get("snippet", "") + " " + record.get("markdown", "")).lower()
+        haystack = (record.get("snippet", "") + " " + record.get("markdown", "")
+                    + " " + record.get("doc_type", "")).lower()
         if query and query not in haystack:
             continue
         thumb = folder / "thumb.jpg"
@@ -92,6 +94,7 @@ def list_records(query: str = "", limit: int = 200) -> list[dict]:
             "model_repo": record.get("model_repo", ""),
             "created_at": record["created_at"],
             "elapsed": record.get("elapsed", 0),
+            "doc_type": record.get("doc_type", ""),
             "snippet": record["snippet"],
             "thumb_path": str(thumb) if thumb.exists() else "",
         })
@@ -106,6 +109,17 @@ def get(record_id: str) -> dict:
         raise FileNotFoundError(f"No such history record: {record_id}")
     with record_path.open("r", encoding="utf-8") as file:
         return json.load(file)
+
+
+def set_doc_type(record_id: str, doc_type: str) -> None:
+    record_path = _record_dir(record_id) / "record.json"
+    if not record_path.exists():
+        return
+    with record_path.open("r", encoding="utf-8") as file:
+        record = json.load(file)
+    record["doc_type"] = doc_type
+    with record_path.open("w", encoding="utf-8") as file:
+        json.dump(record, file)
 
 
 def delete(record_id: str) -> None:

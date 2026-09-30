@@ -19,7 +19,8 @@ def main(action: str = "status", image_data: str = "", path: str = "",
          query: str = "", record_id: str = "", content: str = "",
          fmt: str = "md", name: str = "ocr-result", mode: str = "fast",
          markdown: str = "", structured_json: str = "", raw: str = "",
-         elapsed: float = 0.0, image_paths: str = "", model: str = "") -> dict:
+         elapsed: float = 0.0, image_paths: str = "", model: str = "",
+         doc_type: str = "") -> dict:
     if action == "status":
         return _status()
 
@@ -37,7 +38,11 @@ def main(action: str = "status", image_data: str = "", path: str = "",
         paths = json.loads(image_paths) if image_paths else ([path] if path else [])
         return store.save(mode=mode, source_paths=paths, markdown=markdown,
                           structured=structured, raw=raw, elapsed=float(elapsed),
-                          model_repo=model)
+                          model_repo=model, doc_type=doc_type)
+
+    if action == "history_set_doc_type":
+        store.set_doc_type(record_id, doc_type)
+        return {"ok": True}
 
     if action == "history_delete":
         store.delete(record_id)
