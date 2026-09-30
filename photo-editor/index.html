@@ -361,6 +361,23 @@
     display: flex; flex-direction: column; min-height: 0;
   }
   .props .panel-tabs button { padding: 0 10px; }
+
+  /* ---------- Collapsible side panels ---------- */
+  .panel-tabs .panel-collapse {
+    flex: 0 0 30px; padding: 0; border-right: 0; background: var(--bg); color: var(--faint); display: grid; place-items: center;
+  }
+  .panel-tabs .panel-collapse:hover { color: var(--ink-strong); background: var(--surface-3); }
+  .panel-collapse svg, .panel-strip svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .layers.collapsed, .props.collapsed { display: none; }
+  .panel-strip {
+    flex: 0 0 26px; display: none; flex-direction: column; align-items: center; gap: 10px; padding: 9px 0;
+    background: var(--surface); color: var(--muted); cursor: pointer;
+  }
+  .panel-strip.left { border-right: 1px solid var(--line); }
+  .panel-strip.right { border-left: 1px solid var(--line); }
+  .panel-strip.show { display: flex; }
+  .panel-strip:hover { color: var(--ink-strong); background: var(--surface-2); }
+  .panel-strip .vlabel { -webkit-writing-mode: vertical-rl; writing-mode: vertical-rl; font-size: 11px; font-weight: 600; letter-spacing: 0.02em; }
   .props-body { flex: 1; overflow-y: auto; padding: 0 0 20px; }
 
   .section { border-bottom: 1px solid var(--line); }
@@ -631,8 +648,9 @@
   <div class="body">
     <nav class="toolbar" id="toolbar"></nav>
 
-    <aside class="layers">
-      <div class="panel-tabs" id="leftTabs"><button class="active" data-ltab="layers">Layers</button><button data-ltab="history">History</button><button data-ltab="files">Files</button><span class="fill"></span></div>
+    <button class="panel-strip left" id="leftStrip" title="Show Layers, History and Files (Tab shows all panels)"><svg viewBox="0 0 24 24"><path d="M13 17l5-5-5-5"/><path d="M6 17l5-5-5-5"/></svg><span class="vlabel">Layers</span></button>
+    <aside class="layers" id="leftPanel">
+      <div class="panel-tabs" id="leftTabs"><button class="active" data-ltab="layers">Layers</button><button data-ltab="history">History</button><button data-ltab="files">Files</button><span class="fill"></span><button class="panel-collapse" data-collapse="left" title="Collapse panel (Tab hides all panels)"><svg viewBox="0 0 24 24"><path d="M11 17l-5-5 5-5"/><path d="M18 17l-5-5 5-5"/></svg></button></div>
       <div class="left-pane" id="paneHistory" hidden><div class="side-list" id="historyList"></div></div>
       <div class="left-pane" id="paneFiles" hidden><div class="side-list" id="filesList"></div><div class="side-foot" id="filesFoot"></div></div>
       <div class="left-pane" id="paneLayers">
@@ -677,7 +695,8 @@
       <div class="toast" id="toast"></div>
     </main>
 
-    <aside class="props">
+    <button class="panel-strip right" id="rightStrip" title="Show Properties, Adjust, Filters and Generative (Tab shows all panels)"><svg viewBox="0 0 24 24"><path d="M11 17l-5-5 5-5"/><path d="M18 17l-5-5 5-5"/></svg><span class="vlabel">Properties</span></button>
+    <aside class="props" id="rightPanel">
       <div class="panel-tabs" id="propsTabs"></div>
       <div class="props-body" id="propsBody"></div>
     </aside>
@@ -1624,6 +1643,38 @@
     } catch (error) { toast(error.message || String(error), true); }
   }
 
+  // ---------------------------------------------------------------- collapsible panels
+  //
+  // Like Adobe's docks: each side panel folds into a thin strip that brings it
+  // back, Tab hides or shows both, and View > Reset panel layout restores them.
+  // Remembered per browser; it is a viewing preference, not document state.
+
+  const panels = (() => {
+    try { return Object.assign({ left: true, right: true }, JSON.parse(localStorage.getItem("photo_editor.panels") || "{}")); }
+    catch (e) { return { left: true, right: true }; }
+  })();
+
+  function setPanels(left, right, quiet) {
+    const before = $("stageWrap").clientWidth, fitted = doc.ready && Math.abs(state.zoom - state.fitZoom) < 1e-6;
+    panels.left = !!left; panels.right = !!right;
+    $("leftPanel").classList.toggle("collapsed", !panels.left);
+    $("rightPanel").classList.toggle("collapsed", !panels.right);
+    $("leftStrip").classList.toggle("show", !panels.left);
+    $("rightStrip").classList.toggle("show", !panels.right);
+    try { localStorage.setItem("photo_editor.panels", JSON.stringify(panels)); } catch (e) { }
+    if (quiet || !doc.ready) return;
+    // Keep the page where the eye is: refit if it was fitted, else recentre.
+    requestAnimationFrame(() => {
+      if (fitted) fitToScreen();
+      else { stage.x(stage.x() + ($("stageWrap").clientWidth - before) / 2); stage.batchDraw(); }
+      positionFloatBar(); scheduleChrome();
+    });
+  }
+
+  function togglePanels() {
+    if (panels.left || panels.right) setPanels(false, false); else setPanels(true, true);
+  }
+
   // ---------------------------------------------------------------- History / Files tabs
 
   function setLeftTab(tab) {
@@ -2190,6 +2241,7 @@
       GRID_CHOICES.map(([id, label]) => '<button class="chip' + (v.gridSize === id ? " active" : "") + '" data-vg="' + id + '">' + label + "</button>").join("") + "</div>" +
       '<div class="sep"></div><button data-va="page"' + (doc.ready ? "" : " disabled") + '><span class="check"></span>Page setup…</button>' +
       '<button data-va="clear"' + (doc.guides.length ? "" : " disabled") + '><span class="check"></span>Clear guides</button>' +
+      '<button data-va="panels"' + (panels.left && panels.right ? " disabled" : "") + '><span class="check"></span>Reset panel layout<span class="kbd">Tab</span></button>' +
       '<div class="menu-label" style="text-transform:none;letter-spacing:0;font-weight:500;max-width:250px;line-height:1.4;padding-bottom:6px">Drag from a ruler to add a guide, drag it back to remove. Hold Shift to snap to ruler ticks, ⌘ while dragging a layer to skip snapping.</div>';
     menu.querySelectorAll("[data-vt]").forEach((b) => { b.onclick = () => { toggleView(b.dataset.vt, true); renderViewMenu(); }; });
     menu.querySelectorAll("[data-vu]").forEach((b) => { b.onclick = () => { setUnit(b.dataset.vu); renderViewMenu(); }; });
@@ -2197,6 +2249,7 @@
     menu.querySelectorAll("[data-va]").forEach((b) => {
       b.onclick = () => {
         if (b.dataset.va === "page") { closeViewMenu(); openPageSetup(); }
+        else if (b.dataset.va === "panels") { setPanels(true, true); closeViewMenu(); }
         else if (b.dataset.va === "clear") { doc.guides = []; syncGuideNodes(); guideLayer.batchDraw(); commitHistory("clear guides"); renderViewMenu(); }
       };
     });
@@ -4475,7 +4528,8 @@
   }
 
   function renderProps() {
-    $("propsTabs").innerHTML = PROP_TABS.map(([id, label]) => '<button data-ptab="' + id + '" class="' + (state.propsTab === id ? "active" : "") + '">' + label + "</button>").join("") + '<span class="fill"></span>';
+    $("propsTabs").innerHTML = PROP_TABS.map(([id, label]) => '<button data-ptab="' + id + '" class="' + (state.propsTab === id ? "active" : "") + '">' + label + "</button>").join("") + '<span class="fill"></span>' +
+      '<button class="panel-collapse" data-collapse="right" title="Collapse panel (Tab hides all panels)"><svg viewBox="0 0 24 24"><path d="M13 17l5-5-5-5"/><path d="M6 17l5-5-5-5"/></svg></button>';
     $("propsTabs").querySelectorAll("[data-ptab]").forEach((b) => { b.onclick = () => { state.propsTab = b.dataset.ptab; fused.params.set("panel", state.propsTab); renderProps(); }; });
     const builders = { properties: buildProperties, adjust: buildAdjust, filters: buildFilters, generative: buildGenerative };
     $("propsBody").innerHTML = builders[state.propsTab]();
@@ -4717,6 +4771,10 @@
     $("fileName").onchange = () => renameDoc(state.fileName);
     $("saveState").onclick = saveCopy;
     $("leftTabs").onclick = (e) => { const b = e.target.closest("[data-ltab]"); if (b) setLeftTab(b.dataset.ltab); };
+    document.addEventListener("click", (e) => { const b = e.target.closest("[data-collapse]"); if (b) setPanels(b.dataset.collapse === "left" ? false : panels.left, b.dataset.collapse === "right" ? false : panels.right); });
+    $("leftStrip").onclick = () => setPanels(true, panels.right);
+    $("rightStrip").onclick = () => setPanels(panels.left, true);
+    setPanels(panels.left, panels.right, true);
 
     $("addLayerBtn").onclick = (e) => openAddMenu(e.currentTarget);
     $("dupLayerBtn").onclick = () => { const l = activeLayer(); if (l) duplicateLayer(l); };
@@ -4755,6 +4813,7 @@
       if (meta && !event.shiftKey && event.key.toLowerCase() === "s") { event.preventDefault(); saveCopy(); return; }
       if (meta && event.key.toLowerCase() === "z") { event.preventDefault(); if (!typing) stepHistory(event.shiftKey ? 1 : -1); return; }
       if (typing) return;
+      if (event.key === "Tab" && !meta && !event.altKey) { event.preventDefault(); togglePanels(); return; }
       const layer = activeLayer();
       if (meta && event.key === "0") { event.preventDefault(); fitToScreen(); }
       else if (meta && (event.key === "=" || event.key === "+")) { event.preventDefault(); setZoom(state.zoom * 1.25); }

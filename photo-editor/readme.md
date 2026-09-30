@@ -34,17 +34,25 @@ the panel that needs them.
 | **Agent tools (MCP)** | Claude can drive the editor: open photos, add text, shapes, arrows and images, move and restyle layers, adjust, filter, crop, cut out, render to look at the result, and save. An open editor follows along within a second. See [Driving it from Claude](#driving-it-from-claude). |
 
 Undo/redo, zoom, View (rulers, grid, guides) and Export are in the top bar.
+Either side panel folds into a thin strip with the « button in its tab bar;
+click the strip to bring it back. **Tab** hides or shows both panels, and
+View › Reset panel layout restores them.
 
 ## Driving it from Claude
 
 `agent/` is an MCP server made with fused-render's app-MCP support: `mcp.toml`
-lists the tools and `tools.py` implements them. To register it with Claude Code:
+lists the tools and `tools.py` implements them. Register it once, at user
+scope, so every Claude session sees it, including fused-render's own Claude
+chat:
 
 ```sh
-claude mcp add photo-editor -- ~/.fused-render/fused-bin/fused app serve "$PWD/agent"
+claude mcp add --scope user photo-editor -- ~/.fused-render/fused-bin/fused app serve "$PWD/agent"
 ```
 
-Run that from this folder. Then ask something like *"open ~/Desktop/team.jpg in
+Run that from this folder, then start a new chat; a chat that is already open
+does not pick up new servers. fused-render's MCP panel cannot do this
+registration for you: it only serves an app's root folder, and the root's
+dependencies cannot be installed by `serve` (see the end of this section). Then ask something like *"open ~/Desktop/team.jpg in
 the photo editor, put 'Aman' at the top centre on a red label, circle the face
 on the left and save it as a JPEG"*. The tools:
 
