@@ -133,6 +133,19 @@ def set_current(doc_id: str, rev: int, source: str) -> dict:
     return value
 
 
+def _follow(doc_id: str, rev: int, source: str, claim_from: str | None = None) -> None:
+    """Move the pointer after a write. The agent always takes it. A page save
+    only keeps it fresh when it already names this document (or `claim_from`,
+    the document the page had open before starting this one): a save that
+    lands after the editor or Claude moved on must not pull the pointer back."""
+    if source != "user":
+        set_current(doc_id, rev, source)
+        return
+    held = get_current().get("id") or ""
+    if held in ("", doc_id) or (claim_from is not None and held == claim_from):
+        set_current(doc_id, rev, source)
+
+
 # ---------------------------------------------------------------- documents
 
 
@@ -141,21 +154,32 @@ def new_id() -> str:
 
 
 def create(name: str, snap: dict, source: str = "user", label: str = "new document",
-           thumb_png: bytes | None = None, make_current: bool = True, doc_id: str = "") -> dict:
+           thumb_png: bytes | None = None, make_current: bool = True, doc_id: str = "",
+           claim_from: str | None = None) -> dict:
     """New document. A caller-chosen `doc_id` makes this idempotent: the page
-    picks the id up front, so a create retried after a reload returns the
-    document the first attempt made instead of a duplicate."""
+    picks the id up front, so a create retried after a reload (or queued
+    behind the first one) lands on the document the first attempt made
+    instead of a duplicate, committing its snapshot as the next step when it
+    differs from what is on disk."""
     doc_id = doc_id or new_id()
     now = time.time()
+    snap = _clean_snap(snap)
     with _locked(doc_id) as folder:
         if os.path.exists(os.path.join(folder, "doc.json")):
-            return load(doc_id)
-        record = {"id": doc_id, "name": name or "Untitled", "rev": 1, "created_at": now,
-                  "updated_at": now, "source": source, "label": label, "snap": _clean_snap(snap)}
-        _write_history(folder, record, thumb_png)
-        _write_json(os.path.join(folder, "doc.json"), record)
+            record = load(doc_id)
+            if snap != record.get("snap"):
+                record["parent"] = int(record["rev"])
+                record["rev"] = int(record["rev"]) + 1
+                record.update(updated_at=now, source=source, label=label or "edit", snap=snap)
+                _write_history(folder, record, thumb_png)
+                _write_json(os.path.join(folder, "doc.json"), record)
+        else:
+            record = {"id": doc_id, "name": name or "Untitled", "rev": 1, "created_at": now,
+                      "updated_at": now, "source": source, "label": label, "snap": snap}
+            _write_history(folder, record, thumb_png)
+            _write_json(os.path.join(folder, "doc.json"), record)
     if make_current:
-        set_current(doc_id, 1, source)
+        _follow(doc_id, record["rev"], source, claim_from)
     return record
 
 
@@ -191,7 +215,7 @@ def commit(doc_id: str, snap: dict, label: str, source: str, base_rev: int | Non
         _write_history(folder, record, thumb_png)
         _write_json(os.path.join(folder, "doc.json"), record)
     if make_current:
-        set_current(doc_id, record["rev"], source)
+        _follow(doc_id, record["rev"], source)
     return {"ok": True, "rev": record["rev"], "doc": record}
 
 
@@ -399,7 +423,12 @@ def save_screenshot(request_id: str, png: bytes, meta: dict) -> dict:
     if not _SAFE_ID.match(request_id or ""):
         raise DocumentError(f"Invalid request id: {request_id!r}")
     path = os.path.join(SCREENS_DIR, f"{request_id}.png")
-    _write_atomic(path, png)
+    if png:
+        _write_atomic(path, png)
+    else:
+        # The page could not draw it faithfully (images still decoding): an
+        # empty `path` tells the agent to fall back to the Python render.
+        path = ""
     info = dict(meta or {}, path=path, time=time.time())
     _write_json(os.path.join(SCREENS_DIR, f"{request_id}.json"), info)
     entries = sorted(e for e in os.listdir(SCREENS_DIR) if e.endswith(".json"))

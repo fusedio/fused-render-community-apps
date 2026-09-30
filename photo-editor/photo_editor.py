@@ -27,7 +27,7 @@ def main(action: str = "status", session_id: str = "", image_data: str = "",
          mask: str = "", feather: float = 3.0, dpi: float = 0.0,
          doc_id: str = "", snap_json: str = "", label: str = "", base_rev: int = -1,
          rev: int = 0, thumb: str = "", save: bool = False, file_name: str = "",
-         path: str = "", request_id: str = "") -> dict:
+         path: str = "", request_id: str = "", prev_doc: str = "") -> dict:
     if action == "status":
         return _status()
 
@@ -41,12 +41,12 @@ def main(action: str = "status", session_id: str = "", image_data: str = "",
     if action == "screenshot_save":
         import json
 
-        return {"ok": True, **docstore.save_screenshot(request_id, docstore.decode_png(image_data),
+        return {"ok": True, **docstore.save_screenshot(request_id, docstore.decode_png(image_data) if image_data else b"",
                                                         json.loads(values_json or "{}"))}
 
     if action.startswith("doc_") or action == "reveal":
         return _documents(action, doc_id=doc_id, name=name, snap_json=snap_json, label=label,
-                          base_rev=base_rev, rev=rev, thumb=thumb, path=path)
+                          base_rev=base_rev, rev=rev, thumb=thumb, path=path, prev_doc=prev_doc)
 
     if action == "new_session":
         session_id = session_id or imaging.new_session_id()
@@ -132,14 +132,15 @@ def main(action: str = "status", session_id: str = "", image_data: str = "",
 
 
 def _documents(action: str, doc_id: str, name: str, snap_json: str, label: str,
-               base_rev: int, rev: int, thumb: str, path: str) -> dict:
+               base_rev: int, rev: int, thumb: str, path: str, prev_doc: str = "") -> dict:
     """Autosave, history and the document list (see docstore.py)."""
     import json
 
     png = docstore.decode_png(thumb) if thumb else None
     if action == "doc_create":
         record = docstore.create(name or "Untitled", json.loads(snap_json), source="user",
-                                 label=label or "new document", thumb_png=png, doc_id=doc_id)
+                                 label=label or "new document", thumb_png=png, doc_id=doc_id,
+                                 claim_from=prev_doc)
         return {"ok": True, "id": record["id"], "rev": record["rev"]}
     if action == "doc_save":
         result = docstore.commit(doc_id, json.loads(snap_json), label, "user",

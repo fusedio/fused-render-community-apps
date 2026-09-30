@@ -944,8 +944,11 @@ def screenshot_editor(document: str = "", mode: str = "page", max_size: int = 16
         docstore.set_current(doc_id, record["rev"], "agent")
     request_id = docstore.request_screenshot(doc_id, record["rev"], mode, max_size)
     deadline = time.time() + max(1.0, float(wait_seconds))
+    result = None
     while time.time() < deadline:
         result = docstore.screenshot_result(request_id)
+        if result and not result.get("path"):
+            break  # the page answered but could not draw it (images not loaded)
         if result:
             return {"ok": True, "source": "editor", "path": result["path"], "mode": mode,
                     "width": result.get("width"), "height": result.get("height"),
@@ -956,8 +959,9 @@ def screenshot_editor(document: str = "", mode: str = "page", max_size: int = 16
                             + f" scale={result.get('scale')}"}
         time.sleep(0.25)
     fallback = render_document(doc_id, max_size=max_size)
+    why = (f"The editor could not draw it ({result.get('reason') or 'images not loaded'})" if result else
+           "No open editor answered within " + f"{wait_seconds:g}s")
     fallback.update(ok=True, source="python-render",
-                    note="No open editor answered within " + f"{wait_seconds:g}s" +
-                         ", so this is the Python render (system fonts, no grid or selection). "
+                    note=why + ", so this is the Python render (system fonts, no grid or selection). "
                          "Open the Photo Editor page to get real editor screenshots.")
     return fallback

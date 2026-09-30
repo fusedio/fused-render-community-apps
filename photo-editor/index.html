@@ -1469,7 +1469,8 @@
   // pollDisk() notices their revisions in current.json and loads them.
 
   const CURRENT_FILE = ".fused/data/documents/current.json";
-  const store = { gen: 0, id: null, newId: "", rev: 0, pending: null, timer: null, saving: false, error: "", seq: null, leftTab: "layers", steps: [], docs: [], saveDir: "" };
+  const store = { gen: 0, id: null, newId: "", prevId: "", rev: 0, pending: null, timer: null, error: "", seq: null, leftTab: "layers", steps: [], docs: [], saveDir: "",
+    queue: Promise.resolve(), inflight: 0, jobSeq: 0, staleThrough: 0, revOf: {}, retry: 0, recovering: false, deleted: new Set() };
   const docPy = (params) => fused.runPython(PY, params, { key: null });
   const baseName = (path) => String(path || "").split("/").pop();
 
@@ -1494,26 +1495,34 @@
   function tabSet(key, value) { try { if (value) sessionStorage.setItem(key, value); else sessionStorage.removeItem(key); } catch (e) { } }
   function stashPending() {
     if (!store.id && !store.newId) store.newId = newDocId();
-    try { tabSet(STASH_KEY, JSON.stringify({ id: store.id || store.newId, created: !!store.id, base: store.rev, label: store.pending || "edit", name: state.fileName, snap: snapshot() })); } catch (e) { }
+    try { tabSet(STASH_KEY, JSON.stringify({ id: store.id || store.newId, label: store.pending || "edit", name: state.fileName, snap: snapshot() })); } catch (e) { }
   }
+  // Two snapshots show the same page (image URLs aside, which the disk never keeps).
+  function snapKey(snap) {
+    return JSON.stringify(Object.assign({}, snap, { layers: (snap.layers || []).map((l) => { const c = Object.assign({}, l); delete c.src; return c; }) }));
+  }
+  const sameSnap = (a, b) => !!a && !!b && snapKey(a) === snapKey(b);
   function readStash() { try { return JSON.parse(tabGet(STASH_KEY) || "null"); } catch (e) { return null; } }
 
-  function recoverStash(stash) {
+  function recoverStash(stash, loaded) {
     if (!stash || !stash.snap) return;
     tabSet(STASH_KEY, "");
     if (stash.id && stash.id === store.id) {
-      // Already on disk (the save landed) or superseded by a newer revision.
-      // A new document's first save may have landed with an older snapshot
-      // than the stash, so that case always re-applies (at worst a repeat step).
-      if (stash.created && stash.base !== store.rev) return;
+      // Compare content, not revision numbers: a save still in flight at the
+      // reload can land before or after the load, with this snapshot or an
+      // older one. Only a disk copy that already matches makes the stash moot.
+      if (loaded && sameSnap(loaded.snap, stash.snap)) return;
       restore(hydrate(stash.snap));
+      store.recovering = true;
       commitHistory(stash.label);
       toast("Recovered your last change from before the reload");
       return;
     }
     // A document whose first save never landed, or whose record is gone:
-    // bring it back as a new document so the work is saved again.
-    store.gen++; store.id = null; store.rev = 0; store.newId = stash.id || "";
+    // bring it back under its own id (a create that did land just takes the
+    // snapshot as its next step) so the work is saved again.
+    store.prevId = store.id || "";
+    store.gen++; store.id = null; store.rev = 0; store.newId = stash.id || ""; store.recovering = true;
     state.history = []; state.historyIndex = -1;
     restore(hydrate(stash.snap));
     state.fileName = stash.name || "Untitled"; $("fileName").value = state.fileName;
@@ -1562,50 +1571,99 @@
     renderSaveState();
   }
 
+  // Hand the pending step to the save queue now. The snapshot is taken here,
+  // synchronously, so starting or opening another document straight after
+  // cannot lose it. Returns a promise that settles once everything queued so
+  // far is on disk (or has failed).
   function flushSaveNow() {
-    if (store.pending && !store.saving) { clearTimeout(store.timer); flushSave(); }
+    if (store.pending) { clearTimeout(store.timer); return flushSave(); }
+    return store.queue;
   }
 
-  async function flushSave() {
-    if (store.saving) { clearTimeout(store.timer); store.timer = setTimeout(flushSave, 200); return; }
+  function flushSave() {
     const label = store.pending;
-    if (!label || !doc.ready) return;
-    store.pending = null; store.saving = true; renderSaveState();
-    const id = store.id, gen = store.gen;
-    const params = { snap_json: JSON.stringify(snapshot()), label, thumb: thumbData() };
+    if (!label || !doc.ready) return store.queue;
+    store.pending = null;
+    if (!store.id && !store.newId) store.newId = newDocId();
+    const job = {
+      seq: ++store.jobSeq, gen: store.gen, id: store.id, newId: store.newId, prev: store.id ? "" : store.prevId,
+      rev: store.rev, label, name: state.fileName || "Untitled", recovering: store.recovering, tries: 0,
+      params: { snap_json: JSON.stringify(snapshot()), label, thumb: thumbData() },
+    };
+    store.recovering = false;
+    return enqueueSave(job);
+  }
+
+  function enqueueSave(job) {
+    store.inflight++; renderSaveState();
+    store.queue = store.queue.then(() => runSave(job)).finally(() => {
+      store.inflight--;
+      renderSaveState();
+      refreshSide();
+    });
+    return store.queue;
+  }
+
+  async function runSave(job) {
+    const docId = job.id || job.newId;
+    // Deleted, or overtaken by a revision loaded after a conflict.
+    if (store.deleted.has(docId) || job.seq <= store.staleThrough) return;
+    const current = () => store.gen === job.gen;
     try {
-      if (!id) {
-        if (!store.newId) store.newId = newDocId();
-        const r = await docPy(Object.assign(params, { action: "doc_create", doc_id: store.newId, name: state.fileName || "Untitled" }));
-        // Another document may have been started or opened meanwhile.
-        if (store.gen === gen) { store.id = r.id; store.rev = r.rev; setDocParam(); }
+      if (!job.id) {
+        const r = await docPy(Object.assign({}, job.params, { action: "doc_create", doc_id: job.newId, name: job.name, prev_doc: job.prev }));
+        store.revOf[r.id] = r.rev;
+        if (current()) { store.id = r.id; store.rev = r.rev; store.prevId = ""; setDocParam(); }
       } else {
-        const r = await docPy(Object.assign(params, { action: "doc_save", doc_id: id, base_rev: String(store.rev) }));
-        if (store.gen === gen) {
-          if (r.conflict) {
-            store.pending = null;
-            applyRecord(r.doc, "update");
-            toast("Claude changed this document at the same moment — showing its version. Redo your last step if you still want it.", true);
-          } else store.rev = r.rev;
+        const base = store.revOf[job.id] != null ? store.revOf[job.id] : job.rev;
+        const r = await docPy(Object.assign({}, job.params, { action: "doc_save", doc_id: job.id, base_rev: String(base) }));
+        if (!r.conflict) {
+          store.revOf[job.id] = r.rev;
+          if (current()) store.rev = r.rev;
+        } else if (sameSnap(r.doc.snap, JSON.parse(job.params.snap_json))) {
+          // Our own write already landed (a flush on reload, say): nothing to redo.
+          store.revOf[job.id] = r.rev;
+          if (current()) store.rev = r.rev;
+        } else if (job.recovering && r.doc.source !== "agent") {
+          // Recovering after a reload: an older save of ours landed first.
+          // The recovered step is newer, so write it on top.
+          store.revOf[job.id] = r.rev;
+          job.recovering = false;
+          return runSave(job);
+        } else if (current()) {
+          store.staleThrough = store.jobSeq;
+          store.pending = null; clearTimeout(store.timer);
+          applyRecord(r.doc, "update");
+          toast(r.doc.source === "agent"
+            ? "Claude changed this document at the same moment — showing its version. Redo your last step if you still want it."
+            : "This document changed in another window — showing that version. Redo your last step if you still want it.", true);
         }
       }
-      store.error = "";
-      if (!store.pending && store.gen === gen) tabSet(STASH_KEY, "");
+      store.error = ""; store.retry = 0;
+      if (!store.pending && current() && store.inflight <= 1) tabSet(STASH_KEY, "");
     } catch (error) {
-      store.error = error.message || String(error);
       console.warn("[photo_editor] autosave failed", error);
-    } finally {
-      store.saving = false;
-      renderSaveState();
-      if (store.pending) { clearTimeout(store.timer); store.timer = setTimeout(flushSave, 50); }
-      refreshSide();
+      if (store.deleted.has(docId)) return;
+      store.error = error.message || String(error);
+      const wait = Math.min(30000, 1000 * 2 ** store.retry++);
+      if (current()) {
+        // Retry with whatever is on screen by then (this step or newer); the
+        // stash keeps it across a reload meanwhile.
+        store.pending = store.pending || job.label;
+        clearTimeout(store.timer);
+        store.timer = setTimeout(flushSave, wait);
+      } else if (job.tries++ < 3) {
+        // A document the page has already left: nothing newer will follow, so
+        // retry this very step.
+        setTimeout(() => enqueueSave(job), wait);
+      }
     }
   }
 
   function renderSaveState() {
     const node = $("saveState");
     node.hidden = !doc.ready;
-    const busy = store.saving || !!store.pending;
+    const busy = store.inflight > 0 || !!store.pending;
     node.classList.toggle("busy", busy);
     node.classList.toggle("error", !!store.error && !busy);
     node.textContent = busy ? "Saving…" : store.error ? "Not saved" : store.id ? "Saved" : "";
@@ -1619,7 +1677,7 @@
     const resize = !doc.ready || why !== "update" || snap.width !== doc.width || snap.height !== doc.height;
     const keep = doc.activeId;
     if (why !== "update") { state.history = []; state.historyIndex = -1; store.gen++; }
-    store.id = record.id; store.rev = record.rev; store.pending = null; clearTimeout(store.timer);
+    store.id = record.id; store.rev = record.rev; store.revOf[record.id] = record.rev; store.pending = null; clearTimeout(store.timer);
     state.fileName = record.name || "Untitled"; $("fileName").value = state.fileName;
     if (why === "update" && keep && snap.layers.some((l) => l.id === keep) && record.source !== "agent") snap.activeId = keep;
     if (why !== "update") { closeCropOverlay(); if (state.tool !== "move") setTool("move"); }
@@ -1657,7 +1715,7 @@
     // Mid-gesture or mid-save: look again next tick rather than yank the page.
     // A running AI edit / upscale / cutout swaps pixels into a layer when it
     // finishes, so it must not be rebuilt underneath it either.
-    if (store.saving || store.pending || editingLayer || shaping.active || state.tool === "crop" ||
+    if (store.inflight || store.pending || editingLayer || shaping.active || state.tool === "crop" ||
         state.generating || state.upscaling || state.bgBusy) return;
     store.seq = cur.seq;
     try {
@@ -1797,10 +1855,12 @@
 
   async function imagesReady(limitMs) {
     const until = Date.now() + limitMs;
+    const ready = () => doc.layers.every((l) => l.type !== "image" || l.node.image());
     while (Date.now() < until) {
-      if (doc.layers.every((l) => l.type !== "image" || l.node.image())) return;
+      if (ready()) return true;
       await sleep(100);
     }
+    return ready();
   }
 
   // The canvas area exactly as it is on screen: every Konva layer in order
@@ -1844,10 +1904,15 @@
     if (Date.now() / 1000 - (req.time || 0) > 30) { shared.reqSeen = req.id; return; }
     // Not ours yet: the agent's pointer switches this page to the document,
     // then the revision arrives; answer once both are here.
-    if (req.doc !== store.id || store.rev < req.rev || store.saving || store.pending) return;
+    if (req.doc !== store.id || store.rev < req.rev || store.inflight || store.pending) return;
     shared.reqSeen = req.id; shared.capturing = true;
     try {
-      await imagesReady(4000);
+      if (!(await imagesReady(4000))) {
+        // Blank image layers would pass for a real shot; let the agent fall
+        // back to the Python render, which reads the files itself.
+        await docPy({ action: "screenshot_save", request_id: req.id, image_data: "", values_json: JSON.stringify({ reason: "image layers still loading", rev: store.rev, doc: store.id }) });
+        return;
+      }
       if (document.fonts && document.fonts.ready) await document.fonts.ready;
       stage.draw();
       const max = Math.max(200, Math.min(4096, Number(req.max_size) || 1600));
@@ -1888,37 +1953,49 @@
     root.querySelectorAll("[data-align-clear]").forEach((b) => b.onclick = () => { alignSet.clear(); renderLayers(); });
   }
 
+  // A text label and the box add_text() put behind it ("<name> box") move as
+  // one unit, the way the agent's align tools treat them.
+  function alignUnits(list) {
+    const isBoxOf = (b, t) => b.type === "rect" && t.type === "text" && b.name === t.name + " box";
+    return list.filter((l) => !list.some((t) => isBoxOf(l, t)))
+      .map((l) => [l].concat(doc.layers.filter((b) => !b.locked && isBoxOf(b, l))));
+  }
+  function unitBox(unit) {
+    const bs = unit.map(nodeBox);
+    const x = Math.min(...bs.map((b) => b.x)), y = Math.min(...bs.map((b) => b.y));
+    return { x, y, width: Math.max(...bs.map((b) => b.x + b.width)) - x, height: Math.max(...bs.map((b) => b.y + b.height)) - y };
+  }
+  function moveUnit(unit, dx, dy) { unit.forEach((l) => { l.node.move({ x: dx, y: dy }); afterNodeTransform(l); }); }
+
   function alignLayers(list, how, ref) {
-    list = list.filter((l) => l && !l.locked);
-    if (!list.length) return;
-    const boxes = list.map(nodeBox);
+    const units = alignUnits(list.filter((l) => l && !l.locked));
+    if (!units.length) return;
+    const boxes = units.map(unitBox);
     let box;
     if (ref === "page") { const t = trimRect(); box = { x: t.x, y: t.y, width: t.width, height: t.height }; }
     else {
       const x0 = Math.min(...boxes.map((b) => b.x)), y0 = Math.min(...boxes.map((b) => b.y));
       box = { x: x0, y: y0, width: Math.max(...boxes.map((b) => b.x + b.width)) - x0, height: Math.max(...boxes.map((b) => b.y + b.height)) - y0 };
     }
-    list.forEach((l, i) => {
+    units.forEach((unit, i) => {
       const b = boxes[i];
       const dx = how === "left" ? box.x - b.x : how === "center" ? box.x + box.width / 2 - (b.x + b.width / 2) : how === "right" ? box.x + box.width - (b.x + b.width) : 0;
       const dy = how === "top" ? box.y - b.y : how === "middle" ? box.y + box.height / 2 - (b.y + b.height / 2) : how === "bottom" ? box.y + box.height - (b.y + b.height) : 0;
-      l.node.move({ x: dx, y: dy });
-      afterNodeTransform(l);
+      moveUnit(unit, dx, dy);
     });
     commitHistory("align " + how + (ref === "page" ? " to page" : ""));
   }
 
   function distributeLayers(list, dir) {
-    list = list.filter((l) => l && !l.locked);
-    if (list.length < 3) return;
+    const units = alignUnits(list.filter((l) => l && !l.locked));
+    if (units.length < 3) return;
     const pos = dir === "h" ? "x" : "y", size = dir === "h" ? "width" : "height";
-    const items = list.map((l) => ({ l, b: nodeBox(l) })).sort((a, b) => a.b[pos] - b.b[pos]);
+    const items = units.map((u) => ({ u, b: unitBox(u) })).sort((a, b) => a.b[pos] - b.b[pos]);
     const span = items[items.length - 1].b[pos] + items[items.length - 1].b[size] - items[0].b[pos];
     const gap = (span - items.reduce((s, it) => s + it.b[size], 0)) / (items.length - 1);
     let cursor = items[0].b[pos];
-    items.forEach(({ l, b }) => {
-      l.node.move(dir === "h" ? { x: cursor - b.x, y: 0 } : { x: 0, y: cursor - b.y });
-      afterNodeTransform(l);
+    items.forEach(({ u, b }) => {
+      moveUnit(u, dir === "h" ? cursor - b.x : 0, dir === "h" ? 0 : cursor - b.y);
       cursor += b[size] + gap;
     });
     commitHistory("distribute " + (dir === "h" ? "horizontally" : "vertically"));
@@ -1969,7 +2046,7 @@
     list.querySelectorAll("[data-rev]").forEach((row) => row.onclick = async () => {
       const rev = Number(row.dataset.rev);
       if (rev === store.rev) return;
-      flushSaveNow();
+      await flushSaveNow();
       try {
         const r = await docPy({ action: "doc_restore", doc_id: store.id, rev: String(rev) });
         applyRecord(r.doc, "update");
@@ -1989,8 +2066,12 @@
   async function deleteDoc(id, name) {
     if (!confirm("Delete “" + name + "” and its history? Files you saved or exported are kept.")) return;
     try {
+      // Queued autosaves of this document must not bring it back, and the open
+      // canvas goes with it (an edit would otherwise recreate it).
+      store.deleted.add(id);
+      if (id === store.id || id === store.newId) closeDocument();
+      await store.queue;
       await docPy({ action: "doc_delete", doc_id: id });
-      if (id === store.id) { store.id = null; store.rev = 0; setDocParam(); }
       refreshSide();
     } catch (error) { toast(error.message || String(error), true); }
   }
@@ -2024,15 +2105,18 @@
   async function startDocuments() {
     try { const cur = JSON.parse(await fused.readFile(CURRENT_FILE)); store.seq = cur && cur.seq; } catch (e) { store.seq = ""; }
     const stash = readStash();
-    const wanted = fused.params.get("doc") || tabGet(OPEN_KEY) || (stash && stash.id) || "";
+    // The stash names the document this tab was last editing, which may be a
+    // new one ?doc= does not know about yet.
+    const wanted = (stash && stash.id) || fused.params.get("doc") || tabGet(OPEN_KEY) || "";
+    let loaded = null;
     if (wanted) {
-      try { await loadDoc(wanted, "open"); }
+      try { loaded = await loadDoc(wanted, "open"); }
       catch (e) {
         store.id = null; setDocParam();
         if (!stash) toast("Couldn't reopen the last document: " + (e.message || e), true);
       }
     }
-    recoverStash(stash);
+    recoverStash(stash, loaded);
     renderRecent();
     setInterval(() => { pollDisk(); pollView(); pollRequests(); }, 1000);
     publishView();
@@ -3208,7 +3292,8 @@
     // A new document: the one on screen is already autosaved, so start a fresh
     // record (and a fresh undo stack) instead of overwriting it.
     flushSaveNow();
-    store.gen++; store.id = null; store.rev = 0; store.pending = null; store.newId = "";
+    store.prevId = store.id || "";
+    store.gen++; store.id = null; store.rev = 0; store.pending = null; store.newId = ""; store.recovering = false;
     state.history = []; state.historyIndex = -1;
     closeTextEditor(true);
     closeCropOverlay();
@@ -3217,6 +3302,22 @@
     if (maskNode) maskNode.visible(false);
     doc.guides = [];
     syncGuideNodes();
+  }
+
+  // Back to the start screen with nothing open (the open document was deleted).
+  function closeDocument() {
+    clearTimeout(store.timer); store.pending = null; tabSet(STASH_KEY, "");
+    clearDocument();
+    store.prevId = "";
+    doc.ready = false;
+    state.fileName = "Untitled"; $("fileName").value = state.fileName;
+    $("dropVeil").classList.remove("hidden");
+    renderArtboard();
+    afterDocChange();
+    setDropCard();
+    setDocParam();
+    renderSaveState();
+    renderRecent();
   }
 
   function setupPage(spec, photo) {
