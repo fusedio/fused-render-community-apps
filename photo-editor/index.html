@@ -228,6 +228,48 @@
   .layer-foot .icon-btn svg { width: 14px; height: 14px; }
   .layer-foot .spacer { flex: 1; }
 
+  .left-pane { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  .left-pane[hidden] { display: none; }
+  .side-list { flex: 1; overflow-y: auto; padding: 4px 0; }
+  .side-foot { flex: 0 0 auto; border-top: 1px solid var(--line); background: var(--surface-2); padding: 8px 10px; font-size: 11px; color: var(--muted); line-height: 1.5; }
+  .side-foot button { color: var(--accent); font-size: 11px; font-weight: 600; padding: 0; }
+  .side-row {
+    display: grid; grid-template-columns: 44px 1fr auto; gap: 8px; align-items: center; width: 100%; text-align: left;
+    padding: 5px 8px; border-bottom: 1px solid var(--line); color: var(--ink); cursor: pointer; min-height: 44px;
+  }
+  .side-row:hover { background: var(--surface-2); }
+  .side-row.current { background: var(--accent-soft); box-shadow: inset 2px 0 0 var(--accent); }
+  .side-row .thumb { width: 44px; height: 34px; border-radius: 3px; background: var(--surface-3); object-fit: contain; display: block; }
+  .side-row .text { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .side-row .title { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .side-row .sub { font-size: 10.5px; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .side-row .who { font-size: 9.5px; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; padding: 1px 5px; border-radius: 3px; background: var(--surface-3); color: var(--muted); }
+  .side-row .who.agent { background: var(--accent-soft); color: var(--accent); }
+  .side-row .del { opacity: 0; width: 22px; height: 22px; border-radius: 4px; color: var(--faint); display: grid; place-items: center; }
+  .side-row:hover .del { opacity: 1; }
+  .side-row .del:hover { color: var(--danger); background: var(--danger-soft); }
+  .side-row .del svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+
+  .save-state {
+    font-size: 11.5px; color: var(--faint); padding: 3px 7px; border-radius: 4px; border: 1px solid transparent; white-space: nowrap;
+  }
+  .save-state:hover { color: var(--ink); border-color: var(--line-soft); background: var(--surface-2); }
+  .save-state.busy { color: var(--muted); }
+  .save-state.error { color: var(--danger); }
+  .save-state[hidden] { display: none; }
+
+  .recent { margin-top: 20px; text-align: left; }
+  .recent:empty { display: none; }
+  .recent h3 { margin: 0 0 8px; font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--faint); }
+  .recent-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 10px; }
+  .recent-card { text-align: left; border-radius: 6px; padding: 6px; border: 1px solid var(--line-soft); background: var(--surface-2); color: var(--ink); cursor: pointer; min-width: 0; }
+  .recent-card:hover { border-color: var(--accent); }
+  .recent-card img, .recent-card .ph { width: 100%; height: 70px; object-fit: contain; display: block; border-radius: 3px; background: var(--surface-3); }
+  .recent-card .title { margin-top: 5px; font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .recent-card .sub { font-size: 10.5px; color: var(--faint); }
+
+  .toast button.act { margin-left: 10px; color: var(--accent); font-weight: 600; font-size: 12.5px; padding: 0; }
+
   .empty-layers { padding: 26px 16px; text-align: center; color: var(--faint); font-size: 12px; line-height: 1.6; }
 
   .add-menu {
@@ -254,7 +296,7 @@
   .drop-veil { position: absolute; inset: 0; display: grid; place-items: center; padding: 40px; z-index: 3; }
   .drop-veil.hidden { display: none; }
   .drop-card {
-    width: min(420px, 100%); padding: 40px 32px; border: 1px dashed var(--line-soft); border-radius: 10px;
+    width: min(540px, 100%); max-height: 100%; overflow-y: auto; padding: 40px 32px; border: 1px dashed var(--line-soft); border-radius: 10px;
     background: var(--surface); text-align: center; transition: border-color 0.12s, background 0.12s; box-shadow: var(--shadow);
   }
   .drop-veil.dragging .drop-card { border-color: var(--accent); background: var(--accent-soft); }
@@ -565,6 +607,7 @@
   <header class="topbar">
     <div class="brand"><span class="brand-mark"><svg viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/></svg></span><span>Photo Editor</span></div>
     <input class="file-name" id="fileName" value="Untitled" spellcheck="false" />
+    <button class="save-state" id="saveState" title="Autosaved. Click or press ⌘S to save a PNG copy to the save folder." hidden></button>
     <span class="doc-meta link" id="docMeta" title="Page setup"></span>
     <div class="spacer"></div>
 
@@ -589,7 +632,10 @@
     <nav class="toolbar" id="toolbar"></nav>
 
     <aside class="layers">
-      <div class="panel-tabs"><button class="active">Layers</button><span class="fill"></span></div>
+      <div class="panel-tabs" id="leftTabs"><button class="active" data-ltab="layers">Layers</button><button data-ltab="history">History</button><button data-ltab="files">Files</button><span class="fill"></span></div>
+      <div class="left-pane" id="paneHistory" hidden><div class="side-list" id="historyList"></div></div>
+      <div class="left-pane" id="paneFiles" hidden><div class="side-list" id="filesList"></div><div class="side-foot" id="filesFoot"></div></div>
+      <div class="left-pane" id="paneLayers">
       <div class="layer-controls" id="layerControls"></div>
       <div class="layer-list" id="layerList"></div>
       <div class="layer-foot">
@@ -599,6 +645,7 @@
         <button class="icon-btn" id="downLayerBtn" title="Send backward (⌘[)"><svg viewBox="0 0 24 24"><path d="M12 5v14M6 13l6 6 6-6"/></svg></button>
         <span class="spacer"></span>
         <button class="icon-btn" id="delLayerBtn" title="Delete layer"><svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M18 7l-1 13H7L6 7"/></svg></button>
+      </div>
       </div>
     </aside>
 
@@ -619,6 +666,7 @@
             <button class="ghost-btn" id="browseBtn">Open photo</button>
           </div>
           <input type="file" id="fileInput" accept="image/*" hidden />
+          <div class="recent" id="recentDocs"></div>
         </div>
       </div>
 
@@ -696,9 +744,15 @@
   const themeColor = (token, fallback) =>
     (getComputedStyle(document.documentElement).getPropertyValue(token).trim() || fallback);
 
-  function toast(message, isError) {
+  function toast(message, isError, action) {
     const node = $("toast");
     node.textContent = message;
+    if (action) {
+      const button = document.createElement("button");
+      button.className = "act"; button.textContent = action.label;
+      button.onclick = () => { node.classList.remove("show"); action.run(); };
+      node.appendChild(button);
+    }
     node.classList.toggle("error", !!isError);
     node.classList.add("show");
     clearTimeout(toast._timer);
@@ -1352,8 +1406,9 @@
   }
 
   let historyTimer = null;
-  function commitHistory(label) {
+  function commitHistory(label, opts) {
     clearTimeout(historyTimer);
+    if (!(opts && opts.local)) scheduleSave(label);
     state.history = state.history.slice(0, state.historyIndex + 1);
     state.history.push({ label, snap: snapshot() });
     if (state.history.length > 60) state.history.shift();
@@ -1377,6 +1432,304 @@
     renderHistoryButtons();
     const label = state.history[delta < 0 ? next + 1 : next].label;
     toast((delta < 0 ? "Undo " : "Redo ") + label);
+    scheduleSave((delta < 0 ? "undo " : "redo ") + label);
+  }
+
+  // ---------------------------------------------------------------- documents on disk
+  //
+  // Every commitHistory() autosaves a revision through docstore.py, so nothing
+  // is lost when you start another document, and each step lands in the
+  // History tab. Claude edits the same files through the MCP tools in agent/;
+  // pollDisk() notices their revisions in current.json and loads them.
+
+  const CURRENT_FILE = ".fused/data/documents/current.json";
+  const store = { gen: 0, id: null, rev: 0, pending: null, timer: null, saving: false, error: "", seq: null, leftTab: "layers", steps: [], docs: [], saveDir: "" };
+  const docPy = (params) => fused.runPython(PY, params, { key: null });
+  const baseName = (path) => String(path || "").split("/").pop();
+
+  function setDocParam() {
+    if ((fused.params.get("doc") || "") !== (store.id || "")) fused.params.set("doc", store.id || "");
+  }
+
+  function hydrate(snap) {
+    (snap.layers || []).forEach((l) => { if (l.type === "image" && !l.src && l.workingPath) l.src = fused.rawUrl(l.workingPath); });
+    return snap;
+  }
+
+  // The page as a small PNG, composed the way renderOutput() composes an export.
+  function pageCanvas(maxSide) {
+    const k = Math.min(1, maxSide / Math.max(doc.width, doc.height)), z = state.zoom;
+    const out = document.createElement("canvas");
+    out.width = Math.max(1, Math.round(doc.width * k)); out.height = Math.max(1, Math.round(doc.height * k));
+    const ctx = out.getContext("2d");
+    if (!doc.transparent) { ctx.fillStyle = doc.background; ctx.fillRect(0, 0, out.width, out.height); }
+    const region = { x: stage.x(), y: stage.y(), width: doc.width * z, height: doc.height * z, pixelRatio: k / z };
+    doc.layers.forEach((layer) => {
+      if (!layer.visible) return;
+      const canvas = layer.konva.toCanvas(region);
+      ctx.save();
+      ctx.globalCompositeOperation = layer.blend === "normal" ? "source-over" : layer.blend;
+      if (layer.type === "image") { const f = previewFilter(layer); if (f && "filter" in ctx) ctx.filter = f; }
+      ctx.drawImage(canvas, 0, 0, out.width, out.height);
+      ctx.restore();
+    });
+    return out;
+  }
+
+  function thumbData() {
+    try { return pageCanvas(320).toDataURL("image/png"); } catch (e) { return ""; }
+  }
+
+  function scheduleSave(label) {
+    if (!doc.ready) return;
+    store.pending = label || store.pending || "edit";
+    clearTimeout(store.timer);
+    store.timer = setTimeout(flushSave, 350);
+    renderSaveState();
+  }
+
+  function flushSaveNow() {
+    if (store.pending && !store.saving) { clearTimeout(store.timer); flushSave(); }
+  }
+
+  async function flushSave() {
+    if (store.saving) { clearTimeout(store.timer); store.timer = setTimeout(flushSave, 200); return; }
+    const label = store.pending;
+    if (!label || !doc.ready) return;
+    store.pending = null; store.saving = true; renderSaveState();
+    const id = store.id, gen = store.gen;
+    const params = { snap_json: JSON.stringify(snapshot()), label, thumb: thumbData() };
+    try {
+      if (!id) {
+        const r = await docPy(Object.assign(params, { action: "doc_create", name: state.fileName || "Untitled" }));
+        // Another document may have been started or opened meanwhile.
+        if (store.gen === gen) { store.id = r.id; store.rev = r.rev; setDocParam(); }
+      } else {
+        const r = await docPy(Object.assign(params, { action: "doc_save", doc_id: id, base_rev: String(store.rev) }));
+        if (store.gen === gen) {
+          if (r.conflict) {
+            store.pending = null;
+            applyRecord(r.doc, "update");
+            toast("Claude changed this document at the same moment — showing its version. Redo your last step if you still want it.", true);
+          } else store.rev = r.rev;
+        }
+      }
+      store.error = "";
+    } catch (error) {
+      store.error = error.message || String(error);
+      console.warn("[photo_editor] autosave failed", error);
+    } finally {
+      store.saving = false;
+      renderSaveState();
+      if (store.pending) { clearTimeout(store.timer); store.timer = setTimeout(flushSave, 50); }
+      refreshSide();
+    }
+  }
+
+  function renderSaveState() {
+    const node = $("saveState");
+    node.hidden = !doc.ready;
+    const busy = store.saving || !!store.pending;
+    node.classList.toggle("busy", busy);
+    node.classList.toggle("error", !!store.error && !busy);
+    node.textContent = busy ? "Saving…" : store.error ? "Not saved" : store.id ? "Saved" : "";
+    node.title = store.error && !busy ? "Autosave failed: " + store.error : "Autosaved with every step. Click or press ⌘S to save a PNG copy to " + (store.saveDir || "~/Pictures/Photo Editor") + ".";
+  }
+
+  // Swap in a revision from disk. `why` is "open" (user picked it), "switch"
+  // (Claude opened it), or "update" (a newer revision of this document).
+  function applyRecord(record, why) {
+    const snap = hydrate(JSON.parse(JSON.stringify(record.snap)));
+    const resize = !doc.ready || why !== "update" || snap.width !== doc.width || snap.height !== doc.height;
+    const keep = doc.activeId;
+    if (why !== "update") { state.history = []; state.historyIndex = -1; store.gen++; }
+    store.id = record.id; store.rev = record.rev; store.pending = null; clearTimeout(store.timer);
+    state.fileName = record.name || "Untitled"; $("fileName").value = state.fileName;
+    if (why === "update" && keep && snap.layers.some((l) => l.id === keep) && record.source !== "agent") snap.activeId = keep;
+    if (why !== "update") { closeCropOverlay(); if (state.tool !== "move") setTool("move"); }
+    restore(snap);
+    $("dropVeil").classList.add("hidden");
+    setDropCard();
+    if (resize) fitToScreen();
+    commitHistory(record.label || "load", { local: true });
+    setDocParam();
+    renderSaveState();
+    refreshSide();
+  }
+
+  async function loadDoc(id, why) {
+    const r = await docPy({ action: "doc_load", doc_id: id });
+    applyRecord(r.doc, why);
+    return r.doc;
+  }
+
+  async function openDoc(id) {
+    if (id === store.id && doc.ready) return;
+    flushSaveNow();
+    try { const d = await loadDoc(id, "open"); toast("Opened " + d.name); }
+    catch (error) { toast(error.message || String(error), true); }
+  }
+
+  // Claude's edits arrive as new revisions; the page follows along. Reading one
+  // small JSON file a second is cheap, and a Python call only happens when it
+  // actually changed.
+  async function pollDisk() {
+    if (document.hidden) return;
+    let cur;
+    try { cur = JSON.parse(await fused.readFile(CURRENT_FILE)); } catch (e) { return; }
+    if (!cur || !cur.seq || cur.seq === store.seq) return;
+    // Mid-gesture or mid-save: look again next tick rather than yank the page.
+    // A running AI edit / upscale / cutout swaps pixels into a layer when it
+    // finishes, so it must not be rebuilt underneath it either.
+    if (store.saving || store.pending || editingLayer || shaping.active || state.tool === "crop" ||
+        state.generating || state.upscaling || state.bgBusy) return;
+    store.seq = cur.seq;
+    try {
+      if (cur.id === store.id) {
+        if (cur.rev > store.rev) {
+          const d = await loadDoc(cur.id, "update");
+          if (d.source === "agent") toast("Claude · " + d.label);
+        }
+      } else if (cur.source === "agent") {
+        flushSaveNow();
+        const d = await loadDoc(cur.id, "switch");
+        toast("Claude opened " + d.name);
+      }
+    } catch (error) { console.warn("[photo_editor] could not load a revision from disk", error); }
+  }
+
+  async function renameDoc(name) {
+    if (!store.id) return;
+    try { await docPy({ action: "doc_rename", doc_id: store.id, name: name || "Untitled" }); refreshSide(); }
+    catch (error) { toast(error.message || String(error), true); }
+  }
+
+  async function reveal(path) {
+    try { await docPy({ action: "reveal", path: path || "" }); } catch (error) { toast(error.message || String(error), true); }
+  }
+
+  // ⌘S / the "Saved" chip: a full-size PNG copy in the save folder.
+  async function saveCopy() {
+    if (!doc.ready) return;
+    closeTextEditor(false);
+    flushSaveNow();
+    try {
+      const dataUrl = pageCanvas(Math.max(doc.width, doc.height)).toDataURL("image/png");
+      if (!doc.localSession) doc.localSession = newSessionId();
+      const session = (doc.layers.find((l) => l.type === "image") || {}).sessionId || doc.localSession;
+      const frame = await py({ action: "save_frame", session_id: session, image_data: dataUrl });
+      const result = await py({ action: "export", session_id: session, source: frame.path, fmt: "png", background: doc.background, dpi: String(doc.dpi), save: "true", file_name: state.fileName || "design" });
+      toast("Saved " + baseName(result.path) + " to " + (store.saveDir || "~/Pictures/Photo Editor").replace(/^.*\/(Pictures\/)/, "$1"), false,
+        { label: "Show in Finder", run: () => reveal(result.path) });
+    } catch (error) { toast(error.message || String(error), true); }
+  }
+
+  // ---------------------------------------------------------------- History / Files tabs
+
+  function setLeftTab(tab) {
+    store.leftTab = tab;
+    document.querySelectorAll("#leftTabs [data-ltab]").forEach((b) => b.classList.toggle("active", b.dataset.ltab === tab));
+    $("paneLayers").hidden = tab !== "layers";
+    $("paneHistory").hidden = tab !== "history";
+    $("paneFiles").hidden = tab !== "files";
+    refreshSide();
+  }
+
+  const WHEN = (t) => {
+    const d = new Date((t || 0) * 1000), now = new Date();
+    return d.toDateString() === now.toDateString() ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : d.toLocaleDateString([], { month: "short", day: "numeric" }) + " " + d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  };
+  const thumbSrc = (path, bust) => path ? fused.rawUrl(path) + "&_t=" + encodeURIComponent(bust || "") : "";
+  const DEL_ICON = '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+
+  let sideTimer = null;
+  function refreshSide() {
+    clearTimeout(sideTimer);
+    sideTimer = setTimeout(() => {
+      if (store.leftTab === "history") renderHistoryTab();
+      else if (store.leftTab === "files") renderFilesTab();
+      if (!doc.ready) renderRecent();
+    }, 60);
+  }
+
+  async function renderHistoryTab() {
+    const list = $("historyList");
+    if (!store.id) {
+      list.innerHTML = '<div class="empty-layers">' + (doc.ready ? "Saving the first step…" : "Every step you or Claude take shows up here. Click one to go back to it.") + "</div>";
+      return;
+    }
+    let steps;
+    try { steps = (await docPy({ action: "doc_history", doc_id: store.id })).steps; } catch (e) { return; }
+    list.innerHTML = steps.slice().reverse().map((st) =>
+      '<button class="side-row' + (st.rev === store.rev ? " current" : "") + '" data-rev="' + st.rev + '" title="Go back to this step">' +
+      (st.thumb ? '<img class="thumb" src="' + thumbSrc(st.thumb, st.rev) + '" />' : '<span class="thumb"></span>') +
+      '<span class="text"><span class="title">' + st.rev + ". " + esc(st.label || "edit") + '</span><span class="sub">' + esc(WHEN(st.time)) + " · " + st.layers + " layer" + (st.layers === 1 ? "" : "s") + "</span></span>" +
+      '<span class="who' + (st.source === "agent" ? " agent" : "") + '">' + (st.source === "agent" ? "Claude" : "You") + "</span></button>").join("") ||
+      '<div class="empty-layers">No steps yet.</div>';
+    list.querySelectorAll("[data-rev]").forEach((row) => row.onclick = async () => {
+      const rev = Number(row.dataset.rev);
+      if (rev === store.rev) return;
+      flushSaveNow();
+      try {
+        const r = await docPy({ action: "doc_restore", doc_id: store.id, rev: String(rev) });
+        applyRecord(r.doc, "update");
+        toast("Back to step " + rev + " — later steps are still in History");
+      } catch (error) { toast(error.message || String(error), true); }
+    });
+  }
+
+  async function loadDocList() {
+    try {
+      const r = await docPy({ action: "doc_list" });
+      store.docs = r.documents || []; store.saveDir = r.save_folder || "";
+    } catch (e) { store.docs = []; }
+    return store.docs;
+  }
+
+  async function deleteDoc(id, name) {
+    if (!confirm("Delete “" + name + "” and its history? Files you saved or exported are kept.")) return;
+    try {
+      await docPy({ action: "doc_delete", doc_id: id });
+      if (id === store.id) { store.id = null; store.rev = 0; setDocParam(); }
+      refreshSide();
+    } catch (error) { toast(error.message || String(error), true); }
+  }
+
+  async function renderFilesTab() {
+    const docs = await loadDocList();
+    const list = $("filesList");
+    list.innerHTML = docs.map((d) =>
+      '<div class="side-row' + (d.id === store.id ? " current" : "") + '" data-open="' + esc(d.id) + '" title="Open">' +
+      (d.thumb ? '<img class="thumb" src="' + thumbSrc(d.thumb, d.rev) + '" />' : '<span class="thumb"></span>') +
+      '<span class="text"><span class="title">' + esc(d.name) + '</span><span class="sub">' + esc(WHEN(d.updated_at)) + " · " + (d.width || "?") + " × " + (d.height || "?") + "</span></span>" +
+      '<button class="del" data-del="' + esc(d.id) + '" data-name="' + esc(d.name) + '" title="Delete document">' + DEL_ICON + "</button></div>").join("") ||
+      '<div class="empty-layers">No documents yet. They are saved automatically as you edit.</div>';
+    list.querySelectorAll("[data-open]").forEach((row) => row.onclick = (e) => { if (!e.target.closest("[data-del]")) openDoc(row.dataset.open); });
+    list.querySelectorAll("[data-del]").forEach((b) => b.onclick = () => deleteDoc(b.dataset.del, b.dataset.name));
+    $("filesFoot").innerHTML = "Documents autosave with every step. Save (⌘S) and Export write to <b>" + esc((store.saveDir || "~/Pictures/Photo Editor").replace(/^\/Users\/[^/]+/, "~")) + '</b> · <button id="revealSaveDir">Show folder</button>';
+    $("revealSaveDir").onclick = () => reveal("");
+  }
+
+  async function renderRecent() {
+    const docs = (await loadDocList()).slice(0, 6);
+    const box = $("recentDocs");
+    if (doc.ready || !docs.length) { box.innerHTML = ""; return; }
+    box.innerHTML = "<h3>Recent</h3><div class=\"recent-grid\">" + docs.map((d) =>
+      '<button class="recent-card" data-open="' + esc(d.id) + '" title="' + esc(d.name) + '">' +
+      (d.thumb ? '<img src="' + thumbSrc(d.thumb, d.rev) + '" />' : '<span class="ph"></span>') +
+      '<div class="title">' + esc(d.name) + '</div><div class="sub">' + esc(WHEN(d.updated_at)) + "</div></button>").join("") + "</div>";
+    box.querySelectorAll("[data-open]").forEach((b) => b.onclick = () => openDoc(b.dataset.open));
+  }
+
+  async function startDocuments() {
+    try { const cur = JSON.parse(await fused.readFile(CURRENT_FILE)); store.seq = cur && cur.seq; } catch (e) { store.seq = ""; }
+    const wanted = fused.params.get("doc");
+    if (wanted) {
+      try { await loadDoc(wanted, "open"); } catch (e) { store.id = null; setDocParam(); }
+    }
+    renderRecent();
+    setInterval(pollDisk, 1000);
+    window.addEventListener("pagehide", flushSaveNow);
   }
 
   // ---------------------------------------------------------------- view
@@ -2520,6 +2873,7 @@
 
   function newBlankDocument(spec) {
     clearDocument();
+    state.fileName = "Untitled"; $("fileName").value = state.fileName;
     setupPage(spec);
     $("dropVeil").classList.add("hidden");
     if (state.tool !== "move") setTool("move");
@@ -2532,6 +2886,11 @@
   let pendingOpen = null;
 
   function clearDocument() {
+    // A new document: the one on screen is already autosaved, so start a fresh
+    // record (and a fresh undo stack) instead of overwriting it.
+    flushSaveNow();
+    store.gen++; store.id = null; store.rev = 0; store.pending = null;
+    state.history = []; state.historyIndex = -1;
     closeTextEditor(true);
     closeCropOverlay();
     doc.layers.slice().forEach((l) => l.konva.destroy());
@@ -2705,12 +3064,12 @@
           '<div class="fineprint">Currently ' + esc(docSummaryParts().join(" · ")) + ". Undo with ⌘Z.</div></div>"
         : "") +
       (setup ? "" : '<div class="nd-actions">' +
-      '<button class="big-btn' + (doc.ready ? " danger" : "") + '" id="ndCreate">' + (doc.ready ? "Replace with blank " : "Create blank ") + esc(spec.name) + "</button>" +
+      '<button class="big-btn" id="ndCreate">Create blank ' + esc(spec.name) + "</button>" +
       '<button class="big-btn secondary" id="ndOpen">Open photo…</button>' +
       '<label class="mini">When opening a photo<select id="ndPhotoMode">' +
       [["own", "Use the photo's own size"], ["fill", "Fill this page (crops edges)"], ["fit", "Fit inside this page"]].map(([v, l]) => '<option value="' + v + '"' + (nd.photoMode === v ? " selected" : "") + ">" + l + "</option>").join("") + "</select></label>" +
       '<div class="fineprint">' + (nd.photoMode === "own" ? "The page takes the photo's pixels at " + nd.dpi + " DPI" + (nd.bleed ? "; bleed comes off its edges." : ".") : "The photo is scaled onto " + esc(spec.name) + (nd.photoMode === "fill" ? ", covering the bleed." : ", inside the trim.")) +
-      (doc.ready ? " Replacing the current design can be undone with ⌘Z." : "") + "</div></div>");
+      (doc.ready ? " “" + esc(state.fileName) + "” is autosaved and stays in the Files tab." : "") + "</div></div>");
     $("newDocBody").innerHTML = '<div class="nd-cats">' + cats + '</div><div class="nd-grid">' + grid + '</div><div class="nd-side">' + side + "</div>";
     drawPagePreview($("ndCanvas"), spec, 268, 168);
 
@@ -3554,15 +3913,14 @@
       if (!doc.localSession) doc.localSession = newSessionId();
       const session = (doc.layers.find((l) => l.type === "image") || {}).sessionId || doc.localSession;
       const frame = await py({ action: "save_frame", session_id: session, image_data: dataUrl });
-      const result = await py({ action: "export", session_id: session, source: frame.path, fmt: L.format, quality: String(c.quality), background: L.print ? "#ffffff" : doc.background, dpi: String(L.dpi) });
+      // Written straight into the save folder (~/Pictures/Photo Editor), not
+      // handed to the browser as a download.
+      const result = await py({ action: "export", session_id: session, source: frame.path, fmt: L.format, quality: String(c.quality), background: L.print ? "#ffffff" : doc.background, dpi: String(L.dpi), save: "true", file_name: (c.fileName || "").trim() || "design" });
       const ext = { jpeg: "jpg", tiff: "tif" }[L.format] || L.format;
-      const anchor = document.createElement("a");
-      anchor.href = fused.rawUrl(result.path);
-      anchor.download = ((c.fileName || "").trim() || "design").replace(/[\\/:*?"<>|]+/g, "-") + "." + ext;
-      document.body.appendChild(anchor); anchor.click(); anchor.remove();
       closeExport();
       const size = result.bytes > 1048576 ? (result.bytes / 1048576).toFixed(1) + " MB" : Math.round(result.bytes / 1024) + " KB";
-      toast("Exported " + ext.toUpperCase() + " · " + (L.print ? L.sizeName + " " + fmtSize(L.tmm.w, L.tmm.h) + " @ " + L.dpi + " DPI" : L.pageW + " × " + L.pageH + " px") + " · " + size);
+      toast("Saved " + baseName(result.path) + " · " + (L.print ? L.sizeName + " " + fmtSize(L.tmm.w, L.tmm.h) + " @ " + L.dpi + " DPI" : L.pageW + " × " + L.pageH + " px") + " · " + size, false,
+        { label: "Show in Finder", run: () => reveal(result.path) });
     } catch (error) {
       toast(error.message || String(error), true);
       if ($("exportVeil").classList.contains("show")) renderExport();
@@ -4297,6 +4655,7 @@
     $("dropTitle").textContent = ready ? "Drop to place" : "Start a document";
     $("dropText").textContent = ready ? "The image is added as a new layer on this page." : "Drop a photo here, or pick a page size — A4, Letter, photo prints, cards, posters or screen. Everything stays on this Mac.";
     $("dropActions").style.display = ready ? "none" : "";
+    $("recentDocs").style.display = ready ? "none" : "";
   }
 
   function wireChrome() {
@@ -4355,6 +4714,9 @@
     $("redoBtn").onclick = () => stepHistory(1);
     $("exportBtn").onclick = openExport;
     $("fileName").oninput = (event) => { state.fileName = event.target.value || "Untitled"; };
+    $("fileName").onchange = () => renameDoc(state.fileName);
+    $("saveState").onclick = saveCopy;
+    $("leftTabs").onclick = (e) => { const b = e.target.closest("[data-ltab]"); if (b) setLeftTab(b.dataset.ltab); };
 
     $("addLayerBtn").onclick = (e) => openAddMenu(e.currentTarget);
     $("dupLayerBtn").onclick = () => { const l = activeLayer(); if (l) duplicateLayer(l); };
@@ -4390,6 +4752,7 @@
       if (meta && !typing && event.key === ";") { event.preventDefault(); toggleView("printGuides"); return; }
       if (meta && !typing && !event.shiftKey && event.key.toLowerCase() === "r") { event.preventDefault(); toggleView("rulers"); return; }
       if (meta && event.shiftKey && event.key.toLowerCase() === "e") { event.preventDefault(); openExport(); return; }
+      if (meta && !event.shiftKey && event.key.toLowerCase() === "s") { event.preventDefault(); saveCopy(); return; }
       if (meta && event.key.toLowerCase() === "z") { event.preventDefault(); if (!typing) stepHistory(event.shiftKey ? 1 : -1); return; }
       if (typing) return;
       const layer = activeLayer();
@@ -4447,7 +4810,7 @@
       if (p && PROP_TABS.some(([id]) => id === p) && p !== state.propsTab) { state.propsTab = p; renderProps(); }
     });
     setDropCard();
-    if (!doc.ready) openNewDoc();
+    await startDocuments();
     try {
       state.capabilities = await py({ action: "status" });
       renderProps();
