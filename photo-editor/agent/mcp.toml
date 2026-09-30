@@ -139,3 +139,45 @@ name = "undo"
 description = "Undo the last step of a document (recorded as a new step)."
 file = "tools.py"
 entrypoint = "undo"
+[[tool]]
+name = "get_view"
+description = "The editor's View settings: grid (on/off, spacing, and grid_step = spacing in page pixels), snap, rulers, guides, bleed/trim overlay, ruler unit."
+file = "tools.py"
+entrypoint = "get_view"
+
+[[tool]]
+name = "set_view"
+description = "Turn the editor's grid, snap, rulers, guides or bleed/trim overlay (print_guides) on or off, set grid_size (auto, 5mm, 10mm, 25mm, 0.25in, 0.5in, 1in, 100px) or the ruler unit. With snap on, every tool that places or moves a layer snaps its edges and centre to the page, trim, safe margin, guides and (when shown) grid lines, like dragging in the editor."
+file = "tools.py"
+entrypoint = "set_view"
+
+[[tool]]
+name = "add_guide"
+description = "Add a ruler guide: axis 'x'/'vertical' at x = position, or 'y'/'horizontal' at y = position, in page pixels. Placed layers snap to guides."
+file = "tools.py"
+entrypoint = "add_guide"
+
+[[tool]]
+name = "clear_guides"
+description = "Remove every ruler guide from a document."
+file = "tools.py"
+entrypoint = "clear_guides"
+
+[[tool]]
+name = "align_layers"
+description = "Align layers: align = left, center, right, top, middle or bottom. layers = list of ids/names, [\"all\"], or omit for the selected layer. relative_to = page (trim box), selection (box around them), a layer id/name to align to, or auto (page for one layer, selection for several). A text label's box moves with its text."
+file = "tools.py"
+entrypoint = "align_layers"
+
+[[tool]]
+name = "distribute_layers"
+description = "Space layers evenly, direction horizontal or vertical. Without gap the two outermost stay put and the gaps between are equalised; with gap (page pixels) they are packed that far apart from the first. layers = ids/names or [\"all\"]."
+file = "tools.py"
+entrypoint = "distribute_layers"
+
+[[tool]]
+name = "screenshot_editor"
+description = "Screenshot the open editor to check placement, and return the PNG path (open it to look). mode 'page' = the page drawn by the editor itself (real fonts); mode 'editor' = the canvas as it is on screen with grid, guides, rulers and selection. Falls back to the Python render if no editor is open. Use after edits to verify layout."
+file = "tools.py"
+entrypoint = "screenshot_editor"
+

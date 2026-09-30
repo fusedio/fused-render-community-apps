@@ -102,15 +102,94 @@ def _place(snap: dict, w: float, h: float, position: str, x, y) -> tuple[float, 
     vert = "top" if "top" in pos else "bottom" if "bottom" in pos else "center"
     px = tx + m if horiz == "left" else tx + tw - m - w if horiz == "right" else tx + (tw - w) / 2
     py = ty + m if vert == "top" else ty + th - m - h if vert == "bottom" else ty + (th - h) / 2
-    return (float(x) if x is not None else px), (float(y) if y is not None else py)
+    return _snap_box(snap, (float(x) if x is not None else px), (float(y) if y is not None else py), w, h)
+
+
+# ---------------------------------------------------------------- snapping
+#
+# The same rules the editor applies to a dragged layer (snapLayer in
+# index.html): with Snap on, a box's left/centre/right (top/middle/bottom)
+# lands on the page and trim edges, the trim centre, the safe margin, the
+# guides and -- when the grid is showing -- the grid lines, if one is close.
+
+
+def _grid_step(snap: dict, view: dict, doc_id: str = "") -> float:
+    if not view.get("grid"):
+        return 0.0
+    if view.get("grid_step") and (not doc_id or view.get("grid_doc") == doc_id):
+        return float(view["grid_step"])
+    dpi = snap.get("dpi") or 300
+    size = str(view.get("gridSize") or "auto")
+    import re
+
+    match = re.fullmatch(r"([\d.]+)(mm|in|px)", size)
+    if match:
+        value, unit = float(match.group(1)), match.group(2)
+        return value if unit == "px" else value * (MM_PER_IN if unit == "in" else 1) * dpi / MM_PER_IN
+    return 100.0 if snap.get("sizing") == "pixels" else 10 * dpi / MM_PER_IN
+
+
+def _snap_targets(snap: dict, axis: str, view: dict) -> list[float]:
+    tx, ty, tw, th = _trim(snap)
+    start, length = (tx, tw) if axis == "x" else (ty, th)
+    full = snap["width"] if axis == "x" else snap["height"]
+    out = [0, full, start, start + length, start + length / 2]
+    safe = (snap.get("safe") or 0) * (snap.get("dpi") or 300) / MM_PER_IN
+    if safe > 0:
+        out += [start + safe, start + length - safe]
+    if view.get("guides", True):
+        out += [g["pos"] for g in snap.get("guides") or [] if g.get("axis") == axis]
+    return out
+
+
+def _snap_value(snap: dict, axis: str, values: list[float], view: dict) -> float:
+    """The shift for a box whose [start, centre, end] on `axis` are `values`.
+
+    Page/trim edges, the trim centre, the safe margin and guides win when one
+    is close (the editor's rule, as a share of the page). Otherwise, with the
+    grid showing, the start edge goes to the nearest grid line -- for the
+    agent "snap to grid" means on the grid, not merely near it."""
+    tol = max(snap["width"], snap["height"]) * 0.006
+    best = None
+    for value in values:
+        for target in _snap_targets(snap, axis, view):
+            d = target - value
+            if abs(d) <= tol and (best is None or abs(d) < abs(best)):
+                best = d
+    if best is not None:
+        return best
+    step = _grid_step(snap, view, snap.get("_doc_id", ""))
+    if step:
+        origin = _trim(snap)[0 if axis == "x" else 1]
+        return origin + round((values[0] - origin) / step) * step - values[0]
+    return 0.0
+
+
+def _snap_box(snap: dict, left: float, top: float, w: float, h: float) -> tuple[float, float]:
+    view = docstore.get_view()
+    if not view.get("snap", True):
+        return left, top
+    left += _snap_value(snap, "x", [left, left + w / 2, left + w], view)
+    top += _snap_value(snap, "y", [top, top + h / 2, top + h], view)
+    return left, top
+
+
+def _snap_point(snap: dict, x: float, y: float) -> tuple[float, float]:
+    view = docstore.get_view()
+    if not view.get("snap", True):
+        return x, y
+    return x + _snap_value(snap, "x", [x], view), y + _snap_value(snap, "y", [y], view)
 
 
 def _load(document: str) -> tuple[str, dict]:
     doc_id = docstore.resolve(document)
-    return doc_id, docstore.load(doc_id)
+    record = docstore.load(doc_id)
+    record["snap"]["_doc_id"] = doc_id  # for the grid-step lookup; stripped on commit
+    return doc_id, record
 
 
 def _commit(doc_id: str, snap: dict, label: str, extra: dict | None = None) -> dict:
+    snap.pop("_doc_id", None)
     try:
         thumb = render.thumbnail_png(snap)
     except Exception as error:  # a thumbnail must never cost the edit
@@ -428,6 +507,8 @@ def add_line(x1: float, y1: float, x2: float, y2: float, document: str = "", col
              name: str = "") -> dict:
     doc_id, record = _load(document)
     snap = record["snap"]
+    x1, y1 = _snap_point(snap, float(x1), float(y1))
+    x2, y2 = _snap_point(snap, float(x2), float(y2))
     head = max(12.0, float(width) * 4)
     attrs = {"x": float(x1), "y": float(y1), "points": [0, 0, float(x2) - float(x1), float(y2) - float(y1)],
              "stroke": color, "fill": color, "strokeWidth": float(width), "pointerAtEnding": bool(arrow_end),
@@ -685,3 +766,198 @@ def undo(document: str = "") -> dict:
     if result is None:
         return {"ok": False, "message": "Nothing to undo"}
     return {"ok": True, "document": doc_id, "rev": result["rev"], "step": result["doc"]["label"]}
+
+
+# ---------------------------------------------------------------- view, guides, alignment
+
+
+def get_view() -> dict:
+    """The editor's View settings and the grid spacing in page pixels."""
+    return docstore.get_view()
+
+
+def set_view(grid=None, snap=None, rulers=None, guides=None, print_guides=None,
+             grid_size: str = "", unit: str = "") -> dict:
+    """Turn the editor's grid / snap / rulers / guides / bleed-trim overlay on
+    or off, and set the grid spacing ("auto", "5mm", "10mm", "25mm", "0.25in",
+    "0.5in", "1in", "100px") or ruler unit (mm, cm, in, px). An open editor
+    applies it within a second; tools that place layers then snap to it."""
+    changes = {}
+    for key, value in (("grid", grid), ("snap", snap), ("rulers", rulers), ("guides", guides),
+                       ("printGuides", print_guides)):
+        if value is not None:
+            changes[key] = bool(value)
+    if grid_size:
+        if grid_size not in ("auto", "5mm", "10mm", "25mm", "0.25in", "0.5in", "1in", "100px"):
+            raise ValueError("grid_size must be auto, 5mm, 10mm, 25mm, 0.25in, 0.5in, 1in or 100px")
+        changes["gridSize"] = grid_size
+        changes["grid"] = True if grid is None else changes["grid"]
+    if unit:
+        if unit not in ("mm", "cm", "in", "px"):
+            raise ValueError("unit must be mm, cm, in or px")
+        changes["unit"] = unit
+    if "gridSize" in changes:
+        changes["grid_step"] = 0  # the page republishes the real step
+    view = docstore.set_view(changes, "agent")
+    return {"ok": True, "view": {k: view.get(k) for k in docstore.VIEW_KEYS}}
+
+
+def add_guide(axis: str, position: float, document: str = "") -> dict:
+    """A ruler guide. axis 'x' / 'vertical' is a vertical line at x = position;
+    'y' / 'horizontal' a horizontal line at y = position (page pixels)."""
+    axis = {"vertical": "x", "horizontal": "y"}.get(axis, axis)
+    if axis not in ("x", "y"):
+        raise ValueError("axis must be x (vertical) or y (horizontal)")
+    doc_id, record = _load(document)
+    snap = record["snap"]
+    snap.setdefault("guides", []).append({"axis": axis, "pos": float(position)})
+    return _commit(doc_id, snap, f"add {'vertical' if axis == 'x' else 'horizontal'} guide")
+
+
+def clear_guides(document: str = "") -> dict:
+    doc_id, record = _load(document)
+    snap = record["snap"]
+    snap["guides"] = []
+    return _commit(doc_id, snap, "clear guides")
+
+
+def _unit_bounds(snap: dict, layer: dict) -> dict:
+    """A layer's box, including the label box behind a text label."""
+    boxes = [render.layer_bounds(l) for l in [layer] + _label_boxes(snap, layer)]
+    x0 = min(b["x"] for b in boxes)
+    y0 = min(b["y"] for b in boxes)
+    x1 = max(b["x"] + b["width"] for b in boxes)
+    y1 = max(b["y"] + b["height"] for b in boxes)
+    return {"x": x0, "y": y0, "width": x1 - x0, "height": y1 - y0}
+
+
+def _move(snap: dict, layer: dict, dx: float, dy: float) -> None:
+    for item in [layer] + _label_boxes(snap, layer):
+        item["attrs"]["x"] = (item["attrs"].get("x") or 0) + dx
+        item["attrs"]["y"] = (item["attrs"].get("y") or 0) + dy
+
+
+def _pick_layers(snap: dict, layers) -> list[dict]:
+    if isinstance(layers, str):
+        layers = [p.strip() for p in layers.split(",") if p.strip()]
+    if not layers:
+        return [_find_layer(snap, "")]
+    if len(layers) == 1 and str(layers[0]).lower() == "all":
+        boxes = {id(b) for l in snap.get("layers") or [] for b in _label_boxes(snap, l)}
+        return [l for l in snap.get("layers") or [] if id(l) not in boxes and not l.get("locked")]
+    picked = []
+    for key in layers:
+        layer = _find_layer(snap, str(key))
+        if all(layer is not p for p in picked):
+            picked.append(layer)
+    return picked
+
+
+def align_layers(layers: list = None, align: str = "center", relative_to: str = "auto",
+                 document: str = "") -> dict:
+    """Line layers up. layers: ids or names, ["all"], or omit for the selected
+    one. align: left, center, right, top, middle, bottom. relative_to: page
+    (the trim box), selection (the box around the layers), a layer id/name
+    to align to, or auto (page for one layer, selection for several)."""
+    doc_id, record = _load(document)
+    snap = record["snap"]
+    picked = _pick_layers(snap, layers)
+    align = {"centre": "center", "hcenter": "center", "vcenter": "middle", "centre-vertical": "middle"}.get(align, align)
+    if align not in ("left", "center", "right", "top", "middle", "bottom"):
+        raise ValueError("align must be left, center, right, top, middle or bottom")
+    ref = (relative_to or "auto").lower()
+    if ref == "auto":
+        ref = "page" if len(picked) == 1 else "selection"
+    if ref == "page":
+        tx, ty, tw, th = _trim(snap)
+        box = {"x": tx, "y": ty, "width": tw, "height": th}
+    elif ref == "selection":
+        boxes = [_unit_bounds(snap, l) for l in picked]
+        x0, y0 = min(b["x"] for b in boxes), min(b["y"] for b in boxes)
+        box = {"x": x0, "y": y0, "width": max(b["x"] + b["width"] for b in boxes) - x0,
+               "height": max(b["y"] + b["height"] for b in boxes) - y0}
+    else:
+        anchor = _find_layer(snap, relative_to)
+        box = _unit_bounds(snap, anchor)
+        picked = [l for l in picked if l is not anchor]
+    for layer in picked:
+        b = _unit_bounds(snap, layer)
+        dx = dy = 0.0
+        if align == "left":
+            dx = box["x"] - b["x"]
+        elif align == "center":
+            dx = box["x"] + box["width"] / 2 - (b["x"] + b["width"] / 2)
+        elif align == "right":
+            dx = box["x"] + box["width"] - (b["x"] + b["width"])
+        elif align == "top":
+            dy = box["y"] - b["y"]
+        elif align == "middle":
+            dy = box["y"] + box["height"] / 2 - (b["y"] + b["height"] / 2)
+        else:
+            dy = box["y"] + box["height"] - (b["y"] + b["height"])
+        _move(snap, layer, dx, dy)
+    return _commit(doc_id, snap, f"align {align} ({ref})",
+                   {"layers": [_layer_summary(l) for l in picked]})
+
+
+def distribute_layers(layers: list = None, direction: str = "horizontal", gap=None,
+                      document: str = "") -> dict:
+    """Space layers evenly. direction: horizontal (left to right) or vertical.
+    Without gap the outermost layers stay put and the space between the rest
+    is equalised; with gap (page pixels) they are packed that far apart,
+    starting from the first. layers: ids/names or ["all"]; needs at least 2."""
+    doc_id, record = _load(document)
+    snap = record["snap"]
+    picked = _pick_layers(snap, layers or ["all"])
+    if len(picked) < 2:
+        raise ValueError("Distribute needs at least two layers")
+    horizontal = direction.lower().startswith("h")
+    pos, size = ("x", "width") if horizontal else ("y", "height")
+    items = sorted(((l, _unit_bounds(snap, l)) for l in picked), key=lambda p: p[1][pos])
+    if gap is None:
+        span = items[-1][1][pos] + items[-1][1][size] - items[0][1][pos]
+        free = span - sum(b[size] for _, b in items)
+        spacing = free / (len(items) - 1)
+    else:
+        spacing = float(gap)
+    cursor = items[0][1][pos]
+    for layer, b in items:
+        shift = cursor - b[pos]
+        _move(snap, layer, shift if horizontal else 0, 0 if horizontal else shift)
+        cursor += b[size] + spacing
+    return _commit(doc_id, snap, f"distribute {'horizontally' if horizontal else 'vertically'}",
+                   {"layers": [_layer_summary(l) for l, _ in items], "spacing": round(spacing, 1)})
+
+
+def screenshot_editor(document: str = "", mode: str = "page", max_size: int = 1600,
+                      wait_seconds: float = 12) -> dict:
+    """Capture what the editor shows, to check placement. mode 'page': the
+    page alone, drawn by the editor itself (real fonts, blend modes, live
+    adjustments). mode 'editor': the canvas area as it looks on screen --
+    grid, guides, rulers, the selection box and handles included. Opens the
+    document in the editor first if another one is showing. With no editor
+    open it falls back to render_document and says so."""
+    if mode not in ("page", "editor"):
+        raise ValueError("mode must be page or editor")
+    doc_id, record = _load(document)
+    if docstore.get_current().get("id") != doc_id:
+        docstore.set_current(doc_id, record["rev"], "agent")
+    request_id = docstore.request_screenshot(doc_id, record["rev"], mode, max_size)
+    deadline = time.time() + max(1.0, float(wait_seconds))
+    while time.time() < deadline:
+        result = docstore.screenshot_result(request_id)
+        if result:
+            return {"ok": True, "source": "editor", "path": result["path"], "mode": mode,
+                    "width": result.get("width"), "height": result.get("height"),
+                    "rev": result.get("rev"), "zoom": result.get("zoom"),
+                    "note": "Open the PNG at `path` to look at it." +
+                            (" Page pixels = screenshot pixels / scale." if mode == "page" else
+                             " This is the visible canvas area at the editor's current zoom.")
+                            + f" scale={result.get('scale')}"}
+        time.sleep(0.25)
+    fallback = render_document(doc_id, max_size=max_size)
+    fallback.update(ok=True, source="python-render",
+                    note="No open editor answered within " + f"{wait_seconds:g}s" +
+                         ", so this is the Python render (system fonts, no grid or selection). "
+                         "Open the Photo Editor page to get real editor screenshots.")
+    return fallback

@@ -38,6 +38,11 @@ Either side panel folds into a thin strip with the « button in its tab bar;
 click the strip to bring it back. **Tab** hides or shows both panels, and
 View › Reset panel layout restores them.
 
+To align several layers, Shift- or ⌘-click them in the Layers list: an align
+bar replaces the blend controls, with align left / centre / right / top /
+middle / bottom and (for three or more) distribute. The Position menu over a
+layer aligns that one layer to the page.
+
 ## Driving it from Claude
 
 `agent/` is an MCP server made with fused-render's app-MCP support: `mcp.toml`
@@ -62,14 +67,19 @@ on the left and save it as a JPEG"*. The tools:
 | `add_text`, `add_shape`, `add_line`, `add_image` | New layers. `position` (`center`, `top`, `bottom-right` ...) places them inside the safe margin; `x`/`y` place them exactly. `add_text(background_color=...)` makes a label or badge. |
 | `update_layer`, `delete_layer`, `arrange_layer` | Move, resize, recolour, rename, hide, reorder. |
 | `adjust_image`, `apply_filter`, `crop_image`, `remove_background` | Pixel edits, done with the same Pillow and Vision code the panels use. |
+| `screenshot_editor` | What the open editor shows, as a PNG Claude can look at: `mode="page"` is the page drawn by the editor itself (real fonts, blend modes), `mode="editor"` is the canvas as it is on screen with grid, guides, rulers and the selection. Falls back to the Python render when no editor is open. |
 | `render_document`, `save_document` | A PNG to look at, and the finished file in the save folder. |
+| `get_view`, `set_view`, `add_guide`, `clear_guides` | The editor's View settings (grid and its spacing, snap, rulers, guides, bleed/trim overlay) and ruler guides. With Snap on, every placement snaps to the page and trim edges, centre, safe margin and guides, and, when the grid is showing, onto the grid. |
+| `align_layers`, `distribute_layers` | Align left / centre / right / top / middle / bottom, to the page, to the group, or to one layer; spread layers evenly or at a fixed gap. |
 | `list_history`, `restore_version`, `undo` | Step history, shared with the editor's History tab. |
 
 How it works: documents live in `.fused/data/documents/<id>/` as `doc.json`
 plus one `history/NNNNNN.json` snapshot and one thumbnail per step
 (`docstore.py`). The page and the tools both save by committing a new
 revision, and `current.json` records which document is open and its latest
-revision. The page reads that file once a second and loads any newer revision.
+revision. `view.json` carries the View settings both ways, so the tools snap to
+the grid you see. `request.json` plus `screens/` is how `screenshot_editor` asks
+the open page for a picture and gets it back. The page reads that file once a second and loads any newer revision.
 When Claude opens or creates a document, the editor switches to it. The page
 switches only for documents Claude opens, so two open tabs never pull each
 other to a different document. If you and Claude change the same document at

@@ -27,9 +27,22 @@ def main(action: str = "status", session_id: str = "", image_data: str = "",
          mask: str = "", feather: float = 3.0, dpi: float = 0.0,
          doc_id: str = "", snap_json: str = "", label: str = "", base_rev: int = -1,
          rev: int = 0, thumb: str = "", save: bool = False, file_name: str = "",
-         path: str = "") -> dict:
+         path: str = "", request_id: str = "") -> dict:
     if action == "status":
         return _status()
+
+    if action == "view_save":
+        import json
+
+        payload = json.loads(values_json or "{}")
+        return {"ok": True, "view": docstore.set_view(payload.get("view") or {}, "user",
+                                                      base_seq=payload.get("base_seq", ""))}
+
+    if action == "screenshot_save":
+        import json
+
+        return {"ok": True, **docstore.save_screenshot(request_id, docstore.decode_png(image_data),
+                                                        json.loads(values_json or "{}"))}
 
     if action.startswith("doc_") or action == "reveal":
         return _documents(action, doc_id=doc_id, name=name, snap_json=snap_json, label=label,

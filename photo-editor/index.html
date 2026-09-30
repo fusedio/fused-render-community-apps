@@ -228,6 +228,13 @@
   .layer-foot .icon-btn svg { width: 14px; height: 14px; }
   .layer-foot .spacer { flex: 1; }
 
+  .layer-row.picked { box-shadow: inset 3px 0 0 var(--accent); background: var(--accent-soft); }
+  .layer-controls.aligning { display: block; }
+  .align-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; }
+  .align-bar .align-note { width: 100%; font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+  .align-bar .icon-btn { width: 24px; height: 24px; }
+  .align-bar .icon-btn svg { width: 15px; height: 15px; }
+  .align-bar .ghost-btn.tiny { margin-left: auto; height: 22px; padding: 0 8px; font-size: 11px; }
   .left-pane { flex: 1; display: flex; flex-direction: column; min-height: 0; }
   .left-pane[hidden] { display: none; }
   .side-list { flex: 1; overflow-y: auto; padding: 4px 0; }
@@ -1725,6 +1732,198 @@
     if (panels.left || panels.right) setPanels(false, false); else setPanels(true, true);
   }
 
+  // ---------------------------------------------------------------- View settings shared with Claude
+  //
+  // The page publishes its View settings (and the grid spacing in page pixels,
+  // which for "Auto" follows the zoom) to view.json, so the agent tools snap
+  // to the same grid, guides and edges you see. set_view writes the same file
+  // with source "agent"; pollView() applies it here.
+
+  const VIEW_FILE = ".fused/data/documents/view.json";
+  const REQUEST_FILE = ".fused/data/documents/request.json";
+  const VIEW_SHARED = ["rulers", "grid", "gridSize", "snap", "guides", "printGuides", "unit"];
+  const shared = { viewSeq: "", published: "", viewTimer: null, reqSeen: "", capturing: false };
+
+  // gridSpacing() without the "is the grid on" check.
+  function gridStepPx() {
+    const m = /^([\d.]+)(mm|in|px)$/.exec(state.view.gridSize || "");
+    const unit = m ? m[2] : state.view.unit;
+    const major = m ? Number(m[1]) : rulerScale(unit).major;
+    const step = major * unitPx(unit), z = state.zoom;
+    return step / subdivisions(major, unit, step * z, 10);
+  }
+
+  function publishView() {
+    clearTimeout(shared.viewTimer);
+    shared.viewTimer = setTimeout(async () => {
+      const view = {};
+      VIEW_SHARED.forEach((k) => { view[k] = state.view[k]; });
+      if (doc.ready) { view.grid_step = Math.round(gridStepPx() * 1000) / 1000; view.grid_doc = store.id || ""; }
+      const text = JSON.stringify(view);
+      if (text === shared.published) return;
+      try {
+        const r = await docPy({ action: "view_save", values_json: JSON.stringify({ view, base_seq: shared.viewSeq }) });
+        if (r.view && r.view.conflict) { applySharedView(r.view); return; }
+        shared.published = text; shared.viewSeq = r.view.seq;
+      } catch (e) { console.warn("[photo_editor] could not publish view settings", e); }
+    }, 400);
+  }
+
+  function applySharedView(view) {
+    shared.viewSeq = view.seq || "";
+    const changed = VIEW_SHARED.filter((k) => k in view && view[k] !== state.view[k]);
+    if (!changed.length) return;
+    changed.forEach((k) => { state.view[k] = view[k]; });
+    syncGuideNodes();
+    applyView();
+    toast("Claude · " + changed.map((k) => {
+      const item = VIEW_TOGGLES.find((t) => t[0] === k);
+      return typeof view[k] === "boolean" ? (item ? item[1] : k) + (view[k] ? " on" : " off") : k + " " + view[k];
+    }).join(", "));
+  }
+
+  async function pollView() {
+    let view;
+    try { view = JSON.parse(await fused.readFile(VIEW_FILE)); } catch (e) { return; }
+    if (!view || !view.seq || view.seq === shared.viewSeq) return;
+    if (view.source === "agent") applySharedView(view);
+    else shared.viewSeq = view.seq;
+  }
+
+  // ---------------------------------------------------------------- screenshots for Claude
+  //
+  // screenshot_editor writes request.json; the page that has that document
+  // open (at that revision or newer) renders it and posts the PNG back.
+
+  async function imagesReady(limitMs) {
+    const until = Date.now() + limitMs;
+    while (Date.now() < until) {
+      if (doc.layers.every((l) => l.type !== "image" || l.node.image())) return;
+      await sleep(100);
+    }
+  }
+
+  // The canvas area exactly as it is on screen: every Konva layer in order
+  // (artboard, your layers with their blend modes and live adjustments, mask,
+  // grid and guides, selection handles) plus the rulers.
+  function editorCanvas(maxSide) {
+    const wrap = $("stageWrap");
+    const W = wrap.clientWidth, H = wrap.clientHeight - 22;
+    const pr = Math.min(window.devicePixelRatio || 1, maxSide / Math.max(W, H));
+    const out = document.createElement("canvas");
+    out.width = Math.max(1, Math.round(W * pr)); out.height = Math.max(1, Math.round(H * pr));
+    const ctx = out.getContext("2d");
+    ctx.fillStyle = themeColor("--stage-bg", "#cfcfcf"); ctx.fillRect(0, 0, out.width, out.height);
+    stage.getLayers().forEach((kl) => {
+      if (!kl.visible()) return;
+      const canvas = kl.toCanvas({ x: 0, y: 0, width: W, height: H, pixelRatio: pr });
+      const owner = doc.layers.find((l) => l.konva === kl);
+      ctx.save();
+      if (owner) {
+        ctx.globalCompositeOperation = owner.blend === "normal" ? "source-over" : owner.blend;
+        if (owner.type === "image") { const f = previewFilter(owner); if (f && "filter" in ctx) ctx.filter = f; }
+      }
+      ctx.drawImage(canvas, 0, 0, out.width, out.height);
+      ctx.restore();
+    });
+    const origin = wrap.getBoundingClientRect();
+    ["rulerTop", "rulerLeft", "rulerCorner"].forEach((id) => {
+      const el = $(id);
+      if (!el || el.offsetParent === null || el.tagName !== "CANVAS") return;
+      const r = el.getBoundingClientRect();
+      ctx.drawImage(el, (r.left - origin.left) * pr, (r.top - origin.top) * pr, r.width * pr, r.height * pr);
+    });
+    return out;
+  }
+
+  async function pollRequests() {
+    if (shared.capturing) return;
+    let req;
+    try { req = JSON.parse(await fused.readFile(REQUEST_FILE)); } catch (e) { return; }
+    if (!req || !req.id || req.id === shared.reqSeen) return;
+    if (Date.now() / 1000 - (req.time || 0) > 30) { shared.reqSeen = req.id; return; }
+    // Not ours yet: the agent's pointer switches this page to the document,
+    // then the revision arrives; answer once both are here.
+    if (req.doc !== store.id || store.rev < req.rev || store.saving || store.pending) return;
+    shared.reqSeen = req.id; shared.capturing = true;
+    try {
+      await imagesReady(4000);
+      if (document.fonts && document.fonts.ready) await document.fonts.ready;
+      stage.draw();
+      const max = Math.max(200, Math.min(4096, Number(req.max_size) || 1600));
+      const canvas = req.mode === "editor" ? editorCanvas(max) : pageCanvas(max);
+      const meta = { width: canvas.width, height: canvas.height, mode: req.mode, rev: store.rev, doc: store.id,
+        zoom: Math.round(state.zoom * 1000) / 1000, scale: req.mode === "editor" ? null : Math.round(canvas.width / doc.width * 10000) / 10000 };
+      await docPy({ action: "screenshot_save", request_id: req.id, image_data: canvas.toDataURL("image/png"), values_json: JSON.stringify(meta) });
+    } catch (error) { console.warn("[photo_editor] screenshot for Claude failed", error); }
+    finally { shared.capturing = false; }
+  }
+
+  // ---------------------------------------------------------------- align & distribute
+  //
+  // Shift- or ⌘-click rows in the Layers list to pick several layers; the
+  // align bar then lines them up against each other. The Position menu aligns
+  // one layer to the page.
+
+  const alignSet = new Set();
+  const ALIGN_ICONS = {
+    left: ["M4 3v18", "M8 7h11v4H8z", "M8 13h6v4H8z"], center: ["M12 3v18", "M6 7h12v4H6z", "M8 13h8v4H8z"],
+    right: ["M20 3v18", "M5 7h11v4H5z", "M10 13h6v4h-6z"], top: ["M3 4h18", "M7 8h4v11H7z", "M13 8h4v6h-4z"],
+    middle: ["M3 12h18", "M7 6h4v12H7z", "M13 8h4v8h-4z"], bottom: ["M3 20h18", "M7 5h4v11H7z", "M13 10h4v6h-4z"],
+    distH: ["M4 3v18", "M20 3v18", "M10 7h4v10h-4z"], distV: ["M3 4h18", "M3 20h18", "M7 10h10v4H7z"],
+  };
+  const ALIGN_LABEL = { left: "left edges", center: "centres", right: "right edges", top: "tops", middle: "middles", bottom: "bottoms" };
+
+  function alignBarHtml() {
+    return '<div class="align-bar"><span class="align-note">' + alignSet.size + " layers</span>" +
+      ["left", "center", "right", "top", "middle", "bottom"].map((a) => '<button class="icon-btn" data-align-many="' + a + '" title="Align ' + ALIGN_LABEL[a] + '">' + icon(ALIGN_ICONS[a]) + "</button>").join("") +
+      '<button class="icon-btn" data-dist="h" title="Distribute horizontally"' + (alignSet.size < 3 ? " disabled" : "") + ">" + icon(ALIGN_ICONS.distH) + "</button>" +
+      '<button class="icon-btn" data-dist="v" title="Distribute vertically"' + (alignSet.size < 3 ? " disabled" : "") + ">" + icon(ALIGN_ICONS.distV) + "</button>" +
+      '<button class="ghost-btn tiny" data-align-clear title="Clear the selection (Esc)">Done</button></div>';
+  }
+
+  function wireAlignBar(root) {
+    root.querySelectorAll("[data-align-many]").forEach((b) => b.onclick = () => alignLayers(doc.layers.filter((l) => alignSet.has(l.id)), b.dataset.alignMany, "selection"));
+    root.querySelectorAll("[data-dist]").forEach((b) => b.onclick = () => distributeLayers(doc.layers.filter((l) => alignSet.has(l.id)), b.dataset.dist));
+    root.querySelectorAll("[data-align-clear]").forEach((b) => b.onclick = () => { alignSet.clear(); renderLayers(); });
+  }
+
+  function alignLayers(list, how, ref) {
+    list = list.filter((l) => l && !l.locked);
+    if (!list.length) return;
+    const boxes = list.map(nodeBox);
+    let box;
+    if (ref === "page") { const t = trimRect(); box = { x: t.x, y: t.y, width: t.width, height: t.height }; }
+    else {
+      const x0 = Math.min(...boxes.map((b) => b.x)), y0 = Math.min(...boxes.map((b) => b.y));
+      box = { x: x0, y: y0, width: Math.max(...boxes.map((b) => b.x + b.width)) - x0, height: Math.max(...boxes.map((b) => b.y + b.height)) - y0 };
+    }
+    list.forEach((l, i) => {
+      const b = boxes[i];
+      const dx = how === "left" ? box.x - b.x : how === "center" ? box.x + box.width / 2 - (b.x + b.width / 2) : how === "right" ? box.x + box.width - (b.x + b.width) : 0;
+      const dy = how === "top" ? box.y - b.y : how === "middle" ? box.y + box.height / 2 - (b.y + b.height / 2) : how === "bottom" ? box.y + box.height - (b.y + b.height) : 0;
+      l.node.move({ x: dx, y: dy });
+      afterNodeTransform(l);
+    });
+    commitHistory("align " + how + (ref === "page" ? " to page" : ""));
+  }
+
+  function distributeLayers(list, dir) {
+    list = list.filter((l) => l && !l.locked);
+    if (list.length < 3) return;
+    const pos = dir === "h" ? "x" : "y", size = dir === "h" ? "width" : "height";
+    const items = list.map((l) => ({ l, b: nodeBox(l) })).sort((a, b) => a.b[pos] - b.b[pos]);
+    const span = items[items.length - 1].b[pos] + items[items.length - 1].b[size] - items[0].b[pos];
+    const gap = (span - items.reduce((s, it) => s + it.b[size], 0)) / (items.length - 1);
+    let cursor = items[0].b[pos];
+    items.forEach(({ l, b }) => {
+      l.node.move(dir === "h" ? { x: cursor - b.x, y: 0 } : { x: 0, y: cursor - b.y });
+      afterNodeTransform(l);
+      cursor += b[size] + gap;
+    });
+    commitHistory("distribute " + (dir === "h" ? "horizontally" : "vertically"));
+  }
+
   // ---------------------------------------------------------------- History / Files tabs
 
   function setLeftTab(tab) {
@@ -1835,7 +2034,8 @@
     }
     recoverStash(stash);
     renderRecent();
-    setInterval(pollDisk, 1000);
+    setInterval(() => { pollDisk(); pollView(); pollRequests(); }, 1000);
+    publishView();
     window.addEventListener("pagehide", flushSaveNow);
     document.addEventListener("visibilitychange", () => { if (document.hidden) flushSaveNow(); });
   }
@@ -1874,7 +2074,7 @@
     drawSmartMarkers();
   }
 
-  function renderZoom() { $("zoomReadout").textContent = Math.round(state.zoom * 100) + "%"; }
+  function renderZoom() { $("zoomReadout").textContent = Math.round(state.zoom * 100) + "%"; if (state.view.grid && (state.view.gridSize || "auto") === "auto") publishView(); }
 
   function renderStatus() {
     const layer = activeLayer();
@@ -2332,6 +2532,7 @@
 
   function applyView() {
     saveView();
+    publishView();
     $("snapBtn").classList.toggle("on", !!state.view.snap);
     scheduleChrome();
     renderArtboard();
@@ -2554,6 +2755,13 @@
     ["fill", "Fit inside page", ["M4 4h16v16H4z", "M9 9h6v6H9z"]],
     ["fillpage", "Fill page incl. bleed", ["M3 3h18v18H3z", "M7 7h10v10H7z"]],
     ["reset", "Reset rotation & flip", ["M3 12a9 9 0 1 0 2.6-6.4", "M3 4v5h5"]],
+    null,
+    ["al-left", "Align left to page", ["M4 3v18", "M8 7h11v4H8z", "M8 13h6v4H8z"]],
+    ["al-center", "Align centre to page", ["M12 3v18", "M6 7h12v4H6z", "M8 13h8v4H8z"]],
+    ["al-right", "Align right to page", ["M20 3v18", "M5 7h11v4H5z", "M10 13h6v4h-6z"]],
+    ["al-top", "Align top to page", ["M3 4h18", "M7 8h4v11H7z", "M13 8h4v6h-4z"]],
+    ["al-middle", "Align middle to page", ["M3 12h18", "M7 6h4v12H7z", "M13 8h4v8h-4z"]],
+    ["al-bottom", "Align bottom to page", ["M3 20h18", "M7 5h4v11H7z", "M13 10h4v6h-4z"]],
   ];
 
   function togglePosMenu() { if ($("posMenu").classList.contains("show")) closePosMenu(); else openPosMenu(); }
@@ -2587,6 +2795,7 @@
   function posMenuAction(action) {
     const layer = activeLayer();
     if (!layer) return;
+    if (action.startsWith("al-")) { alignLayers([layer], action.slice(3), "page"); closePosMenu(); return; }
     const n = layer.node;
     if (action === "rotate-ccw") n.rotation(n.rotation() - 90);
     else if (action === "rotate-cw") n.rotation(n.rotation() + 90);
@@ -4229,7 +4438,14 @@
     const list = $("layerList");
     const active = activeLayer();
     const controls = $("layerControls");
-    if (active) {
+    [...alignSet].forEach((id) => { if (!doc.layers.some((l) => l.id === id)) alignSet.delete(id); });
+    if (alignSet.size >= 2) {
+      controls.style.display = "";
+      controls.classList.add("aligning");
+      controls.innerHTML = alignBarHtml();
+      wireAlignBar(controls);
+    } else if (active) {
+      controls.classList.remove("aligning");
       controls.style.display = "";
       controls.innerHTML =
         '<label>Blend<select class="compact" id="blendSel">' + BLENDS.map((b) => '<option value="' + b + '"' + (active.blend === b ? " selected" : "") + ">" + b.replace("-", " ") + "</option>").join("") + "</select></label>" +
@@ -4242,7 +4458,7 @@
       list.innerHTML = '<div class="empty-layers">' + (doc.ready ? "No layers yet.<br />Draw a shape, add text, or place an image." : "Open a photo or start a blank canvas to begin.") + "</div>";
     } else {
       list.innerHTML = doc.layers.slice().reverse().map((l) =>
-        '<div class="layer-row' + (l.id === doc.activeId ? " active" : "") + (l.visible ? "" : " hidden-layer") + '" data-id="' + l.id + '" draggable="true">' +
+        '<div class="layer-row' + (l.id === doc.activeId ? " active" : "") + (alignSet.has(l.id) ? " picked" : "") + (l.visible ? "" : " hidden-layer") + '" data-id="' + l.id + '" draggable="true">' +
         '<button class="eye' + (l.visible ? "" : " off") + '" title="Toggle visibility">' + icon(l.visible ? I.eye : I.eyeOff) + "</button>" +
         '<div class="layer-thumb">' + (l.thumb ? '<img data-thumb="' + l.id + '" src="' + l.thumb + '" />' : '<img data-thumb="' + l.id + '" />') + "</div>" +
         '<div class="layer-name" title="Double-click to rename"><span class="label">' + esc(l.name) + '</span><span class="kind">' + kindLabel(l) + "</span></div>" +
@@ -4266,7 +4482,17 @@
   let dragId = null;
   function wireLayerRow(row) {
     const layer = doc.layers.find((l) => l.id === row.dataset.id);
-    row.onclick = (e) => { if (e.target.closest(".eye, .lock, input")) return; selectLayer(layer.id); };
+    row.onclick = (e) => {
+      if (e.target.closest(".eye, .lock, input")) return;
+      if (e.shiftKey || e.metaKey || e.ctrlKey) {
+        if (!alignSet.size && doc.activeId && doc.activeId !== layer.id) alignSet.add(doc.activeId);
+        if (alignSet.has(layer.id)) alignSet.delete(layer.id); else alignSet.add(layer.id);
+        renderLayers();
+        return;
+      }
+      alignSet.clear();
+      selectLayer(layer.id);
+    };
     row.querySelector(".eye").onclick = () => { layer.visible = !layer.visible; afterDocChange(); commitHistory("visibility"); };
     row.querySelector(".lock").onclick = () => { layer.locked = !layer.locked; afterDocChange(); commitHistory("lock"); };
     row.querySelector(".layer-name").ondblclick = (e) => {
@@ -4882,7 +5108,7 @@
         if (state.tool === "brush") clearMask();
         else if (layer && state.tool === "move") { removeLayer(layer); toast("Deleted " + layer.name); }
       }
-      else if (event.key === "Escape") { if (state.tool !== "move") setTool("move"); else selectLayer(null); }
+      else if (event.key === "Escape") { if (alignSet.size) { alignSet.clear(); renderLayers(); } else if (state.tool !== "move") setTool("move"); else selectLayer(null); }
       else if (event.key === " " && !state.spaceDown) { event.preventDefault(); state.spaceDown = true; syncModeToTool(); }
       else if (!meta && !event.altKey) {
         const map = { v: "move", h: "hand", r: "rect", o: "ellipse", l: "line", t: "text", b: "brush", e: "eraser", c: "crop" };

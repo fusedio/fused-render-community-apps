@@ -342,3 +342,76 @@ def save_path(name: str, ext: str, folder: str = "") -> str:
 
 def decode_png(data_url: str) -> bytes:
     return _decode_png(data_url)
+
+
+# ---------------------------------------------------------------- view settings
+
+
+VIEW_PATH = os.path.join(DOCS_DIR, "view.json")
+VIEW_KEYS = ("rulers", "grid", "gridSize", "snap", "guides", "printGuides", "unit")
+
+
+def get_view() -> dict:
+    """The editor's View settings (grid, snap, guides...), as the page last
+    published them, plus `grid_step`: the grid spacing in page pixels at the
+    page's current zoom (the "Auto" grid follows the zoom)."""
+    try:
+        value = _read_json(VIEW_PATH)
+        return value if isinstance(value, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def set_view(changes: dict, source: str, base_seq: str | None = None) -> dict:
+    """Merge `changes` in. With `base_seq` (the page), refuse to overwrite an
+    agent change the page has not applied yet: the caller gets the current
+    view back with `conflict` set, applies it, and publishes again."""
+    view = get_view()
+    if base_seq is not None and view.get("seq") and view.get("seq") != base_seq and view.get("source") == "agent":
+        return dict(view, conflict=True)
+    for key, value in (changes or {}).items():
+        if key in VIEW_KEYS or key in ("grid_step", "grid_doc"):
+            view[key] = value
+    view.update(source=source, seq=f"{time.time_ns()}-{secrets.token_hex(2)}", time=time.time())
+    _write_json(VIEW_PATH, view)
+    return view
+
+
+# ---------------------------------------------------------------- editor screenshots
+#
+# The agent asks, the open page answers: `request.json` names a document and
+# a mode, the page renders it with Konva (real fonts, exactly what is on
+# screen) and posts the PNG back, which lands in screens/<request id>.png.
+
+REQUEST_PATH = os.path.join(DOCS_DIR, "request.json")
+SCREENS_DIR = os.path.join(DOCS_DIR, "screens")
+_SCREEN_KEEP = 30
+
+
+def request_screenshot(doc_id: str, rev: int, mode: str, max_size: int) -> str:
+    request_id = f"s{time.time_ns()}-{secrets.token_hex(2)}"
+    _write_json(REQUEST_PATH, {"id": request_id, "kind": "screenshot", "doc": doc_id, "rev": int(rev),
+                               "mode": mode, "max_size": int(max_size), "time": time.time()})
+    return request_id
+
+
+def save_screenshot(request_id: str, png: bytes, meta: dict) -> dict:
+    if not _SAFE_ID.match(request_id or ""):
+        raise DocumentError(f"Invalid request id: {request_id!r}")
+    path = os.path.join(SCREENS_DIR, f"{request_id}.png")
+    _write_atomic(path, png)
+    info = dict(meta or {}, path=path, time=time.time())
+    _write_json(os.path.join(SCREENS_DIR, f"{request_id}.json"), info)
+    entries = sorted(e for e in os.listdir(SCREENS_DIR) if e.endswith(".json"))
+    for old in entries[:-_SCREEN_KEEP]:
+        for ext in (".json", ".png"):
+            with contextlib.suppress(OSError):
+                os.remove(os.path.join(SCREENS_DIR, old[:-5] + ext))
+    return info
+
+
+def screenshot_result(request_id: str) -> dict | None:
+    try:
+        return _read_json(os.path.join(SCREENS_DIR, f"{request_id}.json"))
+    except (OSError, ValueError):
+        return None
