@@ -1,0 +1,1105 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<!-- Declares this page a fused app's entry — keep it near the top of <head>
+     (detection reads only the first 4 KiB). -->
+<meta name="fused-app" />
+<title>Capture Studio</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: #e8eaed;
+    background: #131417;
+    font-size: 14px;
+    line-height: 1.45;
+  }
+  a { color: #5b9dff; }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 20px 20px 80px; }
+
+  header.top {
+    display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
+    margin-bottom: 18px;
+  }
+  header.top h1 { font-size: 18px; font-weight: 600; margin: 0; letter-spacing: 0.2px; }
+  header.top .sub { color: #6b7178; font-size: 12px; }
+  .spacer { flex: 1; }
+
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12px; padding: 3px 9px; border-radius: 999px;
+    border: 1px solid #2a2d33; background: #1b1d21; color: #9aa0a6;
+    white-space: nowrap;
+  }
+  .chip .dot { width: 7px; height: 7px; border-radius: 50%; background: #6b7178; }
+  .chip.ok .dot { background: #3fb950; }
+  .chip.warn .dot { background: #d29922; }
+  .chip.bad .dot { background: #f85149; }
+  .chip.live .dot { background: #f85149; animation: pulse 1s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+  .card {
+    background: #1b1d21; border: 1px solid #2a2d33; border-radius: 10px;
+    padding: 16px; margin-bottom: 16px;
+  }
+  .card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.6px; color: #9aa0a6; margin: 0 0 12px; font-weight: 600; }
+
+  .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .grow { flex: 1; }
+
+  button {
+    font: inherit; color: #e8eaed; background: #2a2d33; border: 1px solid #3a3d44;
+    border-radius: 8px; padding: 8px 14px; cursor: pointer; transition: background .12s, border-color .12s;
+  }
+  button:hover:not(:disabled) { background: #343841; }
+  button:disabled { opacity: 0.4; cursor: default; }
+  button.primary { background: #1f6feb; border-color: #1f6feb; color: #fff; }
+  button.primary:hover:not(:disabled) { background: #388bfd; }
+  button.rec { background: #b62324; border-color: #b62324; color: #fff; }
+  button.rec:hover:not(:disabled) { background: #d13639; }
+  button.rec.active { background: #f85149; border-color: #f85149; animation: pulse 1.2s infinite; }
+  button.ghost { background: transparent; }
+  button.danger { background: transparent; border-color: #6e2b2b; color: #ff9a9a; }
+  button.danger:hover:not(:disabled) { background: #3a1c1c; }
+  button.small { padding: 5px 10px; font-size: 12px; }
+
+  input[type="text"], textarea, select.select {
+    font: inherit; color: #e8eaed; background: #131417; border: 1px solid #2a2d33;
+    border-radius: 8px; padding: 8px 10px; width: 100%; resize: vertical;
+  }
+  input[type="text"]:focus, textarea:focus, select.select:focus { outline: none; border-color: #1f6feb; }
+  select.select { width: auto; max-width: 260px; padding: 7px 9px; }
+
+  .muted { color: #6b7178; }
+  .mono { font-variant-numeric: tabular-nums; font-family: ui-monospace, Menlo, Consolas, monospace; }
+  .big-timer { font-size: 30px; font-weight: 600; }
+
+  #status {
+    min-height: 0; margin-bottom: 14px;
+  }
+  .banner {
+    border-radius: 8px; padding: 10px 12px; font-size: 13px; margin-bottom: 10px;
+    display: flex; gap: 8px; align-items: flex-start;
+  }
+  .banner.err { background: #2b1416; border: 1px solid #6e2b2b; color: #ffb3b3; }
+  .banner.info { background: #16202b; border: 1px solid #244; color: #9fd0ff; }
+  .banner .x { margin-left: auto; cursor: pointer; color: inherit; opacity: 0.6; }
+  .banner .x:hover { opacity: 1; }
+
+  /* history */
+  .sess-row {
+    display: grid; grid-template-columns: auto 70px 60px 1fr auto; gap: 12px; align-items: center;
+    padding: 10px 12px; border: 1px solid #23262c; border-radius: 8px; margin-bottom: 8px;
+    cursor: pointer; background: #17191d;
+  }
+  .sess-row:hover { border-color: #3a3d44; background: #1c1f24; }
+  .sess-row .when { font-size: 13px; }
+  .sess-row .preview { color: #9aa0a6; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .state-chip { font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid #2a2d33; }
+  .state-done { color: #3fb950; border-color: #22432a; background: #12251a; }
+  .state-error { color: #f85149; border-color: #4a2226; background: #2a1416; }
+  .state-queued, .state-transcribing, .state-assembling { color: #d29922; border-color: #4a3d1c; background: #241f12; }
+
+  .shots { display: flex; gap: 10px; flex-wrap: wrap; margin: 10px 0; }
+  .shots figure { margin: 0; width: 200px; }
+  .shots img { width: 200px; border-radius: 6px; border: 1px solid #2a2d33; display: block; background:#0c0d0f; }
+  .shots figcaption { font-size: 11px; color: #6b7178; margin-top: 4px; }
+  .transcript { background: #131417; border: 1px solid #23262c; border-radius: 8px; padding: 12px; white-space: pre-wrap; max-height: 260px; overflow: auto; }
+
+  /* pill */
+  #pill {
+    display: none; gap: 12px; align-items: center;
+    background: #1b1d21; border: 1px solid #2a2d33; border-radius: 12px; padding: 10px 14px;
+  }
+  #pill.show { display: flex; }
+  #pill canvas { background: #0c0d0f; border-radius: 6px; border: 1px solid #23262c; }
+  #pill .pstate { font-size: 12px; }
+  #pill .pelapsed { font-size: 20px; font-weight: 600; }
+  #pill .pshots { font-size: 12px; color: #9aa0a6; }
+  #pill-footer {
+    position: fixed; left: 0; right: 0; bottom: 0; display: flex; justify-content: center;
+    padding: 10px; pointer-events: none; z-index: 50;
+  }
+  #pill-footer #pill { pointer-events: auto; box-shadow: 0 6px 24px rgba(0,0,0,0.5); }
+
+  .kbd { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11px; background: #23262c; border: 1px solid #3a3d44; border-bottom-width: 2px; border-radius: 5px; padding: 1px 6px; }
+  .hint { color: #6b7178; font-size: 12px; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="top">
+      <h1>Capture Studio</h1>
+      <span class="sub">screen + voice → transcribed context</span>
+      <span class="spacer"></span>
+      <span class="chip" id="setup-chip"><span class="dot"></span><span id="setup-text">checking…</span></span>
+    </header>
+
+    <div id="status"></div>
+
+    <section class="card">
+      <h2>Capture</h2>
+      <div class="row" style="margin-bottom:14px;">
+        <button id="btn-arm" class="primary">Arm capture</button>
+        <button id="btn-rec" class="rec" disabled>● Record</button>
+        <span class="chip" id="arm-chip"><span class="dot"></span><span id="arm-text">idle</span></span>
+        <span class="spacer"></span>
+        <button id="btn-pip" class="ghost small" hidden>Pop out pill</button>
+      </div>
+      <div class="row" style="align-items:flex-end; gap:20px;">
+        <div>
+          <div class="hint">elapsed</div>
+          <div class="big-timer mono" id="elapsed">0:00</div>
+        </div>
+        <div>
+          <div class="hint">keyframes</div>
+          <div class="big-timer mono" id="shotcount">0</div>
+        </div>
+        <div class="grow">
+          <div class="hint">note (optional)</div>
+          <input type="text" id="note" placeholder="what is this capture about?" />
+        </div>
+      </div>
+      <p class="hint" style="margin:12px 0 0;">
+        Arm to pick a screen, then hold <span class="kbd">Space</span> to talk (push-to-talk) or use the Record button.
+        Release to stop, transcribe, and assemble context.
+      </p>
+    </section>
+
+    <section class="card">
+      <h2>Transcription</h2>
+      <div class="row">
+        <span class="chip" id="asr-chip"><span class="dot"></span><span id="asr-text">checking…</span></span>
+        <select id="asr-select" class="select" aria-label="Transcription model"></select>
+        <span class="spacer"></span>
+        <span class="hint" id="asr-note"></span>
+      </div>
+      <p class="hint" style="margin:10px 0 0;">
+        Runs a local speech-to-text model on your machine, through fused-render's
+        on-device AI runtime — the same one behind the AI Playground. Pick a
+        model above; it downloads once and stays resident between captures.
+      </p>
+    </section>
+
+    <section class="card">
+      <h2>History</h2>
+      <div id="history-list"><div class="muted">Loading…</div></div>
+      <div id="detail" hidden></div>
+    </section>
+  </div>
+
+  <!-- default (in-page) pill location; adopted into a PiP window when popped out -->
+  <div id="pill-footer">
+    <div id="pill">
+      <canvas id="wave" width="120" height="40"></canvas>
+      <div>
+        <div class="pstate" id="pstate">armed</div>
+        <div class="pelapsed mono" id="pelapsed">0:00</div>
+      </div>
+      <div class="pshots"><span id="pshots">0</span> shots</div>
+      <button id="pill-stop" class="rec small">Stop</button>
+    </div>
+  </div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---- environment / paths -------------------------------------------------
+  // writeFile/readFile/rawUrl need ABSOLUTE paths; api.py reports its own
+  // directory in check_setup (runPython resolves "./api.py" relative to this
+  // file, so that answer is authoritative). Resolved once at startup.
+  let appDir = "";
+  const P = (...parts) => {
+    if (!appDir) throw new Error("app dir not resolved yet (check_setup pending or backend unavailable)");
+    return [appDir, ...parts].join("/");
+  };
+  const API = "./api.py";
+  const TRANSCRIBE_CAP = "automatic-speech-recognition";
+
+  const $ = (sel) => document.querySelector(sel);
+  const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const pad2 = (n) => String(n).padStart(2, "0");
+  const round = (n, d) => Math.round(n * 10 ** d) / 10 ** d;
+  function fmtTime(sec) {
+    sec = Math.max(0, Math.floor(sec || 0));
+    return Math.floor(sec / 60) + ":" + pad2(sec % 60);
+  }
+  function gbFmt(n) {
+    return n >= 1 ? n.toFixed(1) + " GB" : Math.round(n * 1024) + " MB";
+  }
+
+  // ---- DOM handles ----------------------------------------------------------
+  const el = {
+    status: $("#status"),
+    setupChip: $("#setup-chip"), setupText: $("#setup-text"),
+    armChip: $("#arm-chip"), armText: $("#arm-text"),
+    btnArm: $("#btn-arm"), btnRec: $("#btn-rec"), btnPip: $("#btn-pip"),
+    elapsed: $("#elapsed"), shotcount: $("#shotcount"), note: $("#note"),
+    asrChip: $("#asr-chip"), asrText: $("#asr-text"), asrSelect: $("#asr-select"), asrNote: $("#asr-note"),
+    historyList: $("#history-list"), detail: $("#detail"),
+    pillFooter: $("#pill-footer"), pill: $("#pill"), pillStop: $("#pill-stop"),
+    wave: $("#wave"), pstate: $("#pstate"), pelapsed: $("#pelapsed"), pshots: $("#pshots"),
+  };
+
+  // ---- capture state --------------------------------------------------------
+  let uiState = "idle"; // idle | armed | recording | uploading | processing
+  let displayStream = null, micStream = null, videoEl = null;
+  let audioCtx = null, sourceNode = null, workletNode = null, procNode = null, silentSink = null;
+  let pcmChunks = [];         // Float32Array pieces at audioCtx.sampleRate
+  let speechMarks = [];       // {t, rms}
+  let waveHistory = new Array(120).fill(0);
+  let frames = [];            // {t, dataUrl, hash:[hi,lo]}
+  let lastKeptHash = null;
+  let recStartPerf = 0, recStartedAtEpoch = 0;
+  let frameTimer = null, elapsedTimer = null;
+  let lastSessions = [];      // cache from list_sessions
+  let pipWindow = null;
+
+  // ---- ASR model catalog (fused.ai.models — the AI Playground's own catalog) --
+  let asrModels = [];         // [{id, label, size_gb, note, downloaded, loaded}]
+  let asrRunner = null;
+  let asrResident = null;
+
+  const frameCanvas = document.createElement("canvas");
+  const dhCanvas = document.createElement("canvas");
+  dhCanvas.width = 9; dhCanvas.height = 8;
+
+  // ---- status banners -------------------------------------------------------
+  function showError(msg) {
+    const b = document.createElement("div");
+    b.className = "banner err";
+    b.innerHTML = '<span>' + esc(msg) + '</span><span class="x">✕</span>';
+    b.querySelector(".x").onclick = () => b.remove();
+    el.status.appendChild(b);
+  }
+  function showInfo(msg, autohide) {
+    const b = document.createElement("div");
+    b.className = "banner info";
+    b.innerHTML = '<span>' + esc(msg) + '</span><span class="x">✕</span>';
+    b.querySelector(".x").onclick = () => b.remove();
+    el.status.appendChild(b);
+    if (autohide) setTimeout(() => b.remove(), autohide);
+    return b;
+  }
+  function clearStatus() { el.status.innerHTML = ""; }
+
+  // ---- runPython wrapper ----------------------------------------------------
+  async function run(action, session, payload) {
+    const params = { action };
+    if (session !== undefined && session !== null) params.session = String(session);
+    if (payload !== undefined && payload !== null)
+      params.payload = typeof payload === "string" ? payload : JSON.stringify(payload);
+    return fused.runPython(API, params);
+  }
+
+  // ---- state machine / UI ---------------------------------------------------
+  function setState(s) {
+    uiState = s;
+    const labels = { idle: "idle", armed: "armed", recording: "recording", uploading: "uploading", processing: "processing" };
+    el.armText.textContent = labels[s] || s;
+    el.armChip.className = "chip" + (s === "recording" ? " live" : (s === "armed" ? " ok" : (s === "idle" ? "" : " warn")));
+
+    el.btnArm.textContent = (s === "idle") ? "Arm capture" : "Disarm";
+    el.btnRec.disabled = !(s === "armed" || s === "recording");
+    el.btnRec.classList.toggle("active", s === "recording");
+    el.btnRec.textContent = s === "recording" ? "■ Stop" : "● Record";
+
+    // pill visible whenever armed and beyond
+    el.pill.classList.toggle("show", s !== "idle");
+    el.pstate.textContent = labels[s] || s;
+
+    if (s === "idle") { el.elapsed.textContent = "0:00"; el.shotcount.textContent = "0"; el.pelapsed.textContent = "0:00"; el.pshots.textContent = "0"; }
+  }
+
+  function updateElapsed() {
+    const t = (performance.now() - recStartPerf) / 1000;
+    el.elapsed.textContent = fmtTime(t);
+    el.pelapsed.textContent = fmtTime(t);
+  }
+  function updateShotCounter() {
+    el.shotcount.textContent = String(frames.length);
+    el.pshots.textContent = String(frames.length);
+  }
+
+  // ---- dHash / hamming ------------------------------------------------------
+  function dhash(src) {
+    const c = dhCanvas.getContext("2d", { willReadFrequently: true });
+    c.drawImage(src, 0, 0, 9, 8);
+    const d = c.getImageData(0, 0, 9, 8).data;
+    const gray = new Float32Array(72);
+    for (let i = 0; i < 72; i++) gray[i] = 0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2];
+    let hi = 0, lo = 0, bit = 0;
+    for (let row = 0; row < 8; row++) {
+      for (let col = 0; col < 8; col++) {
+        const b = gray[row * 9 + col] > gray[row * 9 + col + 1] ? 1 : 0;
+        if (bit < 32) hi = (hi << 1) | b; else lo = (lo << 1) | b;
+        bit++;
+      }
+    }
+    return [hi >>> 0, lo >>> 0];
+  }
+  function popcount(x) {
+    x = x - ((x >>> 1) & 0x55555555);
+    x = (x & 0x33333333) + ((x >>> 2) & 0x33333333);
+    x = (x + (x >>> 4)) & 0x0f0f0f0f;
+    return (x * 0x01010101) >>> 24;
+  }
+  function hamming(a, b) {
+    return popcount((a[0] ^ b[0]) >>> 0) + popcount((a[1] ^ b[1]) >>> 0);
+  }
+
+  // ---- arm / disarm ---------------------------------------------------------
+  async function getDisplay() {
+    // cursor:"always" is nonstandard and OverconstrainedError-prone; retry plain.
+    try {
+      return await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 4, cursor: "always" }, audio: false });
+    } catch (e) {
+      if (e && (e.name === "NotAllowedError" || e.name === "AbortError")) throw e;
+      return await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 4 }, audio: false });
+    }
+  }
+
+  async function arm() {
+    clearStatus();
+    try {
+      displayStream = await getDisplay();
+    } catch (e) {
+      showError("Screen share was cancelled or blocked (" + (e.name || "error") + "). Click Arm to try again.");
+      return;
+    }
+    try {
+      micStream = await navigator.mediaDevices.getUserMedia({
+        audio: { sampleRate: 48000, channelCount: 1, echoCancellation: true, noiseSuppression: true },
+      });
+    } catch (e) {
+      displayStream.getTracks().forEach((t) => t.stop());
+      displayStream = null;
+      showError("Microphone access was blocked (" + (e.name || "error") + "). Grant mic permission and Arm again.");
+      return;
+    }
+    videoEl = document.createElement("video");
+    videoEl.muted = true; videoEl.playsInline = true;
+    videoEl.srcObject = displayStream;
+    try { await videoEl.play(); } catch (e) { /* autoplay is fine for muted */ }
+
+    const vtrack = displayStream.getVideoTracks()[0];
+    if (vtrack) vtrack.addEventListener("ended", onShareEnded);
+    displayStream.addEventListener("inactive", onShareEnded);
+    setState("armed");
+    showInfo("Armed. Hold Space or press Record to capture.", 4000);
+  }
+
+  function onShareEnded() {
+    if (uiState === "recording") stopRecording().catch(() => {});
+    disarm();
+    showInfo("Screen sharing ended — back to idle.", 4000);
+  }
+
+  function disarm() {
+    if (uiState === "recording") return; // stop first
+    if (frameTimer) { clearInterval(frameTimer); frameTimer = null; }
+    teardownAudio();
+    if (displayStream) { displayStream.getTracks().forEach((t) => t.stop()); displayStream = null; }
+    if (micStream) { micStream.getTracks().forEach((t) => t.stop()); micStream = null; }
+    videoEl = null;
+    setState("idle");
+  }
+
+  // ---- audio capture --------------------------------------------------------
+  async function setupAudioCapture() {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    sourceNode = audioCtx.createMediaStreamSource(micStream);
+    silentSink = audioCtx.createGain();
+    silentSink.gain.value = 0;
+    silentSink.connect(audioCtx.destination);
+
+    let ok = false;
+    try {
+      const code =
+        "class Cap extends AudioWorkletProcessor{" +
+        "process(inputs){const ch=inputs[0][0];if(ch)this.port.postMessage(ch.slice(0));return true;}}" +
+        "registerProcessor('cap',Cap);";
+      const url = URL.createObjectURL(new Blob([code], { type: "application/javascript" }));
+      await audioCtx.audioWorklet.addModule(url);
+      URL.revokeObjectURL(url);
+      workletNode = new AudioWorkletNode(audioCtx, "cap");
+      workletNode.port.onmessage = (e) => onAudioChunk(e.data);
+      sourceNode.connect(workletNode);
+      workletNode.connect(silentSink);
+      ok = true;
+    } catch (e) {
+      ok = false;
+    }
+    if (!ok) {
+      procNode = audioCtx.createScriptProcessor(4096, 1, 1);
+      procNode.onaudioprocess = (e) => onAudioChunk(e.inputBuffer.getChannelData(0));
+      sourceNode.connect(procNode);
+      procNode.connect(silentSink);
+    }
+    if (audioCtx.state === "suspended") await audioCtx.resume();
+  }
+
+  function onAudioChunk(data) {
+    const arr = new Float32Array(data); // copy — worklet/processor buffers are reused
+    pcmChunks.push(arr);
+    let sum = 0;
+    for (let i = 0; i < arr.length; i++) sum += arr[i] * arr[i];
+    const rms = Math.sqrt(sum / arr.length) || 0;
+    speechMarks.push({ t: (performance.now() - recStartPerf) / 1000, rms });
+    waveHistory.push(Math.min(1, rms * 6));
+    waveHistory.shift();
+    drawWave();
+  }
+
+  function teardownAudio() {
+    try { if (workletNode) { workletNode.port.onmessage = null; workletNode.disconnect(); } } catch (e) {}
+    try { if (procNode) { procNode.onaudioprocess = null; procNode.disconnect(); } } catch (e) {}
+    try { if (sourceNode) sourceNode.disconnect(); } catch (e) {}
+    try { if (silentSink) silentSink.disconnect(); } catch (e) {}
+    try { if (audioCtx) audioCtx.close(); } catch (e) {}
+    workletNode = procNode = sourceNode = silentSink = audioCtx = null;
+  }
+
+  function drawWave() {
+    const cv = el.wave;
+    const ctx = cv.getContext("2d");
+    const w = cv.width, h = cv.height;
+    ctx.clearRect(0, 0, w, h);
+    ctx.strokeStyle = uiState === "recording" ? "#f85149" : "#5b9dff";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    const n = waveHistory.length;
+    for (let i = 0; i < n; i++) {
+      const x = (i / (n - 1)) * w;
+      const y = h / 2 - waveHistory[i] * (h / 2 - 2);
+      const y2 = h / 2 + waveHistory[i] * (h / 2 - 2);
+      ctx.moveTo(x, y); ctx.lineTo(x, y2);
+    }
+    ctx.stroke();
+  }
+
+  // ---- frame grabbing -------------------------------------------------------
+  function grabFrame() {
+    if (!videoEl || !videoEl.videoWidth) return;
+    const t = (performance.now() - recStartPerf) / 1000;
+    const hash = dhash(videoEl);
+    if (lastKeptHash && hamming(hash, lastKeptHash) < 8) return; // static screen ≈ free
+
+    const vw = videoEl.videoWidth, vh = videoEl.videoHeight;
+    const scale = Math.min(1, 1280 / vw);
+    const w = Math.max(1, Math.round(vw * scale)), h = Math.max(1, Math.round(vh * scale));
+    frameCanvas.width = w; frameCanvas.height = h;
+    frameCanvas.getContext("2d").drawImage(videoEl, 0, 0, w, h);
+    frames.push({ t, dataUrl: frameCanvas.toDataURL("image/png"), hash });
+    lastKeptHash = hash;
+
+    const cutoff = t - 90;
+    while (frames.length && frames[0].t < cutoff) frames.shift();
+    updateShotCounter();
+  }
+
+  // ---- recording ------------------------------------------------------------
+  async function startRecording() {
+    if (uiState !== "armed") return;
+    pcmChunks = []; speechMarks = []; frames = []; lastKeptHash = null;
+    waveHistory = new Array(120).fill(0);
+    recStartPerf = performance.now();
+    recStartedAtEpoch = Date.now() / 1000;
+    try {
+      await setupAudioCapture();
+    } catch (e) {
+      showError("Could not start audio capture: " + (e.message || e));
+      return;
+    }
+    setState("recording");
+    grabFrame();
+    frameTimer = setInterval(grabFrame, 500);
+    elapsedTimer = setInterval(updateElapsed, 200);
+  }
+
+  async function stopRecording() {
+    if (uiState !== "recording") return;
+    if (frameTimer) { clearInterval(frameTimer); frameTimer = null; }
+    if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null; }
+    grabFrame();
+    const endedAt = Date.now() / 1000;
+    const duration = (performance.now() - recStartPerf) / 1000;
+
+    const srcRate = audioCtx ? audioCtx.sampleRate : 48000;
+    const pcm = concatPcm();
+    teardownAudio();
+
+    const wavBlob = encodeWav(resample(pcm, srcRate, 16000), 16000);
+    const shots = selectKeyframes(duration);
+
+    setState("uploading");
+    await uploadSession({ startedAt: recStartedAtEpoch, endedAt, duration, shots, wavBlob });
+  }
+
+  function concatPcm() {
+    let total = 0;
+    for (const c of pcmChunks) total += c.length;
+    const out = new Float32Array(total);
+    let off = 0;
+    for (const c of pcmChunks) { out.set(c, off); off += c.length; }
+    return out;
+  }
+
+  // ---- resample + WAV -------------------------------------------------------
+  function resample(input, inRate, outRate) {
+    if (!input.length || inRate === outRate) return input;
+    const ratio = inRate / outRate;
+    const outLen = Math.floor(input.length / ratio);
+    const out = new Float32Array(outLen);
+    for (let i = 0; i < outLen; i++) {
+      const pos = i * ratio, i0 = Math.floor(pos), frac = pos - i0;
+      const s0 = input[i0] || 0, s1 = i0 + 1 < input.length ? input[i0 + 1] : s0;
+      out[i] = s0 + (s1 - s0) * frac;
+    }
+    return out;
+  }
+
+  function encodeWav(samples, rate) {
+    const n = samples.length;
+    const buf = new ArrayBuffer(44 + n * 2);
+    const v = new DataView(buf);
+    const str = (off, s) => { for (let i = 0; i < s.length; i++) v.setUint8(off + i, s.charCodeAt(i)); };
+    str(0, "RIFF"); v.setUint32(4, 36 + n * 2, true); str(8, "WAVE");
+    str(12, "fmt "); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+    v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+    str(36, "data"); v.setUint32(40, n * 2, true);
+    let off = 44;
+    for (let i = 0; i < n; i++) {
+      let s = Math.max(-1, Math.min(1, samples[i]));
+      v.setInt16(off, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+      off += 2;
+    }
+    return new Blob([buf], { type: "audio/wav" });
+  }
+
+  // ---- keyframe selection ---------------------------------------------------
+  function speechKeyframeTimes() {
+    const thr = 0.02, times = [];
+    let acc = 0, nextBoundary = 10, lastT = 0;
+    for (const m of speechMarks) {
+      const dt = Math.max(0, m.t - lastT); lastT = m.t;
+      if (m.rms > thr) acc += dt;
+      while (acc >= nextBoundary) { times.push(m.t); nextBoundary += 10; }
+    }
+    return times;
+  }
+  function nearestFrame(t) {
+    let best = null, bd = Infinity;
+    for (const f of frames) { const d = Math.abs(f.t - t); if (d < bd) { bd = d; best = f; } }
+    return best;
+  }
+  function selectKeyframes(duration) {
+    if (!frames.length) return [];
+    const picks = [{ frame: frames[0], reason: "start" }];
+    let prev = frames[0];
+    for (let i = 1; i < frames.length; i++) {
+      if (hamming(frames[i].hash, prev.hash) >= 12) picks.push({ frame: frames[i], reason: "scene-change" });
+      prev = frames[i];
+    }
+    for (const t of speechKeyframeTimes()) {
+      const f = nearestFrame(t);
+      if (f) picks.push({ frame: f, reason: "speech" });
+    }
+    picks.sort((a, b) => a.frame.t - b.frame.t);
+    const out = [];
+    let lastT = -Infinity;
+    for (const p of picks) {
+      if (p.frame.t - lastT >= 1.5) { out.push(p); lastT = p.frame.t; }
+    }
+    return out.slice(0, 8);
+  }
+
+  // ---- base64 helpers -------------------------------------------------------
+  const dataUrlToB64 = (u) => u.slice(u.indexOf(",") + 1);
+  function bufToB64(buf) {
+    const bytes = new Uint8Array(buf);
+    let bin = "";
+    const CH = 0x8000;
+    for (let i = 0; i < bytes.length; i += CH) {
+      bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CH));
+    }
+    return btoa(bin);
+  }
+  async function blobToB64(blob) {
+    return bufToB64(await blob.arrayBuffer());
+  }
+
+  // ---- transcription (fused.ai.transcribe) + assembly -----------------------
+  async function writeJob(path, state, detail) {
+    try {
+      await fused.writeFile(path, JSON.stringify({ state, detail: detail || "", updated_at: Date.now() / 1000 }));
+    } catch (e) { /* best-effort — a failed status write shouldn't break the flow */ }
+  }
+
+  function describeAiError(err) {
+    const type = err && err.type;
+    const msg = (err && err.message) || String(err);
+    if (type === "unavailable") return "No local speech-to-text model available: " + msg;
+    return (type ? type + ": " : "") + msg;
+  }
+
+  // fused.ai.transcribe nests word timings under each segment (and only the
+  // MLX Whisper engine on Apple Silicon produces them at all); flatten what's
+  // there into the {w, t0, t1} shape assemble() correlates against shots with.
+  function flattenWords(rec) {
+    const out = [];
+    for (const s of (rec.segments || [])) {
+      for (const w of (s.words || [])) out.push({ w: w.word, t0: w.start, t1: w.end });
+    }
+    return out;
+  }
+
+  function assemble(id, manifest, rec) {
+    const startedAt = manifest.started_at || 0, endedAt = manifest.ended_at || startedAt;
+    const duration = round(endedAt - startedAt, 1);
+    const shots = manifest.shots || [];
+    const note = manifest.note || "";
+    const words = flattenWords(rec);
+    const haveWords = words.length > 0;
+    const segments = rec.segments || [];
+
+    const lines = [
+      "# Capture " + id + "  (" + duration + "s, " + shots.length + " shots)",
+      "",
+      "## Transcript",
+      rec.text || "",
+      "",
+      "## Timeline",
+    ];
+    for (const shot of shots) {
+      const t = shot.t || 0;
+      let spoken;
+      if (haveWords) {
+        spoken = words.filter((w) => Math.abs(w.t0 - t) <= 2.0).map((w) => w.w).join(" ");
+      } else {
+        // No word timings on this engine (most non-Apple-Silicon machines) —
+        // fall back to whichever segment the shot's timestamp actually falls
+        // inside; if it lands in a gap between segments, use the nearest one.
+        // (A padded window here over-matches on short/adjacent segments —
+        // every shot ends up quoting the whole transcript.)
+        const inside = segments.filter((s) => t >= s.start && t <= s.end);
+        if (inside.length) {
+          spoken = inside.map((s) => (s.text || "").trim()).join(" ");
+        } else if (segments.length) {
+          let best = segments[0], bestDist = Infinity;
+          for (const s of segments) {
+            const dist = t < s.start ? s.start - t : t - s.end;
+            if (dist < bestDist) { bestDist = dist; best = s; }
+          }
+          spoken = (best.text || "").trim();
+        } else {
+          spoken = "";
+        }
+      }
+      lines.push("- " + fmtTime(t) + " [" + (shot.file || "") + "] " + (shot.reason || "") + " — \"" + spoken + "\"");
+    }
+    lines.push("", "## Note", note || "");
+    return lines.join("\n") + "\n";
+  }
+
+  async function transcribeAndAssemble(id, manifest) {
+    const jobPath = P("sessions", id, "job.json");
+    await writeJob(jobPath, "transcribing");
+    const modelId = fused.params.get("transcribeModel") || (asrModels[0] && asrModels[0].id) || undefined;
+
+    let rec;
+    try {
+      rec = await fused.ai.transcribe({
+        path: P("sessions", id, "audio.wav"),
+        model: modelId,
+        words: true,
+        onProgress: (job) => {
+          const b = el.status.querySelector(".banner.info span");
+          if (b) b.textContent = "transcribing: " + fmtTime(job.done || 0) + (job.total ? " / " + fmtTime(job.total) : "");
+        },
+      });
+    } catch (err) {
+      const msg = describeAiError(err);
+      await writeJob(jobPath, "error", msg);
+      throw new Error(msg);
+    }
+
+    await fused.writeFile(P("sessions", id, "transcript.json"), JSON.stringify({ text: rec.text || "", words: flattenWords(rec) }));
+    await writeJob(jobPath, "assembling");
+    const md = assemble(id, manifest, rec);
+    await fused.writeFile(P("sessions", id, "context.md"), md);
+    await writeJob(jobPath, "done");
+  }
+
+  // ---- upload -----------------------------------------------------------
+  async function uploadSession(cap) {
+    try {
+      const res = await run("new_session");
+      const id = res && res.session;
+      if (!id) throw new Error("new_session returned no session id");
+
+      const manifestShots = [];
+      for (let i = 0; i < cap.shots.length; i++) {
+        const name = "shot-" + pad2(i) + ".png";
+        await fused.writeFile(P("sessions", id, name + ".b64"), dataUrlToB64(cap.shots[i].frame.dataUrl));
+        manifestShots.push({ file: name, t: round(cap.shots[i].frame.t, 2), reason: cap.shots[i].reason });
+      }
+      await fused.writeFile(P("sessions", id, "audio.wav.b64"), await blobToB64(cap.wavBlob));
+
+      const manifest = {
+        started_at: cap.startedAt,
+        ended_at: cap.endedAt,
+        shots: manifestShots,
+        note: (el.note.value || "").trim(),
+      };
+      await fused.writeFile(P("sessions", id, "upload.json"), JSON.stringify(manifest, null, 2));
+
+      await run("finalize_session", id);
+      setState("processing");
+      showInfo("Uploaded " + manifestShots.length + " shots — transcribing…", 0);
+      await transcribeAndAssemble(id, manifest);
+
+      clearStatus();
+      showInfo("Capture complete.", 4000);
+      await refreshHistory();
+      fused.params.set("session", String(id)); // opens the detail view
+      // streams stay alive → ready to capture again
+      setState(displayStream ? "armed" : "idle");
+    } catch (err) {
+      showError("Upload/processing failed: " + (err && err.message ? err.message : err));
+      setState(displayStream ? "armed" : "idle");
+    }
+  }
+
+  // ---- history --------------------------------------------------------------
+  async function refreshHistory() {
+    try {
+      const res = await run("list_sessions");
+      lastSessions = (res && res.sessions) || [];
+      renderHistoryList();
+    } catch (e) {
+      el.historyList.innerHTML = '<div class="muted">Backend unavailable — ' + esc(e.message || e) + "</div>";
+    }
+  }
+
+  function renderHistoryList() {
+    if (!lastSessions.length) { el.historyList.innerHTML = '<div class="muted">No captures yet.</div>'; return; }
+    el.historyList.innerHTML = "";
+    for (const s of lastSessions) {
+      const dur = (s.ended_at && s.started_at) ? Math.round(s.ended_at - s.started_at) : 0;
+      const row = document.createElement("div");
+      row.className = "sess-row";
+      row.innerHTML =
+        '<span class="when mono">' + esc(idToClock(s.id)) + "</span>" +
+        '<span class="mono muted">' + fmtTime(dur) + "</span>" +
+        '<span class="mono muted">' + (s.shots || 0) + " sh</span>" +
+        '<span class="preview">' + esc(s.text_preview || "") + "</span>" +
+        '<span class="state-chip state-' + esc(s.state || "queued") + '">' + esc(s.state || "queued") + "</span>";
+      row.onclick = () => fused.params.set("session", String(s.id));
+      el.historyList.appendChild(row);
+    }
+  }
+
+  function idToClock(id) {
+    const m = /^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})$/.exec(id || "");
+    if (!m) return id || "";
+    return m[2] + "/" + m[3] + " " + m[4] + ":" + m[5] + ":" + m[6];
+  }
+
+  // ---- detail view (driven by ?session=) ------------------------------------
+  async function renderDetail() {
+    const id = fused.params.get("session");
+    if (!id) { el.detail.hidden = true; el.detail.innerHTML = ""; el.historyList.style.opacity = "1"; return; }
+    el.detail.hidden = false;
+    el.detail.innerHTML = '<div class="muted">Loading session…</div>';
+
+    let manifest = null, transcript = "", state = "";
+    try { manifest = JSON.parse(await fused.readFile(P("sessions", id, "upload.json"))); }
+    catch (e) {
+      el.detail.innerHTML =
+        '<div class="row"><strong>' + esc(id) + '</strong><span class="spacer"></span>' +
+        '<button class="small" id="d-back">← back</button></div>' +
+        '<div class="banner err" style="margin-top:10px;">Could not load session: ' + esc(e.message || e) + "</div>";
+      el.detail.querySelector("#d-back").onclick = () => fused.params.set("session", "");
+      return;
+    }
+    try { const j = JSON.parse(await fused.readFile(P("sessions", id, "job.json"))); state = j.state || ""; } catch (e) {}
+    try { transcript = (JSON.parse(await fused.readFile(P("sessions", id, "transcript.json"))).text) || ""; } catch (e) {}
+
+    const shots = manifest.shots || [];
+    let shotsHtml = "";
+    for (const sh of shots) {
+      shotsHtml +=
+        "<figure><img src='" + esc(fused.rawUrl(P("sessions", id, sh.file))) + "' alt='" + esc(sh.file) + "' />" +
+        "<figcaption>" + fmtTime(sh.t) + " · " + esc(sh.reason || "") + "</figcaption></figure>";
+    }
+
+    el.detail.innerHTML =
+      '<div class="row"><strong class="mono">' + esc(idToClock(id)) + "</strong>" +
+      (state ? '<span class="state-chip state-' + esc(state) + '">' + esc(state) + "</span>" : "") +
+      '<span class="spacer"></span>' +
+      '<button class="small" id="d-copy">Copy context</button>' +
+      '<button class="small danger" id="d-del">Delete</button>' +
+      '<button class="small" id="d-back">← back</button></div>' +
+      (manifest.note ? '<p class="hint" style="margin:8px 0 0;">note: ' + esc(manifest.note) + "</p>" : "") +
+      '<div class="shots">' + (shotsHtml || '<span class="muted">no shots</span>') + "</div>" +
+      "<h2 style='font-size:12px;color:#9aa0a6;margin:8px 0 6px;'>Transcript</h2>" +
+      '<div class="transcript">' + (transcript ? esc(transcript) : '<span class="muted">transcript not ready</span>') + "</div>" +
+      '<div id="d-confirm" style="margin-top:10px;"></div>';
+
+    el.detail.querySelector("#d-back").onclick = () => fused.params.set("session", "");
+    el.detail.querySelector("#d-copy").onclick = () => copyContext(id);
+    el.detail.querySelector("#d-del").onclick = () => confirmDelete(id);
+  }
+
+  async function copyContext(id) {
+    try {
+      const md = await fused.readFile(P("sessions", id, "context.md"));
+      try {
+        await navigator.clipboard.write([new ClipboardItem({ "text/plain": new Blob([md], { type: "text/plain" }) })]);
+      } catch (e) {
+        await navigator.clipboard.writeText(md);
+      }
+      showInfo("Context copied to clipboard.", 3000);
+    } catch (e) {
+      showError("Could not copy context: " + (e.message || e));
+    }
+  }
+
+  function confirmDelete(id) {
+    const box = el.detail.querySelector("#d-confirm");
+    if (!box) return;
+    box.innerHTML =
+      '<div class="banner info">Delete this capture permanently?' +
+      '<span class="spacer"></span>' +
+      '<button class="small danger" id="d-yes">Delete</button>' +
+      '<button class="small" id="d-no">Cancel</button></div>';
+    box.querySelector("#d-no").onclick = () => { box.innerHTML = ""; };
+    box.querySelector("#d-yes").onclick = async () => {
+      box.innerHTML = '<span class="muted">deleting…</span>';
+      try {
+        await run("delete_session", id);
+        fused.params.set("session", "");
+        await refreshHistory();
+      } catch (e) { showError("Delete failed: " + (e.message || e)); }
+    };
+  }
+
+  // ---- setup check ------------------------------------------------------
+  async function checkSetup() {
+    try {
+      const r = await run("check_setup");
+      appDir = r.app_dir || "";
+      el.setupChip.className = "chip ok";
+      el.setupText.textContent = "backend ready";
+    } catch (e) {
+      el.setupChip.className = "chip bad";
+      el.setupText.textContent = "backend unavailable";
+    }
+  }
+
+  // ---- ASR model catalog (fused.ai.models) -------------------------------
+  function labelForAsr(id) {
+    const hit = asrModels.find((m) => m.id === id);
+    return hit ? (hit.label || hit.id) : id;
+  }
+
+  function stateOfAsr(m) {
+    if (asrResident && asrResident.model === m.id) return "resident";
+    if (m.downloaded) return "on disk";
+    return m.size_gb ? gbFmt(m.size_gb) + " download" : "downloads on first use";
+  }
+
+  function fillAsrSelect() {
+    const sel = el.asrSelect;
+    sel.innerHTML = "";
+    asrModels.forEach((m) => {
+      const opt = document.createElement("option");
+      opt.value = m.id;
+      opt.textContent = (m.label || m.id) + " · " + stateOfAsr(m);
+      sel.appendChild(opt);
+    });
+    const want = fused.params.get("transcribeModel") || "";
+    if (want && !asrModels.some((m) => m.id === want)) {
+      const opt = document.createElement("option");
+      opt.value = want;
+      opt.textContent = want + " (not in catalog)";
+      sel.appendChild(opt);
+    }
+    sel.value = want || (asrModels[0] && asrModels[0].id) || "";
+    const chosen = asrModels.find((m) => m.id === sel.value);
+    el.asrNote.textContent = chosen && chosen.note ? chosen.note : "";
+  }
+
+  async function refreshAsrCatalog() {
+    if (fused.env !== "local") {
+      el.asrChip.className = "chip bad";
+      el.asrText.textContent = "local models unavailable (exported copy)";
+      return;
+    }
+    let list = null, catalog = null;
+    try { list = await fused.ai.models.list(); } catch (e) { /* handled below */ }
+    try { catalog = await fused.ai.models.catalog(); } catch (e) { /* ditto */ }
+
+    asrRunner = list
+      ? (list.runners || []).find((r) => r.capability === TRANSCRIBE_CAP && r.available)
+        || (list.runners || []).find((r) => r.capability === TRANSCRIBE_CAP)
+      : null;
+    asrResident = list ? (list.loaded || []).find((l) => l.capability === TRANSCRIBE_CAP) || null : null;
+
+    const block = catalog ? (catalog.capabilities || []).find((c) => c.capability === TRANSCRIBE_CAP) : null;
+    asrModels = (block && block.models) || [];
+    // A model loaded from the AI Models page (or another app) belongs in the
+    // picker whether or not the catalog fetch mentions it.
+    if (asrResident && !asrModels.some((m) => m.id === asrResident.model)) {
+      asrModels = asrModels.concat([{
+        id: asrResident.model, label: asrResident.model, size_gb: 0,
+        note: "Loaded from elsewhere.", downloaded: true, loaded: true,
+      }]);
+    }
+    if (!fused.params.get("transcribeModel")) {
+      const wanted = (block && block.default) || (asrModels[0] && asrModels[0].id) || "";
+      if (wanted) fused.params.set("transcribeModel", wanted);
+    }
+
+    fillAsrSelect();
+
+    if (!asrRunner || !asrRunner.available) {
+      el.asrChip.className = "chip bad";
+      el.asrText.textContent = (asrRunner && asrRunner.reason) || "no speech-to-text runner on this machine";
+    } else if (asrResident) {
+      el.asrChip.className = "chip ok";
+      el.asrText.textContent = labelForAsr(asrResident.model) + " resident";
+    } else {
+      el.asrChip.className = "chip warn";
+      el.asrText.textContent = asrModels.length ? "ready — loads on first transcription" : "no models in catalog";
+    }
+  }
+
+  // ---- PiP pill -------------------------------------------------------------
+  function getDPiP() {
+    if (window.documentPictureInPicture) return window.documentPictureInPicture;
+    try { if (window.top && window.top.documentPictureInPicture) return window.top.documentPictureInPicture; }
+    catch (e) { /* cross-origin top */ }
+    return null;
+  }
+
+  async function popOutPill() {
+    const dpip = getDPiP();
+    if (!dpip) { showError("Picture-in-Picture is not available in this browser."); return; }
+    try {
+      pipWindow = await dpip.requestWindow({ width: 300, height: 150 });
+    } catch (e) {
+      showError("Could not open PiP window: " + (e.message || e));
+      return;
+    }
+    // copy stylesheets/inline styles into the PiP document
+    for (const ss of document.styleSheets) {
+      try {
+        const css = Array.from(ss.cssRules).map((r) => r.cssText).join("\n");
+        const style = pipWindow.document.createElement("style");
+        style.textContent = css;
+        pipWindow.document.head.appendChild(style);
+      } catch (e) { /* cross-origin sheet — skip */ }
+    }
+    pipWindow.document.body.style.margin = "0";
+    pipWindow.document.body.style.background = "#131417";
+    pipWindow.document.body.appendChild(el.pill); // adopt the live pill node
+    pipWindow.addEventListener("keydown", onKeyDown);
+    pipWindow.addEventListener("keyup", onKeyUp);
+    pipWindow.addEventListener("pagehide", returnPill);
+    el.btnPip.disabled = true;
+  }
+
+  function returnPill() {
+    if (el.pill.ownerDocument !== document) el.pillFooter.appendChild(el.pill);
+    el.btnPip.disabled = false;
+    pipWindow = null;
+  }
+
+  // ---- keyboard (push-to-talk) ----------------------------------------------
+  function isTextInput(t) {
+    if (!t) return false;
+    const tag = (t.tagName || "").toLowerCase();
+    return tag === "input" || tag === "textarea" || t.isContentEditable;
+  }
+  function onKeyDown(e) {
+    if (e.code !== "Space" || e.repeat) return;
+    if (isTextInput(e.target)) return;
+    if (uiState === "armed") { e.preventDefault(); startRecording(); }
+    else if (uiState === "recording") { e.preventDefault(); }
+  }
+  function onKeyUp(e) {
+    if (e.code !== "Space") return;
+    if (isTextInput(e.target)) return;
+    if (uiState === "recording") { e.preventDefault(); stopRecording(); }
+  }
+
+  // ---- wiring ---------------------------------------------------------------
+  el.btnArm.onclick = () => { if (uiState === "idle") arm(); else disarm(); };
+  el.btnRec.onclick = () => {
+    if (uiState === "armed") startRecording();
+    else if (uiState === "recording") stopRecording();
+  };
+  el.pillStop.onclick = () => { if (uiState === "recording") stopRecording(); };
+  el.btnPip.onclick = popOutPill;
+  el.asrSelect.onchange = () => {
+    fused.params.set("transcribeModel", el.asrSelect.value);
+    refreshAsrCatalog();
+  };
+  window.addEventListener("keydown", onKeyDown);
+  window.addEventListener("keyup", onKeyUp);
+  window.addEventListener("pagehide", () => { if (displayStream) displayStream.getTracks().forEach((t) => t.stop()); });
+
+  fused.params.onChange(renderDetail);
+
+  if (getDPiP()) el.btnPip.hidden = false;
+  setState("idle");
+  drawWave();
+  // appDir comes from check_setup, and renderDetail needs it for rawUrl/
+  // readFile — resolve it before the first detail render.
+  checkSetup().then(refreshHistory).then(renderDetail);
+  refreshAsrCatalog();
+
+  // ---- test hook (used for automated upload/polling verification) -----------
+  const tinyPng =
+    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+  function makeTestWav(seconds) {
+    const rate = 16000, n = Math.floor((seconds || 1) * rate);
+    const s = new Float32Array(n);
+    for (let i = 0; i < n; i++) s[i] = 0.2 * Math.sin((2 * Math.PI * 440 * i) / rate);
+    return encodeWav(s, rate);
+  }
+  window.__test = {
+    get state() { return uiState; },
+    get appDir() { return appDir; },
+    P,
+    run, arm, disarm, startRecording, stopRecording, refreshHistory, renderDetail,
+    encodeWav, makeTestWav, dhash, hamming, selectKeyframes,
+    // Drive the upload path with a fake session (no real capture needed).
+    injectAndUpload: async (opts) => {
+      opts = opts || {};
+      const png = opts.png || tinyPng;
+      const wavBlob = opts.wav || makeTestWav(1);
+      const shots = [
+        { frame: { t: 0.0, dataUrl: png, hash: [0, 0] }, reason: "start" },
+        { frame: { t: 2.5, dataUrl: png, hash: [0, 0] }, reason: "speech" },
+      ];
+      setState("uploading");
+      return uploadSession({
+        startedAt: Date.now() / 1000 - 5, endedAt: Date.now() / 1000,
+        duration: 5, shots, wavBlob,
+      });
+    },
+  };
+})();
+</script>
+</body>
+</html>
