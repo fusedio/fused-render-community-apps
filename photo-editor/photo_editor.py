@@ -126,7 +126,7 @@ def _documents(action: str, doc_id: str, name: str, snap_json: str, label: str,
     png = docstore.decode_png(thumb) if thumb else None
     if action == "doc_create":
         record = docstore.create(name or "Untitled", json.loads(snap_json), source="user",
-                                 label=label or "new document", thumb_png=png)
+                                 label=label or "new document", thumb_png=png, doc_id=doc_id)
         return {"ok": True, "id": record["id"], "rev": record["rev"]}
     if action == "doc_save":
         result = docstore.commit(doc_id, json.loads(snap_json), label, "user",

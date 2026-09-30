@@ -1462,12 +1462,59 @@
   // pollDisk() notices their revisions in current.json and loads them.
 
   const CURRENT_FILE = ".fused/data/documents/current.json";
-  const store = { gen: 0, id: null, rev: 0, pending: null, timer: null, saving: false, error: "", seq: null, leftTab: "layers", steps: [], docs: [], saveDir: "" };
+  const store = { gen: 0, id: null, newId: "", rev: 0, pending: null, timer: null, saving: false, error: "", seq: null, leftTab: "layers", steps: [], docs: [], saveDir: "" };
   const docPy = (params) => fused.runPython(PY, params, { key: null });
   const baseName = (path) => String(path || "").split("/").pop();
 
   function setDocParam() {
     if ((fused.params.get("doc") || "") !== (store.id || "")) fused.params.set("doc", store.id || "");
+    tabSet(OPEN_KEY, store.id || "");
+  }
+
+  // Refresh safety. sessionStorage belongs to this tab and survives a reload,
+  // so it remembers which document the tab had open (in case the shell reloads
+  // without the ?doc= param) and holds the newest step until the disk has it:
+  // a refresh inside the autosave delay, or before a brand-new document's
+  // first save lands, then recovers that step instead of dropping it.
+  const OPEN_KEY = "photo_editor.openDoc", STASH_KEY = "photo_editor.unsaved";
+  // Same shape as docstore.new_id(): d<yyyymmdd>-<8 hex>.
+  function newDocId() {
+    const b = new Uint8Array(4); crypto.getRandomValues(b);
+    const d = new Date(), pad = (n) => String(n).padStart(2, "0");
+    return "d" + d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + "-" + Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
+  }
+  function tabGet(key) { try { return sessionStorage.getItem(key) || ""; } catch (e) { return ""; } }
+  function tabSet(key, value) { try { if (value) sessionStorage.setItem(key, value); else sessionStorage.removeItem(key); } catch (e) { } }
+  function stashPending() {
+    if (!store.id && !store.newId) store.newId = newDocId();
+    try { tabSet(STASH_KEY, JSON.stringify({ id: store.id || store.newId, created: !!store.id, base: store.rev, label: store.pending || "edit", name: state.fileName, snap: snapshot() })); } catch (e) { }
+  }
+  function readStash() { try { return JSON.parse(tabGet(STASH_KEY) || "null"); } catch (e) { return null; } }
+
+  function recoverStash(stash) {
+    if (!stash || !stash.snap) return;
+    tabSet(STASH_KEY, "");
+    if (stash.id && stash.id === store.id) {
+      // Already on disk (the save landed) or superseded by a newer revision.
+      // A new document's first save may have landed with an older snapshot
+      // than the stash, so that case always re-applies (at worst a repeat step).
+      if (stash.created && stash.base !== store.rev) return;
+      restore(hydrate(stash.snap));
+      commitHistory(stash.label);
+      toast("Recovered your last change from before the reload");
+      return;
+    }
+    // A document whose first save never landed, or whose record is gone:
+    // bring it back as a new document so the work is saved again.
+    store.gen++; store.id = null; store.rev = 0; store.newId = stash.id || "";
+    state.history = []; state.historyIndex = -1;
+    restore(hydrate(stash.snap));
+    state.fileName = stash.name || "Untitled"; $("fileName").value = state.fileName;
+    $("dropVeil").classList.add("hidden");
+    setDropCard();
+    fitToScreen();
+    commitHistory(stash.label || "recovered");
+    toast("Recovered “" + state.fileName + "” from before the reload");
   }
 
   function hydrate(snap) {
@@ -1502,6 +1549,7 @@
   function scheduleSave(label) {
     if (!doc.ready) return;
     store.pending = label || store.pending || "edit";
+    stashPending();
     clearTimeout(store.timer);
     store.timer = setTimeout(flushSave, 350);
     renderSaveState();
@@ -1520,7 +1568,8 @@
     const params = { snap_json: JSON.stringify(snapshot()), label, thumb: thumbData() };
     try {
       if (!id) {
-        const r = await docPy(Object.assign(params, { action: "doc_create", name: state.fileName || "Untitled" }));
+        if (!store.newId) store.newId = newDocId();
+        const r = await docPy(Object.assign(params, { action: "doc_create", doc_id: store.newId, name: state.fileName || "Untitled" }));
         // Another document may have been started or opened meanwhile.
         if (store.gen === gen) { store.id = r.id; store.rev = r.rev; setDocParam(); }
       } else {
@@ -1534,6 +1583,7 @@
         }
       }
       store.error = "";
+      if (!store.pending && store.gen === gen) tabSet(STASH_KEY, "");
     } catch (error) {
       store.error = error.message || String(error);
       console.warn("[photo_editor] autosave failed", error);
@@ -1774,13 +1824,20 @@
 
   async function startDocuments() {
     try { const cur = JSON.parse(await fused.readFile(CURRENT_FILE)); store.seq = cur && cur.seq; } catch (e) { store.seq = ""; }
-    const wanted = fused.params.get("doc");
+    const stash = readStash();
+    const wanted = fused.params.get("doc") || tabGet(OPEN_KEY) || (stash && stash.id) || "";
     if (wanted) {
-      try { await loadDoc(wanted, "open"); } catch (e) { store.id = null; setDocParam(); }
+      try { await loadDoc(wanted, "open"); }
+      catch (e) {
+        store.id = null; setDocParam();
+        if (!stash) toast("Couldn't reopen the last document: " + (e.message || e), true);
+      }
     }
+    recoverStash(stash);
     renderRecent();
     setInterval(pollDisk, 1000);
     window.addEventListener("pagehide", flushSaveNow);
+    document.addEventListener("visibilitychange", () => { if (document.hidden) flushSaveNow(); });
   }
 
   // ---------------------------------------------------------------- view
@@ -2942,7 +2999,7 @@
     // A new document: the one on screen is already autosaved, so start a fresh
     // record (and a fresh undo stack) instead of overwriting it.
     flushSaveNow();
-    store.gen++; store.id = null; store.rev = 0; store.pending = null;
+    store.gen++; store.id = null; store.rev = 0; store.pending = null; store.newId = "";
     state.history = []; state.historyIndex = -1;
     closeTextEditor(true);
     closeCropOverlay();

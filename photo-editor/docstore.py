@@ -141,10 +141,15 @@ def new_id() -> str:
 
 
 def create(name: str, snap: dict, source: str = "user", label: str = "new document",
-           thumb_png: bytes | None = None, make_current: bool = True) -> dict:
-    doc_id = new_id()
+           thumb_png: bytes | None = None, make_current: bool = True, doc_id: str = "") -> dict:
+    """New document. A caller-chosen `doc_id` makes this idempotent: the page
+    picks the id up front, so a create retried after a reload returns the
+    document the first attempt made instead of a duplicate."""
+    doc_id = doc_id or new_id()
     now = time.time()
     with _locked(doc_id) as folder:
+        if os.path.exists(os.path.join(folder, "doc.json")):
+            return load(doc_id)
         record = {"id": doc_id, "name": name or "Untitled", "rev": 1, "created_at": now,
                   "updated_at": now, "source": source, "label": label, "snap": _clean_snap(snap)}
         _write_history(folder, record, thumb_png)
