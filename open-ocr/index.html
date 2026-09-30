@@ -261,6 +261,11 @@
     letter-spacing: 0;
   }
 
+  .badge.doc-type {
+    background: var(--highlight);
+    color: var(--highlight-ink);
+  }
+
   .scan-model {
     font-size: 11.5px;
     color: var(--muted);
@@ -1666,6 +1671,60 @@
     showWorkspace(true);
   }
 
+  // ---------------------------------------------------------------- laya
+
+  const DOC_TYPE_CRITERIA = {
+    invoice: "a bill requesting payment, with line items and a total",
+    receipt: "a proof-of-purchase from a store or vendor",
+    form: "blank or filled-in fields for someone to complete",
+    "id-document": "a passport, license, or identity card",
+    letter: "a letter, memo, or email printed on a page",
+    resume: "a CV listing someone's work history and skills",
+    book: "a page from a book, article, or long-form text",
+    table: "mostly a data table or spreadsheet printout",
+    other: "none of the above",
+  };
+
+  function layaAvailable() {
+    return typeof fused.ai?.decide === "function";
+  }
+
+  async function classifyDocument(markdown) {
+    const state = markdown.trim().slice(0, 600);
+    const questions = {
+      docType: {
+        type: "choice",
+        instructions: "What kind of document is this scanned page?",
+        criteria: DOC_TYPE_CRITERIA,
+      },
+    };
+    const deadline = Date.now() + 120000;
+    while (true) {
+      try {
+        const res = await fused.ai.decide({ state, questions });
+        return { label: res.answers.docType.choice, confidence: res.answers.docType.confidence };
+      } catch (error) {
+        if (error.type === "model_loading" && error.jobId && Date.now() < deadline) {
+          await fused.watchJob(error.jobId);
+          continue;
+        }
+        throw error;
+      }
+    }
+  }
+
+  async function classifyAndTagHistory(recordId, markdown) {
+    if (!recordId || !layaAvailable() || !markdown.trim()) return;
+    try {
+      const result = await classifyDocument(markdown);
+      if (!result || !result.label) return;
+      await py({ action: "history_set_doc_type", record_id: recordId, doc_type: result.label });
+      loadHistory();
+    } catch (error) {
+      console.warn("[openocr] laya classify failed", error);
+    }
+  }
+
   // ---------------------------------------------------------------- ocr run
 
   function setProgress(fraction, label) {
@@ -1879,8 +1938,9 @@
   }
 
   async function persistToHistory(mode, modelRepo, imagePaths, markdown, structured, raw, elapsed) {
+    let recordId = "";
     try {
-      await py({
+      const result = await py({
         action: "history_save",
         mode: mode,
         model: modelRepo || "",
@@ -1890,10 +1950,13 @@
         raw: raw,
         elapsed: String(elapsed),
       });
+      recordId = result.id || "";
       loadHistory();
     } catch (error) {
       console.warn("[openocr] failed to save history", error);
+      return;
     }
+    classifyAndTagHistory(recordId, markdown);
   }
 
   // ---------------------------------------------------------------- history
@@ -1906,11 +1969,14 @@
     const modelTag = record.model_repo
       ? '<span class="badge subtle model-tag">' + escapeHtml(modelLabel(record.model_repo)) + '</span>'
       : "";
+    const docTypeTag = record.doc_type
+      ? '<span class="badge doc-type">' + escapeHtml(record.doc_type) + '</span>'
+      : "";
     return '<div class="history-item" data-id="' + record.id + '" role="button" tabindex="0">'
       + '<span class="history-thumb" style="' + thumbStyle + '"></span>'
       + '<span class="history-body">'
       + '<div class="history-snippet">' + escapeHtml(record.snippet || "(empty)") + '</div>'
-      + '<div class="history-meta"><span class="badge">' + record.mode + '</span>' + modelTag + '<span>' + time + '</span></div>'
+      + '<div class="history-meta">' + docTypeTag + '<span class="badge">' + record.mode + '</span>' + modelTag + '<span>' + time + '</span></div>'
       + '</span>'
       + '<button class="history-delete" data-delete="' + record.id + '" aria-label="Delete scan" title="Delete">×</button>'
       + '</div>';
