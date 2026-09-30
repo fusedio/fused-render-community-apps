@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "name": "DocChat",
+  "description": "Conversational RAG over any local folder or file — embeddings and retrieval run entirely on your machine, no cloud or API key required.",
+  "author": { "name": "Aman Bagrecha", "github": "amanbagrecha" },
+  "tags": ["local-ai", "rag", "search", "documents", "embeddings"],
+  "category": "local-ai",
+  "version": "1.0.0",
+  "requires_python": true
+}
