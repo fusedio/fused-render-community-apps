@@ -1705,7 +1705,7 @@
         return { label: res.answers.docType.choice, confidence: res.answers.docType.confidence };
       } catch (error) {
         if (error.type === "model_loading" && error.jobId && Date.now() < deadline) {
-          await fused.watchJob(error.jobId);
+          await fused.watchJob(error.jobId).watch(() => {});
           continue;
         }
         throw error;
@@ -1719,7 +1719,7 @@
       const result = await classifyDocument(markdown);
       if (!result || !result.label) return;
       await py({ action: "history_set_doc_type", record_id: recordId, doc_type: result.label });
-      loadHistory();
+      loadHistory($("searchInput").value);
     } catch (error) {
       console.warn("[openocr] laya classify failed", error);
     }
