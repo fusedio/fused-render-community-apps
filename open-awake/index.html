@@ -121,6 +121,7 @@ h1, h2, .caps { font-family: var(--font-display); text-transform: uppercase; let
 .sel select:active { transform: scale(var(--k-press)); }
 .sel::after { content: ""; position: absolute; right: 20px; top: 50%; width: 9px; height: 9px; margin-top: -7px; border: solid var(--ink); border-width: 0 2.5px 2.5px 0; transform: rotate(45deg); pointer-events: none; }
 .btn.big { height: 54px; font-size: 18px; letter-spacing: .1em; }
+#goLabel .short { display: none; }
 .opt { justify-content: center; }
 .opt { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); }
 .sw { width: 40px; height: 22px; border: var(--k-border); border-radius: 11px; position: relative; flex: none; transition: background var(--k-dur); }
@@ -175,10 +176,25 @@ h1, h2, .caps { font-family: var(--font-display); text-transform: uppercase; let
   .sel::after { right: 14px; }
   .btn.big { padding: 0 10px; min-width: 0; }
 }
-@media (max-width: 440px) {
-  .stub { grid-template-columns: minmax(0, 1fr); }
-  .clocklabel { text-align: left; }
-  .state, .clocklabel { grid-column: 1 / -1; }
+/* Tiny window (pinned popover): the clock takes nearly everything, controls shrink to one slim row */
+@media (max-width: 440px), (max-width: 700px) and (max-height: 520px) {
+  .wrap { padding: 8px 10px 10px; gap: 6px; }
+  .mast { padding-bottom: 4px; }
+  .mast h1 { font-size: 19px; }
+  .ticket > * { padding: 6px 10px; }
+  .stub { grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr); gap: 6px 8px; padding: 6px 10px 10px; align-items: center; }
+  .state { gap: 0; }
+  .state h2, .clocklabel { display: none; }
+  .state .lamp { width: 12px; height: 12px; }
+  .err { grid-column: 1 / -1; order: 9; }
+  .btn.big, .sel select { height: 34px; font-size: 13px; letter-spacing: .04em; }
+  .sel select { padding: 0 24px 0 9px; font-size: 12.5px; }
+  .sel::after { right: 10px; width: 7px; height: 7px; margin-top: -6px; border-width: 0 2px 2px 0; }
+  .btn.big { padding: 0 6px; border-radius: 6px; }
+  .pend { display: none; }
+  .sel select { border-radius: 6px; }
+  #goLabel .full { display: none; }
+  #goLabel .short { display: inline; }
 }
 @media (prefers-reduced-motion: reduce) {
   .btn, .sel select, .sw, .sw::after { transition: none; }
@@ -196,7 +212,7 @@ h1, h2, .caps { font-family: var(--font-display); text-transform: uppercase; let
 
   <section class="ticket" id="ticket">
     <div class="clockside">
-      <svg class="wallclock" viewBox="0 0 320 404" role="img" aria-labelledby="clockTitle">
+      <svg class="wallclock" id="wc" viewBox="0 0 320 404" role="img" aria-labelledby="clockTitle">
         <title id="clockTitle">Wall clock. The blue band runs from now to when your Mac may sleep again.</title>
         <defs>
           <filter id="paper" x="0" y="0" width="100%" height="100%">
@@ -266,7 +282,7 @@ h1, h2, .caps { font-family: var(--font-display); text-transform: uppercase; let
       <p class="clocklabel" id="clockLabel">Mac can sleep normally</p>
       <div class="err" id="err" role="status"></div>
       <label class="field" for="dur"><span>Keep awake for</span><div class="sel"><select id="dur" aria-label="Keep awake for"></select></div></label>
-      <button class="btn primary big" id="go" type="button"><span id="goLabel">Stay awake</span></button>
+      <button class="btn primary big" id="go" type="button"><span id="goLabel"><span class="full">Stay awake</span><span class="short">Stay awake</span></span></button>
       <div class="opt">
         <button class="sw" id="display" role="switch" aria-checked="true" aria-label="Keep display on"></button>
         <span>Screen stays on</span>
@@ -328,10 +344,11 @@ function renderDuration() {
   $("display").setAttribute("aria-checked", String(running() ? !!state.display : keepDisplay()));
 }
 
-function setLabel(text) {
+function setLabel(full, short) {
   const el = $("goLabel");
-  if (el.textContent === text) return;
-  el.textContent = text;
+  if (el.dataset.k === full) return;
+  el.dataset.k = full;
+  el.innerHTML = `<span class="full">${full}</span><span class="short">${short}</span>`;
   el.classList.remove("label-in"); void el.offsetWidth; el.classList.add("label-in");
 }
 
@@ -355,6 +372,11 @@ function renderLog() {
 const CX = 160, CY = 170;
 const pt = (r, deg) => [CX + r * Math.sin(deg * Math.PI / 180), CY - r * Math.cos(deg * Math.PI / 180)];
 const dialAngle = (ms) => { const d = new Date(ms); return ((d.getHours() % 12) + d.getMinutes() / 60 + d.getSeconds() / 3600) * 30; };
+
+// Tiny window: crop the drawing to the clock itself (no pendulum) so it can use the full width.
+const COMPACT = window.matchMedia("(max-width: 440px), (max-width: 700px) and (max-height: 520px)");
+function fitView() { $("wc").setAttribute("viewBox", COMPACT.matches ? "0 0 320 330" : "0 0 320 404"); }
+COMPACT.addEventListener("change", fitView);
 
 function buildDial() {
   const ROMAN = ["XII", "I", "II", "III", "IIII", "V", "VI", "VII", "VIII", "IX", "X", "XI"];
@@ -399,7 +421,7 @@ function tick() {
   t.classList.toggle("on", !!state.active);
   $("go").classList.toggle("secondary", !!state.active);
   $("go").classList.toggle("primary", !state.active);
-  setLabel(state.active ? "Stop · allow sleep" : "Stay awake");
+  state.active ? setLabel("Stop · allow sleep", "Stop") : setLabel("Stay awake", "Stay awake");
   if (!state.active) {
     $("status").textContent = "Resting";
     $("faceTime").textContent = "--:--:--";
@@ -455,7 +477,7 @@ async function restart(mins, display) {
 }
 
 async function boot() {
-  buildDial(); drawHands();
+  fitView(); buildDial(); drawHands();
   renderDuration();
   fused.params.onChange(renderDuration);
   $("go").onclick = toggle;
@@ -491,7 +513,7 @@ async function boot() {
 
 if (PREVIEW) {
   document.body.classList.add("preview");
-  buildDial(); drawHands(); renderDuration(); tick(); renderLog();
+  fitView(); buildDial(); drawHands(); renderDuration(); tick(); renderLog();
 } else {
   boot();
 }
