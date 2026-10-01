@@ -1,6 +1,6 @@
 # Open Awake
 
-Keep your Mac awake. Pick a duration (15 min to 8 h, or no end time), press **Stay awake**, and the Mac won't idle-sleep until the time is up or you press **Stop · allow sleep**. An [Amphetamine](https://apps.apple.com/app/amphetamine/id937984704)-style tool built on macOS's own `caffeinate`.
+Keep your Mac awake. Pick a duration from the dropdown (15 minutes to 8 hours, or until you stop it), press **Stay awake**, and the Mac won't idle-sleep until the time is up or you press **Stop · allow sleep**. An [Amphetamine](https://apps.apple.com/app/amphetamine/id937984704)-style tool built on macOS's own `caffeinate`.
 
 - **A vintage wall clock** shows the time of day; a blue band on its bezel runs from now to when the Mac may sleep again, and a brass plate counts down (or up, for open-ended sessions). The pendulum swings while the Mac is held awake.
 - **Timed or open-ended** sessions.

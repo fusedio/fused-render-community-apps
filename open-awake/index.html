@@ -54,14 +54,8 @@ h1, h2, .caps { font-family: var(--font-display); text-transform: uppercase; let
 .ticket > * { padding: 14px 26px; min-width: 0; min-height: 0; }
 .clockside { border-right: var(--k-rule); display: flex; align-items: center; justify-content: center; }
 .wallclock { height: 100%; width: auto; max-width: 100%; overflow: visible; }
-.stub { display: grid; gap: 12px; align-content: center; }
-.serial { font-family: var(--font-mono); font-size: 12.5px; color: var(--muted); display: flex; justify-content: space-between; gap: 8px; }
-.status { font-family: var(--font-display); text-transform: uppercase; letter-spacing: .06em; font-weight: 700; font-size: 20px; display: flex; align-items: center; gap: 10px; }
 .lamp { flex: none; width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid var(--ink); background: transparent; }
 .on .lamp { background: var(--positive); border-color: var(--positive); box-shadow: 0 0 0 3px color-mix(in srgb, var(--positive) 25%, transparent); }
-.clocklabel { margin: -6px 0 0; font-size: 12.5px; color: var(--muted); }
-.controls { display: grid; gap: 12px; border-top: var(--k-rule); padding-top: 14px; }
-.controls h2 { font-size: 16px; }
 
 /* Wall clock (SVG). Every colour is a token, so it follows light/dark. */
 .wallclock .wood { fill: var(--wood); }
@@ -98,25 +92,40 @@ h1, h2, .caps { font-family: var(--font-display); text-transform: uppercase; let
 .btn:active { transform: scale(var(--k-press)); }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 .btn.secondary { background: transparent; }
-.btn:focus-visible, .chip:focus-visible, .sw:focus-visible { outline: 2px solid var(--accent2); outline-offset: 2px; }
+.btn:focus-visible, select:focus-visible, .sw:focus-visible { outline: 2px solid var(--accent2); outline-offset: 2px; }
 .btn[aria-busy="true"] { opacity: .7; pointer-events: none; }
 .label-in { animation: punch var(--k-dur) var(--k-ease); }
 @keyframes punch { from { transform: scale(1.1); opacity: .4; } to { transform: none; opacity: 1; } }
 
-.chips { display: flex; flex-wrap: wrap; gap: 8px; }
-.chip {
-  height: 32px; padding: 0 12px; border: var(--k-border); border-radius: 8px;
-  font: 700 13px var(--font-display); text-transform: uppercase; letter-spacing: .06em;
-  transition: transform var(--k-dur) var(--k-ease), background var(--k-dur);
+.stub { display: grid; gap: 20px; align-content: center; justify-items: stretch; padding-left: 34px; padding-right: 34px; }
+/* ornament divider: hairline, diamond, hairline */
+.orn { display: flex; align-items: center; gap: 12px; color: var(--rule); }
+.orn i { flex: 1; border-top: var(--k-rule); }
+.orn b { width: 9px; height: 9px; border: 1.5px solid var(--brass); transform: rotate(45deg); }
+.state { display: flex; align-items: center; gap: 16px; }
+.state h2 { font-size: clamp(44px, 10vh, 78px); line-height: .95; letter-spacing: .04em; }
+.state .lamp { width: 18px; height: 18px; border-width: 2px; }
+.on .state .lamp { box-shadow: 0 0 0 5px color-mix(in srgb, var(--positive) 25%, transparent); }
+.clocklabel { margin: -8px 0 0; font: 13px var(--font-mono); color: var(--muted); text-transform: uppercase; letter-spacing: .02em; }
+.field { display: grid; gap: 8px; }
+.field > span { font: 700 13px var(--font-display); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+.sel { position: relative; }
+.sel select {
+  width: 100%; height: 54px; padding: 0 48px 0 18px; border: var(--k-border); border-radius: 8px;
+  background: var(--surface); color: var(--ink); cursor: pointer;
+  -webkit-appearance: none; appearance: none;
+  font: 700 22px var(--font-display); letter-spacing: .06em; text-transform: uppercase;
+  transition: transform var(--k-dur) var(--k-ease);
 }
-.chip:active { transform: scale(var(--k-press)); }
-.chip[aria-pressed="true"] { background: var(--ink); color: var(--surface); }
+.sel select:active { transform: scale(var(--k-press)); }
+.sel::after { content: ""; position: absolute; right: 20px; top: 50%; width: 9px; height: 9px; margin-top: -7px; border: solid var(--ink); border-width: 0 2.5px 2.5px 0; transform: rotate(45deg); pointer-events: none; }
+.btn.big { height: 54px; font-size: 18px; letter-spacing: .1em; }
+.opt { justify-content: center; }
 .opt { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); }
 .sw { width: 40px; height: 22px; border: var(--k-border); border-radius: 11px; position: relative; flex: none; transition: background var(--k-dur); }
 .sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--ink); transition: transform var(--k-dur) var(--k-ease); }
 .sw[aria-checked="true"] { background: var(--accent2); }
 .sw[aria-checked="true"]::after { transform: translateX(18px); background: var(--surface); }
-.note { font-size: 12.5px; color: var(--muted); margin: 0; }
 .err { color: var(--negative); font-family: var(--font-mono); font-size: 12.5px; min-height: 1.2em; }
 
 /* Recent sessions: one slim strip */
@@ -128,7 +137,7 @@ h1, h2, .caps { font-family: var(--font-display); text-transform: uppercase; let
 .recent li b { font-family: var(--font-display); letter-spacing: .06em; text-transform: uppercase; }
 .recent li b.expired { color: var(--positive); } .recent li b.stopped { color: var(--muted); }
 .recent .empty { font: 12.5px var(--font-mono); color: var(--muted); text-transform: uppercase; }
-.preview .btn, .preview .chip, .preview .sw { pointer-events: none; }
+.preview .btn, .preview select, .preview .sw { pointer-events: none; }
 @media (max-width: 700px) {
   .wrap { height: auto; min-height: 100vh; overflow: visible; }
   .ticket { grid-template-columns: 1fr; }
@@ -136,8 +145,8 @@ h1, h2, .caps { font-family: var(--font-display); text-transform: uppercase; let
   .wallclock { height: 300px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .btn, .chip, .sw, .sw::after { transition: none; }
-  .btn:active, .chip:active { transform: none; opacity: .8; }
+  .btn, .sel select, .sw, .sw::after { transition: none; }
+  .btn:active, .sel select:active { transform: none; opacity: .8; }
   .label-in, .on .pend { animation: none; }
 }
 </style>
@@ -216,21 +225,17 @@ h1, h2, .caps { font-family: var(--font-display); text-transform: uppercase; let
       </svg>
     </div>
     <div class="stub">
-      <div class="serial"><span id="serial">Session —</span><span id="since">—</span></div>
-      <div class="status"><span class="lamp"></span><span id="status">Mac can sleep normally</span></div>
-      <p class="clocklabel" id="clockLabel">Not running</p>
+      <div class="orn" aria-hidden="true"><i></i><b></b><i></i></div>
+      <div class="state"><span class="lamp"></span><h2 id="status">Resting</h2></div>
+      <p class="clocklabel" id="clockLabel">Mac can sleep normally</p>
       <div class="err" id="err" role="status"></div>
-      <div class="controls">
-        <h2>Keep awake for</h2>
-        <div class="chips" id="chips" role="group" aria-label="Duration"></div>
-        <p class="note" id="chipHint" hidden>Pick another length to restart the timer from now.</p>
-        <div class="opt">
-          <button class="sw" id="display" role="switch" aria-checked="true" aria-label="Keep display on"></button>
-          <span>Keep the display on too</span>
-        </div>
-        <button class="btn primary" id="go" type="button"><span id="goLabel">Stay awake</span></button>
-        <p class="note">Runs macOS <code>caffeinate</code>. Closing this tab does not stop it.</p>
+      <label class="field" for="dur"><span>Keep awake for</span><div class="sel"><select id="dur"></select></div></label>
+      <button class="btn primary big" id="go" type="button"><span id="goLabel">Stay awake</span></button>
+      <div class="opt">
+        <button class="sw" id="display" role="switch" aria-checked="true" aria-label="Keep display on"></button>
+        <span>Screen stays on</span>
       </div>
+      <div class="orn" aria-hidden="true"><i></i><b></b><i></i></div>
     </div>
   </section>
 
@@ -243,7 +248,7 @@ h1, h2, .caps { font-family: var(--font-display); text-transform: uppercase; let
 
 <script>
 const $ = (id) => document.getElementById(id);
-const DURATIONS = [["15 min", 15], ["30 min", 30], ["1 hr", 60], ["2 hr", 120], ["4 hr", 240], ["8 hr", 480], ["Until I stop", 0]];
+const DURATIONS = [["15 minutes", 15], ["30 minutes", 30], ["1 hour", 60], ["2 hours", 120], ["4 hours", 240], ["8 hours", 480], ["Until I stop", 0]];
 
 function isPreview() {
   if (new URLSearchParams(location.search).get("_preview") === "1") return true;
@@ -278,20 +283,12 @@ function dur(s) {
 const running = () => state.active && !PREVIEW;
 const activeMinutes = () => state.ends ? Math.round((state.ends - state.start) / 60) : 0;
 
-function renderChips() {
+function renderDuration() {
   const sel = running() ? activeMinutes() : minutes();
-  $("chips").innerHTML = "";
-  for (const [label, m] of DURATIONS) {
-    const b = document.createElement("button");
-    b.className = "chip"; b.type = "button"; b.textContent = label;
-    b.setAttribute("aria-pressed", String(m === sel));
-    b.onclick = () => {
-      fused.params.set("d", String(m));
-      if (running() && !busy) restart(m, state.display);
-    };
-    $("chips").appendChild(b);
-  }
-  $("chipHint").hidden = !running();
+  const opts = DURATIONS.map(([label, m]) => [label, m]);
+  // e.g. after the display switch restarts a session with the time that was left
+  if (!opts.some(([, m]) => m === sel)) opts.push([dur(sel * 60) + " left", sel]);
+  $("dur").innerHTML = opts.map(([label, m]) => `<option value="${m}"${m === sel ? " selected" : ""}>${label}</option>`).join("");
   $("display").setAttribute("aria-checked", String(running() ? !!state.display : keepDisplay()));
 }
 
@@ -367,37 +364,34 @@ function tick() {
   $("go").classList.toggle("secondary", !!state.active);
   $("go").classList.toggle("primary", !state.active);
   setLabel(state.active ? "Stop · allow sleep" : "Stay awake");
-  $("serial").textContent = "Session " + ((state.log || []).length + (state.active ? 1 : 0) || "—");
   if (!state.active) {
-    $("status").textContent = "Mac can sleep normally";
+    $("status").textContent = "Resting";
     $("faceTime").textContent = "--:--:--";
     $("faceCap").textContent = "Not running";
     drawSpan(0, null);
-    $("clockLabel").textContent = "Not running";
-    $("since").textContent = "—";
+    $("clockLabel").textContent = "Mac can sleep normally";
     return;
   }
   const n = nowSrv();
-  $("since").textContent = "Started " + clock(state.start);
-  $("status").textContent = "Awake · " + (state.display ? "screen stays on" : "screen can dim");
+  $("status").textContent = "Awake";
   if (state.ends) {
     const left = Math.max(0, state.ends - n);
     $("faceTime").textContent = hms(left);
     $("faceCap").textContent = "Time left";
     drawSpan(n, state.ends);
-    $("clockLabel").textContent = "Time left · Mac can sleep after " + clock(state.ends);
+    $("clockLabel").textContent = "Mac can sleep after " + clock(state.ends);
   } else {
     $("faceTime").textContent = hms(Math.max(0, n - state.start));
     $("faceCap").textContent = "Awake for";
     drawSpan(n, null);
-    $("clockLabel").textContent = "Awake for · no end time, runs until you stop it";
+    $("clockLabel").textContent = "Until you stop it";
   }
 }
 
 function apply(s) {
   state = s;
   if (s.now) skew = s.now - Date.now() / 1000;
-  tick(); renderLog(); renderChips();
+  tick(); renderLog(); renderDuration();
 }
 
 async function api(path, body) {
@@ -426,9 +420,14 @@ async function restart(mins, display) {
 
 async function boot() {
   buildDial(); drawHands();
-  renderChips();
-  fused.params.onChange(renderChips);
+  renderDuration();
+  fused.params.onChange(renderDuration);
   $("go").onclick = toggle;
+  $("dur").onchange = () => {
+    const m = Number($("dur").value);
+    fused.params.set("d", String(m));
+    if (running() && !busy) restart(m, state.display);
+  };
   $("display").onclick = () => {
     if (running()) {
       if (busy) return;
@@ -456,7 +455,7 @@ async function boot() {
 
 if (PREVIEW) {
   document.body.classList.add("preview");
-  buildDial(); drawHands(); renderChips(); tick(); renderLog();
+  buildDial(); drawHands(); renderDuration(); tick(); renderLog();
 } else {
   boot();
 }
