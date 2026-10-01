@@ -105,6 +105,13 @@ def _stop():
 def _snapshot():
     with LOCK:
         s = SESSION
+        # caffeinate -t pauses while the Mac sleeps, so enforce the wall-clock end too
+        if s and s["proc"].poll() is None and s["ends"] and time.time() >= s["ends"]:
+            s["proc"].terminate()
+            try:
+                s["proc"].wait(2)
+            except subprocess.TimeoutExpired:
+                s["proc"].kill()
         if s and s["proc"].poll() is not None:
             _close_locked("expired" if s["ends"] else "ended")
             s = None
