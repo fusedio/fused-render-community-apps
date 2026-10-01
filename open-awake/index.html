@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="en" data-fused-theme="shell">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="fused-app" />
+<meta name="fused-api-version" content="1" />
+<title>Open Awake</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=Libre+Franklin:wght@400;600&family=Space+Mono:wght@400;700&display=swap" />
+<style>
+/* Tokens: design_kit brief = railway-ticket + ticket-stub + ticket-set + spring-press */
+:root {
+  color-scheme: light;
+  --bg: #e8d9ab; --surface: #f2e7c2; --ink: #2a2114; --muted: #645537; --rule: #b9a56d;
+  --accent: #a8322a; --accent2: #20507c; --positive: #3b6d3a; --negative: #a8322a;
+  --on-accent: #f2e7c2;
+  --font-display: 'Oswald', 'Arial Narrow', Impact, sans-serif;
+  --font-body: 'Libre Franklin', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: 'Space Mono', ui-monospace, Menlo, Consolas, monospace;
+  --k-border: 1.5px solid var(--ink); --k-radius: 10px; --k-rule: 1.5px dashed var(--rule);
+  --k-dur: 160ms; --k-ease: cubic-bezier(.34,1.56,.64,1); --k-press: 0.97;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #1f1a10; --surface: #2a2415; --ink: #f0e4bd; --muted: #b8a982; --rule: #52472a;
+  --accent: #f07a6a; --accent2: #84b2e0; --positive: #8ac982; --negative: #f07a6a;
+  --on-accent: #1f1a10;
+}
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; }
+button, input, select, textarea { font: inherit; color: inherit; margin: 0; }
+button { background: none; border: 0; padding: 0; cursor: pointer; }
+img, svg, video, canvas { display: block; max-width: 100%; }
+
+body { background: var(--bg); color: var(--ink); font: 15px/1.45 var(--font-body); min-height: 100vh; }
+.wrap { max-width: 880px; margin: 0 auto; padding: 28px 20px 40px; display: grid; gap: 20px; }
+h1, h2, .caps { font-family: var(--font-display); text-transform: uppercase; letter-spacing: .06em; font-weight: 700; margin: 0; }
+.mast { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; border-bottom: var(--k-rule); padding-bottom: 12px; }
+.mast h1 { font-size: clamp(28px, 4.2vw, 46px); line-height: 1; }
+.mast .sub { font-family: var(--font-mono); font-size: 12.5px; color: var(--muted); text-transform: uppercase; }
+
+/* Ticket: notched sides, dashed tear line between the two halves */
+.ticket {
+  display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  background: var(--surface); border: var(--k-border); border-radius: var(--k-radius);
+  -webkit-mask: radial-gradient(circle at 0 50%, transparent 7px, #000 7.5px), radial-gradient(circle at 100% 50%, transparent 7px, #000 7.5px);
+  -webkit-mask-composite: source-in;
+  mask: radial-gradient(circle at 0 50%, transparent 7px, #000 7.5px), radial-gradient(circle at 100% 50%, transparent 7px, #000 7.5px);
+  mask-composite: intersect;
+}
+.ticket > * { padding: 22px 26px; min-width: 0; }
+.main { border-right: var(--k-rule); display: grid; gap: 14px; align-content: start; }
+.serial { font-family: var(--font-mono); font-size: 12.5px; color: var(--muted); display: flex; justify-content: space-between; gap: 8px; }
+.status { font-family: var(--font-display); text-transform: uppercase; letter-spacing: .06em; font-weight: 700; font-size: 20px; display: flex; align-items: center; gap: 10px; }
+.lamp { width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid var(--ink); background: transparent; }
+.on .lamp { background: var(--positive); border-color: var(--positive); box-shadow: 0 0 0 3px color-mix(in srgb, var(--positive) 25%, transparent); }
+.clock { font-family: var(--font-mono); font-weight: 700; font-size: clamp(40px, 8vw, 68px); line-height: 1; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.clock small { display: block; font-size: 12.5px; font-weight: 400; letter-spacing: 0; color: var(--muted); text-transform: uppercase; margin-top: 8px; }
+.stub { display: grid; gap: 12px; align-content: start; }
+.stub h2 { font-size: 20px; }
+
+/* Buttons: condensed uppercase, spring press */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  height: 44px; padding: 0 22px; border-radius: 8px; border: var(--k-border);
+  font: 700 14px var(--font-display); text-transform: uppercase; letter-spacing: .06em;
+  transition: transform var(--k-dur) var(--k-ease), background var(--k-dur), color var(--k-dur);
+}
+.btn:active { transform: scale(var(--k-press)); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.btn.secondary { background: transparent; }
+.btn:focus-visible, .chip:focus-visible, .sw:focus-visible { outline: 2px solid var(--accent2); outline-offset: 2px; }
+.btn[aria-busy="true"] { opacity: .7; pointer-events: none; }
+.label-in { animation: punch var(--k-dur) var(--k-ease); }
+@keyframes punch { from { transform: scale(1.1); opacity: .4; } to { transform: none; opacity: 1; } }
+
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip {
+  height: 32px; padding: 0 12px; border: var(--k-border); border-radius: 8px;
+  font: 700 13px var(--font-display); text-transform: uppercase; letter-spacing: .06em;
+  transition: transform var(--k-dur) var(--k-ease), background var(--k-dur);
+}
+.chip:active { transform: scale(var(--k-press)); }
+.chip[aria-pressed="true"] { background: var(--ink); color: var(--surface); }
+.opt { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); }
+.sw { width: 40px; height: 22px; border: var(--k-border); border-radius: 11px; position: relative; flex: none; transition: background var(--k-dur); }
+.sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--ink); transition: transform var(--k-dur) var(--k-ease); }
+.sw[aria-checked="true"] { background: var(--accent2); }
+.sw[aria-checked="true"]::after { transform: translateX(18px); background: var(--surface); }
+.note { font-size: 12.5px; color: var(--muted); margin: 0; }
+.err { color: var(--negative); font-family: var(--font-mono); font-size: 12.5px; min-height: 1.2em; }
+
+/* Departures board */
+.board { border: var(--k-border); border-radius: var(--k-radius); background: var(--surface); overflow: hidden; }
+.board h2 { padding: 12px 20px; font-size: 20px; border-bottom: var(--k-rule); display: flex; justify-content: space-between; align-items: baseline; }
+.board h2 span { font: 400 12.5px var(--font-mono); color: var(--muted); }
+table { width: 100%; border-collapse: collapse; }
+th, td { height: 40px; padding: 0 20px; text-align: left; font-family: var(--font-mono); font-size: 13px; border-bottom: var(--k-rule); font-variant-numeric: tabular-nums; }
+th { font: 700 12.5px var(--font-display); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+tr:last-child td { border-bottom: 0; }
+td.word { font-family: var(--font-display); font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
+td.word.expired { color: var(--positive); } td.word.stopped { color: var(--muted); }
+.empty { padding: 22px 20px; font-family: var(--font-mono); font-size: 13px; color: var(--muted); text-transform: uppercase; }
+.preview .btn, .preview .chip { pointer-events: none; }
+@media (max-width: 640px) {
+  .ticket { grid-template-columns: 1fr; }
+  .main { border-right: 0; border-bottom: var(--k-rule); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .btn, .chip, .sw, .sw::after { transition: none; }
+  .btn:active, .chip:active { transform: none; opacity: .8; }
+  .label-in { animation: none; }
+}
+</style>
+</head>
+<body>
+<div class="wrap" id="app">
+  <header class="mast">
+    <h1>Open Awake</h1>
+    <span class="sub">Platform 1 · no sleep service</span>
+  </header>
+
+  <section class="ticket" id="ticket">
+    <div class="main">
+      <div class="serial"><span id="serial">No. 0000</span><span id="since">—</span></div>
+      <div class="status"><span class="lamp"></span><span id="status">Mac may sleep</span></div>
+      <div class="clock" id="clock">--:--:--<small id="clockLabel">Standing by</small></div>
+      <div class="err" id="err" role="status"></div>
+    </div>
+    <div class="stub">
+      <h2>Departs for</h2>
+      <div class="chips" id="chips" role="group" aria-label="Duration"></div>
+      <div class="opt">
+        <button class="sw" id="display" role="switch" aria-checked="true" aria-label="Keep display on"></button>
+        <span>Keep the display on too</span>
+      </div>
+      <button class="btn primary" id="go" type="button"><span id="goLabel">Stay awake</span></button>
+      <p class="note">Runs macOS <code>caffeinate</code>. Closing this tab does not stop it.</p>
+    </div>
+  </section>
+
+  <section class="board" aria-label="Recent sessions">
+    <h2>Departures <span id="total"></span></h2>
+    <div id="log"></div>
+  </section>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const DURATIONS = [["15m", 15], ["30m", 30], ["1h", 60], ["2h", 120], ["4h", 240], ["8h", 480], ["∞", 0]];
+
+function isPreview() {
+  if (new URLSearchParams(location.search).get("_preview") === "1") return true;
+  try {
+    let w = window;
+    while (w.parent && w.parent !== w) {
+      w = w.parent;
+      if (new URLSearchParams(w.location.search).get("_preview") === "1") return true;
+    }
+  } catch (e) { /* cross-origin ancestor */ }
+  return false;
+}
+const PREVIEW = isPreview();
+
+let state = { active: false, log: [] };
+let skew = 0;          // server clock minus browser clock, seconds
+let busy = false;
+let pollTimer = null;
+
+const minutes = () => Number(fused.params.get("d") ?? 60);
+const keepDisplay = () => fused.params.get("display") !== "false";
+const pad = (n) => String(Math.floor(n)).padStart(2, "0");
+const hms = (s) => `${pad(s / 3600)}:${pad((s % 3600) / 60)}:${pad(s % 60)}`;
+const clock = (ts) => new Date(ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+const nowSrv = () => Date.now() / 1000 + skew;
+function dur(s) {
+  const m = Math.round(s / 60);
+  return m >= 60 ? `${Math.floor(m / 60)}h ${pad(m % 60)}m` : `${m}m`;
+}
+
+function renderChips() {
+  const sel = minutes();
+  $("chips").innerHTML = "";
+  for (const [label, m] of DURATIONS) {
+    const b = document.createElement("button");
+    b.className = "chip"; b.type = "button"; b.textContent = label;
+    b.setAttribute("aria-pressed", String(m === sel));
+    b.onclick = () => { fused.params.set("d", String(m)); };
+    $("chips").appendChild(b);
+  }
+  $("display").setAttribute("aria-checked", String(keepDisplay()));
+}
+
+function setLabel(text) {
+  const el = $("goLabel");
+  if (el.textContent === text) return;
+  el.textContent = text;
+  el.classList.remove("label-in"); void el.offsetWidth; el.classList.add("label-in");
+}
+
+function renderLog() {
+  const log = state.log || [];
+  const today = new Date().toDateString();
+  const secs = log.filter((e) => new Date(e.start * 1000).toDateString() === today)
+    .reduce((a, e) => a + (e.end - e.start), 0);
+  $("total").textContent = log.length ? `Today ${dur(secs)}` : "";
+  if (!log.length) {
+    $("log").innerHTML = '<div class="empty">No departures · next check on your first session</div>';
+    return;
+  }
+  const rows = log.slice(0, 8).map((e) => {
+    const word = e.reason === "expired" ? "Completed" : e.reason === "replaced" ? "Replaced" : "Stopped";
+    const plan = e.planned ? dur(e.planned) : "∞";
+    return `<tr><td>${clock(e.start)}</td><td>${dur(e.end - e.start)}</td><td>${plan}</td>` +
+      `<td class="word ${e.reason === "expired" ? "expired" : "stopped"}">${word}</td></tr>`;
+  }).join("");
+  $("log").innerHTML = `<table><caption class="sr" style="display:none">Recent sessions</caption>` +
+    `<thead><tr><th scope="col">Left</th><th scope="col">Held</th><th scope="col">Planned</th><th scope="col">Status</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+function tick() {
+  const t = $("ticket");
+  t.classList.toggle("on", !!state.active);
+  $("go").classList.toggle("secondary", !!state.active);
+  $("go").classList.toggle("primary", !state.active);
+  setLabel(state.active ? "Let it sleep" : "Stay awake");
+  $("serial").textContent = "No. " + String(((state.log || []).length + (state.active ? 1 : 0))).padStart(4, "0");
+  if (!state.active) {
+    $("status").textContent = "Mac may sleep";
+    $("clock").firstChild.nodeValue = "--:--:--";
+    $("clockLabel").textContent = "Standing by";
+    $("since").textContent = "—";
+    return;
+  }
+  const n = nowSrv();
+  $("since").textContent = "Left " + clock(state.start);
+  if (state.ends) {
+    $("status").textContent = "Holding · " + (state.display ? "screen on" : "screen may dim");
+    $("clock").firstChild.nodeValue = hms(Math.max(0, state.ends - n));
+    $("clockLabel").textContent = "Remaining · arrives " + clock(state.ends);
+  } else {
+    $("status").textContent = "Holding · " + (state.display ? "screen on" : "screen may dim");
+    $("clock").firstChild.nodeValue = hms(Math.max(0, n - state.start));
+    $("clockLabel").textContent = "Elapsed · no end time";
+  }
+}
+
+function apply(s) {
+  state = s;
+  if (s.now) skew = s.now - Date.now() / 1000;
+  tick(); renderLog();
+}
+
+async function api(path, body) {
+  try {
+    $("err").textContent = "";
+    apply(await fused.daemon.call(path, body));
+  } catch (e) {
+    $("err").textContent = (e && e.message) || String(e);
+  }
+}
+
+async function toggle() {
+  if (busy) return;
+  busy = true; $("go").setAttribute("aria-busy", "true");
+  await (state.active ? api("stop") : api("start", { minutes: minutes(), display: keepDisplay() }));
+  busy = false; $("go").removeAttribute("aria-busy");
+  $("go").focus();
+}
+
+async function boot() {
+  renderChips();
+  fused.params.onChange(renderChips);
+  $("go").onclick = toggle;
+  $("display").onclick = () => fused.params.set("display", String(!keepDisplay()));
+  // status() never starts the daemon; only a click does.
+  let st = null;
+  try { st = await fused.daemon.status(); } catch (e) { /* offline */ }
+  if (st && st.running) await api("state");
+  else { tick(); renderLog(); }
+  setInterval(async () => {
+    const s = await fused.daemon.status().catch(() => null);
+    if (s && s.running && state.active) api("state");
+    else if (s && !s.running && state.active) apply({ active: false, log: state.log });
+  }, 5000);
+  setInterval(tick, 1000);
+  fused.daemon.watch((s) => { if (s.running) api("state"); else apply({ active: false, log: state.log }); });
+}
+
+if (PREVIEW) {
+  document.body.classList.add("preview");
+  renderChips(); tick(); renderLog();
+} else {
+  boot();
+}
+</script>
+</body>
+</html>

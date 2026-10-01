@@ -1,0 +1,20 @@
+# Open Awake
+
+Keep your Mac awake. Pick a duration (15 min to 8 h, or no end time), press **Stay awake**, and the Mac won't idle-sleep until the time is up or you press **Let it sleep**. An [Amphetamine](https://apps.apple.com/app/amphetamine/id937984704)-style tool built on macOS's own `caffeinate`.
+
+- **Timed or open-ended** sessions, with a live countdown or elapsed clock.
+- **Keep the display on** is a switch; off lets the screen dim while the Mac stays awake.
+- **Departures board** lists recent sessions and how long you held today.
+- Sessions **survive closing the tab**: a small background daemon owns the `caffeinate` process. It is tied to the daemon (`caffeinate -w`), so quitting or stopping the app can never leave an orphaned process.
+
+## How it works
+
+`awake.py` is a fused-render background app (`[tool.fused-render.app] daemon`). Pressing the button starts `caffeinate -i -m -s [-d] [-t secs] -w <daemon pid>`. Nothing starts when the page merely opens or previews.
+
+## Limits
+
+- macOS only (`caffeinate` ships with it).
+- With the lid closed, a MacBook on battery still sleeps; macOS only honours "stay awake" with the lid shut when on power with an external display. This is an OS rule, not something the app can override.
+- Standard (stdlib-only) Python; no dependencies.
+
+Design: Railway Ticket theme, ticket-stub surface, ticket component set and spring-press motion from the Vintage Dashboard Foundations kit.
