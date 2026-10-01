@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "name": "Open Awake",
+  "description": "Keep your Mac from sleeping, forever or for a set time, with a one-click ticket-style control and a log of recent sessions. An Amphetamine-style caffeinate wrapper.",
+  "author": { "name": "Aman", "github": "amanbagrecha" },
+  "tags": ["caffeinate", "sleep", "macos", "utility"],
+  "category": "productivity",
+  "version": "1.0.0",
+  "requires_python": true
+}

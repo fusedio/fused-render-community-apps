@@ -1,0 +1,522 @@
+<!doctype html>
+<html lang="en" data-fused-theme="shell">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="fused-app" />
+<meta name="fused-api-version" content="1" />
+<meta name="fused-app-id" content="open-awake-04f3a50f" />
+<title>Open Awake</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=Libre+Franklin:wght@400;600&family=Space+Mono:wght@400;700&display=swap" />
+<style>
+/* Tokens: design_kit brief = railway-ticket + ticket-stub + ticket-set + spring-press */
+:root {
+  color-scheme: light;
+  --bg: #e8d9ab; --surface: #f2e7c2; --ink: #2a2114; --muted: #645537; --rule: #b9a56d;
+  --accent: #a8322a; --accent2: #20507c; --positive: #3b6d3a; --negative: #a8322a;
+  --on-accent: #f2e7c2;
+  --wood: #5a3a1e; --brass: #a97c2f; --paper: #f4ead0;
+  --font-display: 'Oswald', 'Arial Narrow', Impact, sans-serif;
+  --font-body: 'Libre Franklin', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: 'Space Mono', ui-monospace, Menlo, Consolas, monospace;
+  --k-border: 1.5px solid var(--ink); --k-radius: 10px; --k-rule: 1.5px dashed var(--rule);
+  --k-dur: 160ms; --k-ease: cubic-bezier(.34,1.56,.64,1); --k-press: 0.97;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #1f1a10; --surface: #2a2415; --ink: #f0e4bd; --muted: #b8a982; --rule: #52472a;
+  --accent: #f07a6a; --accent2: #84b2e0; --positive: #8ac982; --negative: #f07a6a;
+  --on-accent: #1f1a10;
+  --wood: #3a2815; --brass: #c9a24d; --paper: #2f2818;
+}
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; }
+button, input, select, textarea { font: inherit; color: inherit; margin: 0; }
+button { background: none; border: 0; padding: 0; cursor: pointer; }
+img, svg, video, canvas { display: block; max-width: 100%; }
+
+body { background: var(--bg); color: var(--ink); font: 15px/1.45 var(--font-body); }
+/* One screen, no page scroll: the wrap is exactly the viewport tall */
+.wrap { max-width: 960px; height: 100vh; height: 100dvh; margin: 0 auto; padding: 14px 20px 16px; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 12px; overflow: hidden; }
+h1, h2, .caps { font-family: var(--font-display); text-transform: uppercase; letter-spacing: .06em; font-weight: 700; margin: 0; }
+.mast { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; border-bottom: var(--k-rule); padding-bottom: 8px; }
+.mast h1 { font-size: clamp(26px, 5vh, 40px); line-height: 1; }
+.mast .sub { font-family: var(--font-mono); font-size: 12.5px; color: var(--muted); text-transform: uppercase; }
+
+/* Ticket: notched sides, dashed tear line between the clock and the controls */
+.ticket {
+  min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  background: var(--surface); border: var(--k-border); border-radius: var(--k-radius);
+  -webkit-mask: radial-gradient(circle at 0 50%, transparent 7px, #000 7.5px), radial-gradient(circle at 100% 50%, transparent 7px, #000 7.5px);
+  -webkit-mask-composite: source-in;
+  mask: radial-gradient(circle at 0 50%, transparent 7px, #000 7.5px), radial-gradient(circle at 100% 50%, transparent 7px, #000 7.5px);
+  mask-composite: intersect;
+}
+.ticket > * { padding: 14px 26px; min-width: 0; min-height: 0; }
+.clockside { border-right: var(--k-rule); display: flex; align-items: center; justify-content: center; }
+.wallclock { height: 100%; width: auto; max-width: 100%; overflow: visible; }
+.lamp { flex: none; width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid var(--ink); background: transparent; }
+.on .lamp { background: var(--positive); border-color: var(--positive); box-shadow: 0 0 0 3px color-mix(in srgb, var(--positive) 25%, transparent); }
+
+/* Wall clock (SVG). Every colour is a token, so it follows light/dark. */
+.wallclock .wood { fill: var(--wood); }
+.wallclock .grain { fill: none; stroke: var(--brass); stroke-width: .7; opacity: .35; }
+.wallclock .brass { fill: none; stroke: var(--brass); stroke-width: 5; }
+.wallclock .brass-fill { fill: var(--brass); }
+.wallclock .hair { fill: none; stroke: var(--ink); stroke-width: .8; opacity: .7; }
+.wallclock .dial { fill: var(--paper); }
+.wallclock .tick { stroke: var(--ink); stroke-width: 1; }
+.wallclock .tick.hr { stroke-width: 2.2; }
+.wallclock .num { font: 700 17px var(--font-display); fill: var(--ink); text-anchor: middle; dominant-baseline: central; letter-spacing: .02em; }
+.wallclock .track { fill: none; stroke: var(--rule); stroke-width: 5; opacity: .6; }
+.wallclock .span { fill: none; stroke: var(--accent2); stroke-width: 5; stroke-linecap: butt; }
+.wallclock .span.open { stroke-dasharray: 2 5; }
+.wallclock .gem { fill: var(--accent); stroke: var(--ink); stroke-width: 1; }
+.wallclock .plate { fill: var(--surface); stroke: var(--brass); stroke-width: 2; }
+.wallclock .digits { font: 700 15px var(--font-mono); fill: var(--ink); text-anchor: middle; dominant-baseline: central; font-variant-numeric: tabular-nums; }
+.wallclock .cap { font: 700 7.5px var(--font-display); fill: var(--muted); text-anchor: middle; letter-spacing: .14em; text-transform: uppercase; }
+.wallclock .hand { fill: var(--ink); }
+.wallclock .sec { stroke: var(--accent); stroke-width: 1.3; }
+.wallclock .rod { stroke: var(--brass); stroke-width: 3; }
+.wallclock .stain { fill: var(--rule); opacity: .22; }
+.pend { transform-box: view-box; transform-origin: 160px 322px; }
+.on .pend { animation: swing 2s ease-in-out infinite alternate; }
+@keyframes swing { from { transform: rotate(-7deg); } to { transform: rotate(7deg); } }
+
+/* Buttons: condensed uppercase, spring press */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  height: 44px; padding: 0 22px; border-radius: 8px; border: var(--k-border);
+  font: 700 14px var(--font-display); text-transform: uppercase; letter-spacing: .06em;
+  transition: transform var(--k-dur) var(--k-ease), background var(--k-dur), color var(--k-dur);
+}
+.btn:active { transform: scale(var(--k-press)); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.btn.secondary { background: transparent; }
+.btn:focus-visible, select:focus-visible, .sw:focus-visible { outline: 2px solid var(--accent2); outline-offset: 2px; }
+.btn[aria-busy="true"] { opacity: .7; pointer-events: none; }
+.label-in { animation: punch var(--k-dur) var(--k-ease); }
+@keyframes punch { from { transform: scale(1.1); opacity: .4; } to { transform: none; opacity: 1; } }
+
+.stub { display: grid; gap: 20px; align-content: center; justify-items: stretch; padding-left: 34px; padding-right: 34px; }
+/* ornament divider: hairline, diamond, hairline */
+.orn { display: flex; align-items: center; gap: 12px; color: var(--rule); }
+.orn i { flex: 1; border-top: var(--k-rule); }
+.orn b { width: 9px; height: 9px; border: 1.5px solid var(--brass); transform: rotate(45deg); }
+.state { display: flex; align-items: center; gap: 16px; }
+.state h2 { font-size: clamp(44px, 10vh, 78px); line-height: .95; letter-spacing: .04em; }
+.state .lamp { width: 18px; height: 18px; border-width: 2px; }
+.on .state .lamp { box-shadow: 0 0 0 5px color-mix(in srgb, var(--positive) 25%, transparent); }
+.clocklabel { margin: -8px 0 0; font: 13px var(--font-mono); color: var(--muted); text-transform: uppercase; letter-spacing: .02em; }
+.field { display: grid; gap: 8px; }
+.field > span { font: 700 13px var(--font-display); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+.sel { position: relative; }
+.sel select {
+  width: 100%; height: 54px; padding: 0 48px 0 18px; border: var(--k-border); border-radius: 8px;
+  background: var(--surface); color: var(--ink); cursor: pointer;
+  -webkit-appearance: none; appearance: none;
+  font: 700 22px var(--font-display); letter-spacing: .06em; text-transform: uppercase;
+  transition: transform var(--k-dur) var(--k-ease);
+}
+.sel select:active { transform: scale(var(--k-press)); }
+.sel::after { content: ""; position: absolute; right: 20px; top: 50%; width: 9px; height: 9px; margin-top: -7px; border: solid var(--ink); border-width: 0 2.5px 2.5px 0; transform: rotate(45deg); pointer-events: none; }
+.btn.big { height: 54px; font-size: 18px; letter-spacing: .1em; }
+#goLabel .short { display: none; }
+.opt { justify-content: center; }
+.opt { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); }
+.sw { width: 40px; height: 22px; border: var(--k-border); border-radius: 11px; position: relative; flex: none; transition: background var(--k-dur); }
+.sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--ink); transition: transform var(--k-dur) var(--k-ease); }
+.sw[aria-checked="true"] { background: var(--accent2); }
+.sw[aria-checked="true"]::after { transform: translateX(18px); background: var(--surface); }
+.err { color: var(--negative); font-family: var(--font-mono); font-size: 12.5px; min-height: 1.2em; }
+
+/* Recent sessions: one slim strip */
+.recent { border: var(--k-border); border-radius: var(--k-radius); background: var(--surface); padding: 10px 16px; display: flex; align-items: center; gap: 8px 20px; flex-wrap: wrap; min-height: 0; }
+.recent h2 { font-size: 15px; margin-right: 4px; }
+.recent .total { font: 12.5px var(--font-mono); color: var(--muted); }
+.recent ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 18px; flex: 1 1 auto; min-width: 0; }
+.recent li { font: 12.5px var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.recent li b { font-family: var(--font-display); letter-spacing: .06em; text-transform: uppercase; }
+.recent li b.expired { color: var(--positive); } .recent li b.stopped { color: var(--muted); }
+.recent .empty { font: 12.5px var(--font-mono); color: var(--muted); text-transform: uppercase; }
+.preview .btn, .preview select, .preview .sw { pointer-events: none; }
+.mast h1 { white-space: nowrap; }
+.mast .sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+@media (max-width: 860px) { .mast .sub { display: none; } }
+
+/* Short window (wide): drop the extras so nothing scrolls */
+@media (min-width: 701px) and (max-height: 560px) {
+  .recent, .orn { display: none; }
+  .wrap { grid-template-rows: auto minmax(0, 1fr); }
+  .stub { gap: 12px; }
+  .state h2 { font-size: 40px; }
+  .btn.big, .sel select { height: 44px; font-size: 17px; }
+}
+
+/* Narrow window (pinned popover, small window): clock on top, one compact control row below */
+@media (max-width: 700px) {
+  .wrap { padding: 10px 14px 12px; gap: 8px; grid-template-rows: auto minmax(0, 1fr); }
+  .mast { padding-bottom: 6px; }
+  .mast h1 { font-size: clamp(20px, 6.5vw, 30px); }
+  .recent, .orn, .opt, .field > span { display: none; }
+  .ticket { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) auto; }
+  .ticket > * { padding: 8px 14px; }
+  .clockside { border-right: 0; border-bottom: var(--k-rule); }
+  .stub { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px 10px; padding: 8px 14px 14px; align-content: end; }
+  .state { gap: 10px; }
+  .state h2 { font-size: 30px; }
+  .state .lamp { width: 12px; height: 12px; }
+  .on .state .lamp { box-shadow: 0 0 0 3px color-mix(in srgb, var(--positive) 25%, transparent); }
+  .clocklabel { margin: 0; text-align: right; font-size: 11px; align-self: center; }
+  .err { grid-column: 1 / -1; min-height: 0; }
+  .err:empty { display: none; }
+  .field { min-width: 0; }
+  .btn.big, .sel select { height: 44px; font-size: 15px; letter-spacing: .05em; }
+  .sel select { padding: 0 34px 0 12px; }
+  .sel::after { right: 14px; }
+  .btn.big { padding: 0 10px; min-width: 0; }
+}
+/* Tiny window (pinned popover): the clock takes nearly everything, controls shrink to one slim row */
+@media (max-width: 440px), (max-width: 700px) and (max-height: 520px) {
+  .wrap { padding: 8px 10px 10px; gap: 6px; }
+  .mast { padding-bottom: 4px; }
+  .mast h1 { font-size: 19px; }
+  .ticket > * { padding: 6px 10px; }
+  .stub { grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr); gap: 6px 8px; padding: 6px 10px 10px; align-items: center; }
+  .state { gap: 0; }
+  .state h2, .clocklabel { display: none; }
+  .state .lamp { width: 12px; height: 12px; }
+  .err { grid-column: 1 / -1; order: 9; }
+  .btn.big, .sel select { height: 34px; font-size: 13px; letter-spacing: .04em; }
+  .sel select { padding: 0 24px 0 9px; font-size: 12.5px; }
+  .sel::after { right: 10px; width: 7px; height: 7px; margin-top: -6px; border-width: 0 2px 2px 0; }
+  .btn.big { padding: 0 6px; border-radius: 6px; }
+  .pend { display: none; }
+  .sel select { border-radius: 6px; }
+  #goLabel .full { display: none; }
+  #goLabel .short { display: inline; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .btn, .sel select, .sw, .sw::after { transition: none; }
+  .btn:active, .sel select:active { transform: none; opacity: .8; }
+  .label-in, .on .pend { animation: none; }
+}
+</style>
+</head>
+<body>
+<div class="wrap" id="app">
+  <header class="mast">
+    <h1>Open Awake</h1>
+    <span class="sub">Keeps your Mac from sleeping</span>
+  </header>
+
+  <section class="ticket" id="ticket">
+    <div class="clockside">
+      <svg class="wallclock" id="wc" viewBox="0 0 320 404" role="img" aria-labelledby="clockTitle">
+        <title id="clockTitle">Wall clock. The blue band runs from now to when your Mac may sleep again.</title>
+        <defs>
+          <filter id="paper" x="0" y="0" width="100%" height="100%">
+            <feTurbulence type="fractalNoise" baseFrequency=".85" numOctaves="2" seed="7" result="n" />
+            <feColorMatrix in="n" type="matrix" values="0 0 0 0 .36  0 0 0 0 .27  0 0 0 0 .14  0 0 0 .9 -.28" />
+            <feComposite in2="SourceGraphic" operator="in" />
+          </filter>
+          <radialGradient id="age" cx="50%" cy="50%" r="50%">
+            <stop offset="62%" style="stop-color: var(--wood); stop-opacity: 0" />
+            <stop offset="100%" style="stop-color: var(--wood); stop-opacity: .38" />
+          </radialGradient>
+        </defs>
+
+        <!-- pendulum (behind the case) -->
+        <g class="pend">
+          <line class="rod" x1="160" y1="322" x2="160" y2="378" />
+          <circle class="brass-fill" cx="160" cy="384" r="15" />
+          <circle class="hair" cx="160" cy="384" r="9" />
+        </g>
+
+        <!-- crown + finial -->
+        <path class="brass" d="M118 30 Q160 -6 202 30" />
+        <circle class="brass-fill" cx="160" cy="9" r="7" />
+        <circle class="wood" cx="160" cy="9" r="3" />
+
+        <!-- wooden case, grain rings, brass studs -->
+        <circle class="wood" cx="160" cy="170" r="150" />
+        <circle class="grain" cx="160" cy="170" r="146" />
+        <circle class="grain" cx="160" cy="170" r="143" />
+        <circle class="grain" cx="160" cy="170" r="140" />
+        <g class="brass-fill">
+          <circle cx="160" cy="29" r="3.4" /><circle cx="160" cy="311" r="3.4" />
+          <circle cx="19" cy="170" r="3.4" /><circle cx="301" cy="170" r="3.4" />
+        </g>
+
+        <!-- brass bezel + paper dial -->
+        <circle class="brass" cx="160" cy="170" r="134" />
+        <circle class="dial" cx="160" cy="170" r="130" />
+        <circle cx="160" cy="170" r="130" fill="var(--ink)" filter="url(#paper)" opacity=".5" />
+        <circle class="stain" cx="108" cy="118" r="16" /><circle class="stain" cx="222" cy="236" r="11" /><circle class="stain" cx="206" cy="104" r="6" />
+        <circle cx="160" cy="170" r="130" fill="url(#age)" />
+        <circle class="hair" cx="160" cy="170" r="130" />
+        <circle class="hair" cx="160" cy="170" r="120" />
+
+        <!-- awake band: from now until the Mac may sleep -->
+        <circle class="track" cx="160" cy="170" r="125" />
+        <path class="span" id="span" d="" />
+        <path class="gem" id="gem" d="M0 -9 L6 0 L0 9 L-6 0 Z" style="display:none" />
+
+        <g id="dialMarks"></g>
+
+        <!-- countdown plate -->
+        <rect class="plate" x="116" y="196" width="88" height="34" rx="5" />
+        <text class="cap" id="faceCap" x="160" y="206">Not running</text>
+        <text class="digits" id="faceTime" x="160" y="220">--:--:--</text>
+
+        <!-- hands: the real time of day -->
+        <path class="hand" id="hHour" d="M0 14 L-3.2 0 L-3.2 -30 L0 -54 L3.2 -30 L3.2 0 Z" transform="translate(160 170)" />
+        <path class="hand" id="hMin" d="M0 16 L-2.2 0 L-2.2 -62 L0 -84 L2.2 -62 L2.2 0 Z" transform="translate(160 170)" />
+        <g id="hSec" transform="translate(160 170)"><line class="sec" x1="0" y1="22" x2="0" y2="-90" /><circle class="sec" cx="0" cy="-70" r="3.2" fill="var(--accent)" /></g>
+        <circle class="brass-fill" cx="160" cy="170" r="6" /><circle class="wood" cx="160" cy="170" r="2.2" />
+      </svg>
+    </div>
+    <div class="stub">
+      <div class="orn" aria-hidden="true"><i></i><b></b><i></i></div>
+      <div class="state"><span class="lamp"></span><h2 id="status">Resting</h2></div>
+      <p class="clocklabel" id="clockLabel">Mac can sleep normally</p>
+      <div class="err" id="err" role="status"></div>
+      <label class="field" for="dur"><span>Keep awake for</span><div class="sel"><select id="dur" aria-label="Keep awake for"></select></div></label>
+      <button class="btn primary big" id="go" type="button"><span id="goLabel"><span class="full">Stay awake</span><span class="short">Stay awake</span></span></button>
+      <div class="opt">
+        <button class="sw" id="display" role="switch" aria-checked="true" aria-label="Keep display on"></button>
+        <span>Screen stays on</span>
+      </div>
+      <div class="orn" aria-hidden="true"><i></i><b></b><i></i></div>
+    </div>
+  </section>
+
+  <section class="recent" aria-label="Recent sessions">
+    <h2>History</h2>
+    <ul id="log"></ul>
+    <span class="total" id="total"></span>
+  </section>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const DURATIONS = [["15 minutes", 15], ["30 minutes", 30], ["1 hour", 60], ["2 hours", 120], ["4 hours", 240], ["8 hours", 480], ["Until I stop", 0]];
+
+function isPreview() {
+  if (new URLSearchParams(location.search).get("_preview") === "1") return true;
+  try {
+    let w = window;
+    while (w.parent && w.parent !== w) {
+      w = w.parent;
+      if (new URLSearchParams(w.location.search).get("_preview") === "1") return true;
+    }
+  } catch (e) { /* cross-origin ancestor */ }
+  return false;
+}
+const PREVIEW = isPreview();
+
+let state = { active: false, log: [] };
+let skew = 0;          // server clock minus browser clock, seconds
+let busy = false;
+let pollTimer = null;
+
+const minutes = () => Number(fused.params.get("d") ?? 60);
+const keepDisplay = () => fused.params.get("display") !== "false";
+const pad = (n) => String(Math.floor(n)).padStart(2, "0");
+const hms = (s) => `${pad(s / 3600)}:${pad((s % 3600) / 60)}:${pad(s % 60)}`;
+const clock = (ts) => new Date(ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+const nowSrv = () => Date.now() / 1000 + skew;
+function dur(s) {
+  const m = Math.round(s / 60);
+  return m >= 60 ? `${Math.floor(m / 60)}h ${pad(m % 60)}m` : `${m}m`;
+}
+
+// While a session runs, the chips and switch show (and change) that session.
+const running = () => state.active && !PREVIEW;
+const activeMinutes = () => state.ends ? Math.round((state.ends - state.start) / 60) : 0;
+
+function renderDuration() {
+  const sel = running() ? activeMinutes() : minutes();
+  const opts = DURATIONS.map(([label, m]) => [label, m]);
+  // e.g. after the display switch restarts a session with the time that was left
+  if (!opts.some(([, m]) => m === sel)) opts.push([dur(sel * 60) + " left", sel]);
+  $("dur").innerHTML = opts.map(([label, m]) => `<option value="${m}"${m === sel ? " selected" : ""}>${label}</option>`).join("");
+  $("display").setAttribute("aria-checked", String(running() ? !!state.display : keepDisplay()));
+}
+
+function setLabel(full, short) {
+  const el = $("goLabel");
+  if (el.dataset.k === full) return;
+  el.dataset.k = full;
+  el.innerHTML = `<span class="full">${full}</span><span class="short">${short}</span>`;
+  el.classList.remove("label-in"); void el.offsetWidth; el.classList.add("label-in");
+}
+
+function renderLog() {
+  const log = state.log || [];
+  const today = new Date().toDateString();
+  const secs = log.filter((e) => new Date(e.start * 1000).toDateString() === today)
+    .reduce((a, e) => a + (e.end - e.start), 0);
+  $("total").textContent = log.length ? `Awake today: ${dur(secs)}` : "";
+  if (!log.length) {
+    $("log").innerHTML = '<li class="empty">No sessions yet</li>';
+    return;
+  }
+  $("log").innerHTML = log.slice(0, 3).map((e) => {
+    const word = e.reason === "expired" ? "Finished" : e.reason === "replaced" ? "Changed" : "Stopped early";
+    return `<li>${clock(e.start)} · ${dur(e.end - e.start)} of ${e.planned ? dur(e.planned) : "no limit"} · ` +
+      `<b class="${e.reason === "expired" ? "expired" : "stopped"}">${word}</b></li>`;
+  }).join("");
+}
+
+const CX = 160, CY = 170;
+const pt = (r, deg) => [CX + r * Math.sin(deg * Math.PI / 180), CY - r * Math.cos(deg * Math.PI / 180)];
+const dialAngle = (ms) => { const d = new Date(ms); return ((d.getHours() % 12) + d.getMinutes() / 60 + d.getSeconds() / 3600) * 30; };
+
+// Tiny window: crop the drawing to the clock itself (no pendulum) so it can use the full width.
+const COMPACT = window.matchMedia("(max-width: 440px), (max-width: 700px) and (max-height: 520px)");
+function fitView() { $("wc").setAttribute("viewBox", COMPACT.matches ? "0 0 320 330" : "0 0 320 404"); }
+COMPACT.addEventListener("change", fitView);
+
+function buildDial() {
+  const ROMAN = ["XII", "I", "II", "III", "IIII", "V", "VI", "VII", "VIII", "IX", "X", "XI"];
+  let h = "";
+  for (let i = 0; i < 60; i++) {
+    const hr = i % 5 === 0, [x1, y1] = pt(hr ? 108 : 112, i * 6), [x2, y2] = pt(118, i * 6);
+    h += `<line class="tick${hr ? " hr" : ""}" x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" />`;
+  }
+  ROMAN.forEach((r, i) => { const [x, y] = pt(90, i * 30); h += `<text class="num" x="${x.toFixed(1)}" y="${y.toFixed(1)}">${r}</text>`; });
+  $("dialMarks").innerHTML = h;
+}
+
+// Awake band on the bezel: from the current time of day to the end time.
+function drawSpan(now, ends) {
+  const span = $("span"), gem = $("gem");
+  span.classList.remove("open"); gem.style.display = "none";
+  if (!state.active) { span.setAttribute("d", ""); return; }
+  const R = 125;
+  if (!ends) {                                  // no end time: dotted full ring
+    span.classList.add("open");
+    span.setAttribute("d", `M${CX} ${CY - R} A${R} ${R} 0 1 1 ${CX - 0.01} ${CY - R}`);
+    return;
+  }
+  const a0 = dialAngle(now * 1000), left = Math.max(0, ends - now);
+  if (left >= 43200) { span.setAttribute("d", `M${CX} ${CY - R} A${R} ${R} 0 1 1 ${CX - 0.01} ${CY - R}`); return; }
+  const a1 = a0 + left / 120;                   // 12 h per revolution = 30 deg per hour
+  const [x0, y0] = pt(R, a0), [x1, y1] = pt(R, a1);
+  span.setAttribute("d", left < 1 ? "" : `M${x0.toFixed(2)} ${y0.toFixed(2)} A${R} ${R} 0 ${a1 - a0 > 180 ? 1 : 0} 1 ${x1.toFixed(2)} ${y1.toFixed(2)}`);
+  gem.setAttribute("transform", `translate(${x1.toFixed(2)} ${y1.toFixed(2)}) rotate(${a1.toFixed(1)})`);
+  gem.style.display = "";
+}
+
+function drawHands() {
+  const d = new Date(), s = d.getSeconds() + d.getMilliseconds() / 1000, m = d.getMinutes() + s / 60, h = (d.getHours() % 12) + m / 60;
+  $("hHour").setAttribute("transform", `translate(${CX} ${CY}) rotate(${(h * 30).toFixed(2)})`);
+  $("hMin").setAttribute("transform", `translate(${CX} ${CY}) rotate(${(m * 6).toFixed(2)})`);
+  $("hSec").setAttribute("transform", `translate(${CX} ${CY}) rotate(${(Math.floor(s) * 6)})`);
+}
+
+function tick() {
+  const t = $("ticket");
+  t.classList.toggle("on", !!state.active);
+  $("go").classList.toggle("secondary", !!state.active);
+  $("go").classList.toggle("primary", !state.active);
+  state.active ? setLabel("Stop · allow sleep", "Stop") : setLabel("Stay awake", "Stay awake");
+  if (!state.active) {
+    $("status").textContent = "Resting";
+    $("faceTime").textContent = "--:--:--";
+    $("faceCap").textContent = "Not running";
+    drawSpan(0, null);
+    $("clockLabel").textContent = "Mac can sleep normally";
+    return;
+  }
+  const n = nowSrv();
+  $("status").textContent = "Awake";
+  if (state.ends) {
+    const left = Math.max(0, state.ends - n);
+    $("faceTime").textContent = hms(left);
+    $("faceCap").textContent = "Time left";
+    drawSpan(n, state.ends);
+    $("clockLabel").textContent = "Mac can sleep after " + clock(state.ends);
+  } else {
+    $("faceTime").textContent = hms(Math.max(0, n - state.start));
+    $("faceCap").textContent = "Awake for";
+    drawSpan(n, null);
+    $("clockLabel").textContent = "Until you stop it";
+  }
+}
+
+function apply(s) {
+  state = s;
+  if (s.now) skew = s.now - Date.now() / 1000;
+  tick(); renderLog(); renderDuration();
+}
+
+async function api(path, body) {
+  try {
+    $("err").textContent = "";
+    apply(await fused.daemon.call(path, body));
+  } catch (e) {
+    $("err").textContent = (e && e.message) || String(e);
+  }
+}
+
+async function toggle() {
+  if (busy) return;
+  busy = true; $("go").setAttribute("aria-busy", "true");
+  await (state.active ? api("stop") : api("start", { minutes: minutes(), display: keepDisplay() }));
+  busy = false; $("go").removeAttribute("aria-busy");
+  $("go").focus();
+}
+
+// The daemon replaces a running session on start, so this switches it in place.
+async function restart(mins, display) {
+  busy = true; $("go").setAttribute("aria-busy", "true");
+  await api("start", { minutes: mins, display });
+  busy = false; $("go").removeAttribute("aria-busy");
+}
+
+async function boot() {
+  fitView(); buildDial(); drawHands();
+  renderDuration();
+  fused.params.onChange(renderDuration);
+  $("go").onclick = toggle;
+  $("dur").onchange = () => {
+    const m = Number($("dur").value);
+    fused.params.set("d", String(m));
+    if (running() && !busy) restart(m, state.display);
+  };
+  $("display").onclick = () => {
+    if (running()) {
+      if (busy) return;
+      fused.params.set("display", String(!state.display));
+      // Keep the same end time; an open-ended session stays open-ended.
+      const left = state.ends ? Math.max(1, (state.ends - nowSrv()) / 60) : 0;
+      restart(left, !state.display);
+    } else {
+      fused.params.set("display", String(!keepDisplay()));
+    }
+  };
+  // status() never starts the daemon; only a click does.
+  let st = null;
+  try { st = await fused.daemon.status(); } catch (e) { /* offline */ }
+  if (st && st.running) await api("state");
+  else { tick(); renderLog(); }
+  setInterval(async () => {
+    const s = await fused.daemon.status().catch(() => null);
+    if (s && s.running && state.active) api("state");
+    else if (s && !s.running && state.active) apply({ active: false, log: state.log });
+  }, 5000);
+  setInterval(() => { drawHands(); tick(); }, 1000);
+  fused.daemon.watch((s) => { if (s.running) api("state"); else apply({ active: false, log: state.log }); });
+}
+
+if (PREVIEW) {
+  document.body.classList.add("preview");
+  fitView(); buildDial(); drawHands(); renderDuration(); tick(); renderLog();
+} else {
+  boot();
+}
+</script>
+</body>
+</html>
