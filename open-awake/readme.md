@@ -1,10 +1,10 @@
 # Open Awake
 
-Keep your Mac awake. Pick a duration (15 min to 8 h, or no end time), press **Stay awake**, and the Mac won't idle-sleep until the time is up or you press **Let it sleep**. An [Amphetamine](https://apps.apple.com/app/amphetamine/id937984704)-style tool built on macOS's own `caffeinate`.
+Keep your Mac awake. Pick a duration (15 min to 8 h, or no end time), press **Stay awake**, and the Mac won't idle-sleep until the time is up or you press **Stop · allow sleep**. An [Amphetamine](https://apps.apple.com/app/amphetamine/id937984704)-style tool built on macOS's own `caffeinate`.
 
 - **Timed or open-ended** sessions, with a live countdown or elapsed clock.
 - **Keep the display on** is a switch; off lets the screen dim while the Mac stays awake.
-- **Departures board** lists recent sessions and how long you held today.
+- **History** lists recent sessions and how long the Mac stayed awake today. Picking another length while a session runs restarts the timer from now.
 - Sessions **survive closing the tab**: a small background daemon owns the `caffeinate` process. It is tied to the daemon (`caffeinate -w`), so quitting or stopping the app can never leave an orphaned process.
 
 ## How it works

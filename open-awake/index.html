@@ -54,10 +54,46 @@ h1, h2, .caps { font-family: var(--font-display); text-transform: uppercase; let
 .status { font-family: var(--font-display); text-transform: uppercase; letter-spacing: .06em; font-weight: 700; font-size: 20px; display: flex; align-items: center; gap: 10px; }
 .lamp { width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid var(--ink); background: transparent; }
 .on .lamp { background: var(--positive); border-color: var(--positive); box-shadow: 0 0 0 3px color-mix(in srgb, var(--positive) 25%, transparent); }
-.clock { font-family: var(--font-mono); font-weight: 700; font-size: clamp(40px, 8vw, 68px); line-height: 1; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
-.clock small { display: block; font-size: 12.5px; font-weight: 400; letter-spacing: 0; color: var(--muted); text-transform: uppercase; margin-top: 8px; }
+.hero { display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 18px; align-items: end; }
+.tower { width: 100%; height: auto; overflow: visible; }
+.tower .hatch { stroke: var(--ink); stroke-width: 1; opacity: .35; }
+.tower .wall { fill: var(--surface); stroke: var(--ink); stroke-width: 1.5; }
+.tower .line { fill: none; stroke: var(--ink); stroke-width: 1.5; stroke-linejoin: round; }
+.tower .face { fill: var(--surface); stroke: var(--ink); stroke-width: 1.5; }
+.tower .track { fill: none; stroke: var(--rule); stroke-width: 5; }
+.tower .ring { fill: none; stroke: var(--accent2); stroke-width: 5; stroke-linecap: butt; transition: stroke-dashoffset 1s linear; }
+.tower .lamp-glow { fill: transparent; stroke: var(--ink); stroke-width: 1.5; }
+.on .tower .lamp-glow { fill: var(--positive); stroke: var(--positive); }
+.on .tower .beam { opacity: 1; }
+.tower .beam { stroke: var(--positive); stroke-width: 2; stroke-linecap: round; opacity: 0; transition: opacity var(--k-dur); }
+.tower .digits { font: 700 14px var(--font-mono); fill: var(--ink); text-anchor: middle; dominant-baseline: central; font-variant-numeric: tabular-nums; }
+.tower .cap { font: 700 8.5px var(--font-display); fill: var(--muted); text-anchor: middle; letter-spacing: .12em; text-transform: uppercase; }
+.readout { display: grid; gap: 10px; align-content: end; min-width: 0; }
+.clocklabel { margin: 0; font-size: 12.5px; color: var(--muted); }
+.controls { display: grid; gap: 12px; border-top: var(--k-rule); padding-top: 14px; }
+.controls h2 { font-size: 16px; }
 .stub { display: grid; gap: 12px; align-content: start; }
 .stub h2 { font-size: 20px; }
+
+/* Calendar */
+.calhead { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.calnav { width: 28px; height: 28px; border: var(--k-border); border-radius: 8px; font: 700 14px var(--font-display); line-height: 1; transition: transform var(--k-dur) var(--k-ease); }
+.calnav:active { transform: scale(var(--k-press)); }
+.calnav:focus-visible { outline: 2px solid var(--accent2); outline-offset: 2px; }
+.cal { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 0; border-top: var(--k-rule); }
+.cal .dow { font: 700 11px var(--font-display); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); text-align: center; padding: 6px 0; border-bottom: var(--k-rule); }
+.cal .day { position: relative; aspect-ratio: 1 / 0.82; display: flex; align-items: center; justify-content: center; font: 13px var(--font-mono); font-variant-numeric: tabular-nums; border-bottom: 1px dashed color-mix(in srgb, var(--rule) 55%, transparent); }
+.cal .day.out { color: var(--muted); opacity: .45; }
+.cal .day.used::after { content: ""; position: absolute; left: 50%; bottom: 3px; width: 5px; height: 5px; margin-left: -2.5px; border-radius: 50%; background: var(--accent2); }
+.cal .day.ends::after { background: var(--positive); }
+.cal .day.today { font-weight: 700; color: var(--on-accent); }
+.cal .day.today::before { content: ""; position: absolute; inset: 3px; z-index: 0; border-radius: 6px; background: var(--accent); }
+.cal .day span { position: relative; z-index: 1; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--muted); }
+.legend i { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; background: var(--accent2); }
+.legend i.g { background: var(--positive); }
+.summary { font-family: var(--font-mono); font-size: 12.5px; color: var(--muted); text-transform: uppercase; margin: 0; }
+.summary b { color: var(--ink); }
 
 /* Buttons: condensed uppercase, spring press */
 .btn {
@@ -101,13 +137,14 @@ tr:last-child td { border-bottom: 0; }
 td.word { font-family: var(--font-display); font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
 td.word.expired { color: var(--positive); } td.word.stopped { color: var(--muted); }
 .empty { padding: 22px 20px; font-family: var(--font-mono); font-size: 13px; color: var(--muted); text-transform: uppercase; }
-.preview .btn, .preview .chip { pointer-events: none; }
+.preview .btn, .preview .chip, .preview .calnav { pointer-events: none; }
 @media (max-width: 640px) {
+  .hero { grid-template-columns: 140px minmax(0, 1fr); }
   .ticket { grid-template-columns: 1fr; }
   .main { border-right: 0; border-bottom: var(--k-rule); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .btn, .chip, .sw, .sw::after { transition: none; }
+  .btn, .chip, .sw, .sw::after, .calnav, .tower .ring, .tower .beam { transition: none; }
   .btn:active, .chip:active { transform: none; opacity: .8; }
   .label-in { animation: none; }
 }
@@ -117,37 +154,78 @@ td.word.expired { color: var(--positive); } td.word.stopped { color: var(--muted
 <div class="wrap" id="app">
   <header class="mast">
     <h1>Open Awake</h1>
-    <span class="sub">Platform 1 · no sleep service</span>
+    <span class="sub">Keeps your Mac from sleeping</span>
   </header>
 
   <section class="ticket" id="ticket">
     <div class="main">
-      <div class="serial"><span id="serial">No. 0000</span><span id="since">—</span></div>
-      <div class="status"><span class="lamp"></span><span id="status">Mac may sleep</span></div>
-      <div class="clock" id="clock">--:--:--<small id="clockLabel">Standing by</small></div>
-      <div class="err" id="err" role="status"></div>
+      <div class="serial"><span id="serial">Session —</span><span id="since">—</span></div>
+      <div class="hero">
+        <svg class="tower" viewBox="0 0 150 290" role="img" aria-labelledby="towerTitle">
+          <title id="towerTitle">Clock tower showing how long the Mac will stay awake</title>
+          <defs>
+            <pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+              <line class="hatch" x1="0" y1="0" x2="0" y2="6" />
+            </pattern>
+          </defs>
+          <!-- beacon lamp + beams -->
+          <path class="beam" d="M75 12v-10M60 20l-9-6M90 20l9-6" />
+          <circle class="lamp-glow" cx="75" cy="22" r="6" />
+          <!-- spire -->
+          <path class="wall" d="M75 28 L120 74 H30 Z" /><path d="M75 28 L120 74 H30 Z" fill="url(#hatch)" />
+          <!-- clock chamber -->
+          <rect class="wall" x="20" y="74" width="110" height="118" />
+          <rect x="20" y="74" width="110" height="118" fill="url(#hatch)" opacity=".5" />
+          <path class="line" d="M14 74h122M14 192h122" />
+          <circle class="face" cx="75" cy="133" r="50" />
+          <circle class="track" cx="75" cy="133" r="43" />
+          <circle class="ring" id="ring" cx="75" cy="133" r="43" transform="rotate(-90 75 133)" stroke-dasharray="270.2" stroke-dashoffset="270.2" />
+          <text class="digits" id="faceTime" x="75" y="133">--:--:--</text>
+          <text class="cap" id="faceCap" x="75" y="151">Not running</text>
+          <!-- shaft + door -->
+          <path class="wall" d="M34 192 L26 270 H124 L116 192 Z" /><path d="M34 192 L26 270 H124 L116 192 Z" fill="url(#hatch)" opacity=".5" />
+          <path class="wall" d="M64 270v-34a11 11 0 0 1 22 0v34z" />
+          <path class="line" d="M16 270h118M10 278h130" />
+        </svg>
+        <div class="readout">
+          <div class="status"><span class="lamp"></span><span id="status">Mac can sleep normally</span></div>
+          <p class="clocklabel" id="clockLabel">Not running</p>
+          <div class="err" id="err" role="status"></div>
+        </div>
+      </div>
+      <div class="controls">
+        <h2>Keep awake for</h2>
+        <div class="chips" id="chips" role="group" aria-label="Duration"></div>
+        <p class="note" id="chipHint" hidden>Pick another length to restart the timer from now.</p>
+        <div class="opt">
+          <button class="sw" id="display" role="switch" aria-checked="true" aria-label="Keep display on"></button>
+          <span>Keep the display on too</span>
+        </div>
+        <button class="btn primary" id="go" type="button"><span id="goLabel">Stay awake</span></button>
+        <p class="note">Runs macOS <code>caffeinate</code>. Closing this tab does not stop it.</p>
+      </div>
     </div>
     <div class="stub">
-      <h2>Departs for</h2>
-      <div class="chips" id="chips" role="group" aria-label="Duration"></div>
-      <div class="opt">
-        <button class="sw" id="display" role="switch" aria-checked="true" aria-label="Keep display on"></button>
-        <span>Keep the display on too</span>
+      <div class="calhead">
+        <button class="calnav" id="prev" type="button" aria-label="Previous month">&lsaquo;</button>
+        <h2 id="calTitle">Month</h2>
+        <button class="calnav" id="next" type="button" aria-label="Next month">&rsaquo;</button>
       </div>
-      <button class="btn primary" id="go" type="button"><span id="goLabel">Stay awake</span></button>
-      <p class="note">Runs macOS <code>caffeinate</code>. Closing this tab does not stop it.</p>
+      <div class="cal" id="cal" role="grid" aria-labelledby="calTitle"></div>
+      <div class="legend"><span><i></i>Awake that day</span><span><i class="g"></i>Mac can sleep after</span></div>
+      <p class="summary" id="summary">No sessions yet</p>
     </div>
   </section>
 
   <section class="board" aria-label="Recent sessions">
-    <h2>Departures <span id="total"></span></h2>
+    <h2>History <span id="total"></span></h2>
     <div id="log"></div>
   </section>
 </div>
 
 <script>
 const $ = (id) => document.getElementById(id);
-const DURATIONS = [["15m", 15], ["30m", 30], ["1h", 60], ["2h", 120], ["4h", 240], ["8h", 480], ["∞", 0]];
+const DURATIONS = [["15 min", 15], ["30 min", 30], ["1 hr", 60], ["2 hr", 120], ["4 hr", 240], ["8 hr", 480], ["Until I stop", 0]];
 
 function isPreview() {
   if (new URLSearchParams(location.search).get("_preview") === "1") return true;
@@ -178,17 +256,25 @@ function dur(s) {
   return m >= 60 ? `${Math.floor(m / 60)}h ${pad(m % 60)}m` : `${m}m`;
 }
 
+// While a session runs, the chips and switch show (and change) that session.
+const running = () => state.active && !PREVIEW;
+const activeMinutes = () => state.ends ? Math.round((state.ends - state.start) / 60) : 0;
+
 function renderChips() {
-  const sel = minutes();
+  const sel = running() ? activeMinutes() : minutes();
   $("chips").innerHTML = "";
   for (const [label, m] of DURATIONS) {
     const b = document.createElement("button");
     b.className = "chip"; b.type = "button"; b.textContent = label;
     b.setAttribute("aria-pressed", String(m === sel));
-    b.onclick = () => { fused.params.set("d", String(m)); };
+    b.onclick = () => {
+      fused.params.set("d", String(m));
+      if (running() && !busy) restart(m, state.display);
+    };
     $("chips").appendChild(b);
   }
-  $("display").setAttribute("aria-checked", String(keepDisplay()));
+  $("chipHint").hidden = !running();
+  $("display").setAttribute("aria-checked", String(running() ? !!state.display : keepDisplay()));
 }
 
 function setLabel(text) {
@@ -203,19 +289,50 @@ function renderLog() {
   const today = new Date().toDateString();
   const secs = log.filter((e) => new Date(e.start * 1000).toDateString() === today)
     .reduce((a, e) => a + (e.end - e.start), 0);
-  $("total").textContent = log.length ? `Today ${dur(secs)}` : "";
+  $("total").textContent = log.length ? `Awake today: ${dur(secs)}` : "";
   if (!log.length) {
-    $("log").innerHTML = '<div class="empty">No departures · next check on your first session</div>';
+    $("log").innerHTML = '<div class="empty">No sessions yet</div>';
     return;
   }
   const rows = log.slice(0, 8).map((e) => {
-    const word = e.reason === "expired" ? "Completed" : e.reason === "replaced" ? "Replaced" : "Stopped";
-    const plan = e.planned ? dur(e.planned) : "∞";
+    const word = e.reason === "expired" ? "Finished" : e.reason === "replaced" ? "Changed" : "Stopped early";
+    const plan = e.planned ? dur(e.planned) : "No limit";
     return `<tr><td>${clock(e.start)}</td><td>${dur(e.end - e.start)}</td><td>${plan}</td>` +
       `<td class="word ${e.reason === "expired" ? "expired" : "stopped"}">${word}</td></tr>`;
   }).join("");
   $("log").innerHTML = `<table><caption class="sr" style="display:none">Recent sessions</caption>` +
-    `<thead><tr><th scope="col">Left</th><th scope="col">Held</th><th scope="col">Planned</th><th scope="col">Status</th></tr></thead><tbody>${rows}</tbody></table>`;
+    `<thead><tr><th scope="col">Started</th><th scope="col">Lasted</th><th scope="col">Set for</th><th scope="col">Result</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+const RING = 2 * Math.PI * 43;
+// ---- calendar ----
+let calMonth = new Date(); calMonth.setDate(1); calMonth.setHours(0, 0, 0, 0);
+const dayKey = (d) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+function renderCal() {
+  const first = new Date(calMonth), y = first.getFullYear(), m = first.getMonth();
+  $("calTitle").textContent = first.toLocaleDateString([], { month: "long", year: "numeric" });
+  const used = new Set((state.log || []).map((e) => dayKey(new Date(e.start * 1000))));
+  if (state.active) used.add(dayKey(new Date(state.start * 1000)));
+  const endsKey = state.active && state.ends ? dayKey(new Date(state.ends * 1000)) : null;
+  const todayKey = dayKey(new Date());
+  let html = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => `<div class="dow" role="columnheader">${d}</div>`).join("");
+  const lead = (first.getDay() + 6) % 7;                 // Monday-first
+  const start = new Date(y, m, 1 - lead);
+  const weeks = Math.ceil((lead + new Date(y, m + 1, 0).getDate()) / 7);
+  for (let i = 0; i < weeks * 7; i++) {
+    const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i), k = dayKey(d);
+    const cls = ["day", d.getMonth() !== m && "out", k === todayKey && "today", used.has(k) && "used", k === endsKey && "ends"].filter(Boolean).join(" ");
+    const label = d.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" }) +
+      (used.has(k) ? ", Mac was kept awake" : "") + (k === endsKey ? ", Mac can sleep after " + clock(state.ends) : "");
+    html += `<div class="${cls}" role="gridcell" aria-label="${label}"><span>${d.getDate()}</span></div>`;
+  }
+  $("cal").innerHTML = html;
+  const today = new Date().toDateString();
+  const secs = (state.log || []).filter((e) => new Date(e.start * 1000).toDateString() === today).reduce((a, e) => a + (e.end - e.start), 0)
+    + (state.active ? Math.max(0, nowSrv() - Math.max(state.start, new Date().setHours(0, 0, 0, 0) / 1000)) : 0);
+  $("summary").innerHTML = state.active
+    ? (state.ends ? `Sleep allowed after <b>${clock(state.ends)}</b>` : "<b>No end time</b> · until you stop it") + ` · today <b>${dur(secs)}</b>`
+    : secs ? `Awake today <b>${dur(secs)}</b>` : "No sessions yet";
 }
 
 function tick() {
@@ -223,32 +340,38 @@ function tick() {
   t.classList.toggle("on", !!state.active);
   $("go").classList.toggle("secondary", !!state.active);
   $("go").classList.toggle("primary", !state.active);
-  setLabel(state.active ? "Let it sleep" : "Stay awake");
-  $("serial").textContent = "No. " + String(((state.log || []).length + (state.active ? 1 : 0))).padStart(4, "0");
+  setLabel(state.active ? "Stop · allow sleep" : "Stay awake");
+  $("serial").textContent = "Session " + ((state.log || []).length + (state.active ? 1 : 0) || "—");
   if (!state.active) {
-    $("status").textContent = "Mac may sleep";
-    $("clock").firstChild.nodeValue = "--:--:--";
-    $("clockLabel").textContent = "Standing by";
+    $("status").textContent = "Mac can sleep normally";
+    $("faceTime").textContent = "--:--:--";
+    $("faceCap").textContent = "Not running";
+    $("ring").style.strokeDashoffset = RING;
+    $("clockLabel").textContent = "Not running";
     $("since").textContent = "—";
     return;
   }
   const n = nowSrv();
-  $("since").textContent = "Left " + clock(state.start);
+  $("since").textContent = "Started " + clock(state.start);
+  $("status").textContent = "Awake · " + (state.display ? "screen stays on" : "screen can dim");
   if (state.ends) {
-    $("status").textContent = "Holding · " + (state.display ? "screen on" : "screen may dim");
-    $("clock").firstChild.nodeValue = hms(Math.max(0, state.ends - n));
-    $("clockLabel").textContent = "Remaining · arrives " + clock(state.ends);
+    const left = Math.max(0, state.ends - n);
+    $("faceTime").textContent = hms(left);
+    $("faceCap").textContent = "Time left";
+    $("ring").style.strokeDashoffset = RING * (1 - left / Math.max(1, state.ends - state.start));
+    $("clockLabel").textContent = "Time left · Mac can sleep after " + clock(state.ends);
   } else {
-    $("status").textContent = "Holding · " + (state.display ? "screen on" : "screen may dim");
-    $("clock").firstChild.nodeValue = hms(Math.max(0, n - state.start));
-    $("clockLabel").textContent = "Elapsed · no end time";
+    $("faceTime").textContent = hms(Math.max(0, n - state.start));
+    $("faceCap").textContent = "Awake for";
+    $("ring").style.strokeDashoffset = 0;
+    $("clockLabel").textContent = "Awake for · no end time, runs until you stop it";
   }
 }
 
 function apply(s) {
   state = s;
   if (s.now) skew = s.now - Date.now() / 1000;
-  tick(); renderLog();
+  tick(); renderLog(); renderChips(); renderCal();
 }
 
 async function api(path, body) {
@@ -268,16 +391,35 @@ async function toggle() {
   $("go").focus();
 }
 
+// The daemon replaces a running session on start, so this switches it in place.
+async function restart(mins, display) {
+  busy = true; $("go").setAttribute("aria-busy", "true");
+  await api("start", { minutes: mins, display });
+  busy = false; $("go").removeAttribute("aria-busy");
+}
+
 async function boot() {
+  $("prev").onclick = () => { calMonth.setMonth(calMonth.getMonth() - 1); renderCal(); };
+  $("next").onclick = () => { calMonth.setMonth(calMonth.getMonth() + 1); renderCal(); };
   renderChips();
   fused.params.onChange(renderChips);
   $("go").onclick = toggle;
-  $("display").onclick = () => fused.params.set("display", String(!keepDisplay()));
+  $("display").onclick = () => {
+    if (running()) {
+      if (busy) return;
+      fused.params.set("display", String(!state.display));
+      // Keep the same end time; an open-ended session stays open-ended.
+      const left = state.ends ? Math.max(1, (state.ends - nowSrv()) / 60) : 0;
+      restart(left, !state.display);
+    } else {
+      fused.params.set("display", String(!keepDisplay()));
+    }
+  };
   // status() never starts the daemon; only a click does.
   let st = null;
   try { st = await fused.daemon.status(); } catch (e) { /* offline */ }
   if (st && st.running) await api("state");
-  else { tick(); renderLog(); }
+  else { tick(); renderLog(); renderCal(); }
   setInterval(async () => {
     const s = await fused.daemon.status().catch(() => null);
     if (s && s.running && state.active) api("state");
@@ -289,7 +431,7 @@ async function boot() {
 
 if (PREVIEW) {
   document.body.classList.add("preview");
-  renderChips(); tick(); renderLog();
+  renderChips(); tick(); renderLog(); renderCal();
 } else {
   boot();
 }
