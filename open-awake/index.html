@@ -14,6 +14,7 @@
   --bg: #e8d9ab; --surface: #f2e7c2; --ink: #2a2114; --muted: #645537; --rule: #b9a56d;
   --accent: #a8322a; --accent2: #20507c; --positive: #3b6d3a; --negative: #a8322a;
   --on-accent: #f2e7c2;
+  --wood: #5a3a1e; --brass: #a97c2f; --paper: #f4ead0;
   --font-display: 'Oswald', 'Arial Narrow', Impact, sans-serif;
   --font-body: 'Libre Franklin', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   --font-mono: 'Space Mono', ui-monospace, Menlo, Consolas, monospace;
@@ -25,6 +26,7 @@
   --bg: #1f1a10; --surface: #2a2415; --ink: #f0e4bd; --muted: #b8a982; --rule: #52472a;
   --accent: #f07a6a; --accent2: #84b2e0; --positive: #8ac982; --negative: #f07a6a;
   --on-accent: #1f1a10;
+  --wood: #3a2815; --brass: #c9a24d; --paper: #2f2818;
 }
 *, *::before, *::after { box-sizing: border-box; }
 body { margin: 0; }
@@ -32,68 +34,59 @@ button, input, select, textarea { font: inherit; color: inherit; margin: 0; }
 button { background: none; border: 0; padding: 0; cursor: pointer; }
 img, svg, video, canvas { display: block; max-width: 100%; }
 
-body { background: var(--bg); color: var(--ink); font: 15px/1.45 var(--font-body); min-height: 100vh; }
-.wrap { max-width: 880px; margin: 0 auto; padding: 28px 20px 40px; display: grid; gap: 20px; }
+body { background: var(--bg); color: var(--ink); font: 15px/1.45 var(--font-body); }
+/* One screen, no page scroll: the wrap is exactly the viewport tall */
+.wrap { max-width: 960px; height: 100vh; height: 100dvh; margin: 0 auto; padding: 14px 20px 16px; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 12px; overflow: hidden; }
 h1, h2, .caps { font-family: var(--font-display); text-transform: uppercase; letter-spacing: .06em; font-weight: 700; margin: 0; }
-.mast { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; border-bottom: var(--k-rule); padding-bottom: 12px; }
-.mast h1 { font-size: clamp(28px, 4.2vw, 46px); line-height: 1; }
+.mast { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; border-bottom: var(--k-rule); padding-bottom: 8px; }
+.mast h1 { font-size: clamp(26px, 5vh, 40px); line-height: 1; }
 .mast .sub { font-family: var(--font-mono); font-size: 12.5px; color: var(--muted); text-transform: uppercase; }
 
-/* Ticket: notched sides, dashed tear line between the two halves */
+/* Ticket: notched sides, dashed tear line between the clock and the controls */
 .ticket {
-  display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   background: var(--surface); border: var(--k-border); border-radius: var(--k-radius);
   -webkit-mask: radial-gradient(circle at 0 50%, transparent 7px, #000 7.5px), radial-gradient(circle at 100% 50%, transparent 7px, #000 7.5px);
   -webkit-mask-composite: source-in;
   mask: radial-gradient(circle at 0 50%, transparent 7px, #000 7.5px), radial-gradient(circle at 100% 50%, transparent 7px, #000 7.5px);
   mask-composite: intersect;
 }
-.ticket > * { padding: 22px 26px; min-width: 0; }
-.main { border-right: var(--k-rule); display: grid; gap: 14px; align-content: start; }
+.ticket > * { padding: 14px 26px; min-width: 0; min-height: 0; }
+.clockside { border-right: var(--k-rule); display: flex; align-items: center; justify-content: center; }
+.wallclock { height: 100%; width: auto; max-width: 100%; overflow: visible; }
+.stub { display: grid; gap: 12px; align-content: center; }
 .serial { font-family: var(--font-mono); font-size: 12.5px; color: var(--muted); display: flex; justify-content: space-between; gap: 8px; }
 .status { font-family: var(--font-display); text-transform: uppercase; letter-spacing: .06em; font-weight: 700; font-size: 20px; display: flex; align-items: center; gap: 10px; }
-.lamp { width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid var(--ink); background: transparent; }
+.lamp { flex: none; width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid var(--ink); background: transparent; }
 .on .lamp { background: var(--positive); border-color: var(--positive); box-shadow: 0 0 0 3px color-mix(in srgb, var(--positive) 25%, transparent); }
-.hero { display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 18px; align-items: end; }
-.tower { width: 100%; height: auto; overflow: visible; }
-.tower .hatch { stroke: var(--ink); stroke-width: 1; opacity: .35; }
-.tower .wall { fill: var(--surface); stroke: var(--ink); stroke-width: 1.5; }
-.tower .line { fill: none; stroke: var(--ink); stroke-width: 1.5; stroke-linejoin: round; }
-.tower .face { fill: var(--surface); stroke: var(--ink); stroke-width: 1.5; }
-.tower .track { fill: none; stroke: var(--rule); stroke-width: 5; }
-.tower .ring { fill: none; stroke: var(--accent2); stroke-width: 5; stroke-linecap: butt; transition: stroke-dashoffset 1s linear; }
-.tower .lamp-glow { fill: transparent; stroke: var(--ink); stroke-width: 1.5; }
-.on .tower .lamp-glow { fill: var(--positive); stroke: var(--positive); }
-.on .tower .beam { opacity: 1; }
-.tower .beam { stroke: var(--positive); stroke-width: 2; stroke-linecap: round; opacity: 0; transition: opacity var(--k-dur); }
-.tower .digits { font: 700 14px var(--font-mono); fill: var(--ink); text-anchor: middle; dominant-baseline: central; font-variant-numeric: tabular-nums; }
-.tower .cap { font: 700 8.5px var(--font-display); fill: var(--muted); text-anchor: middle; letter-spacing: .12em; text-transform: uppercase; }
-.readout { display: grid; gap: 10px; align-content: end; min-width: 0; }
-.clocklabel { margin: 0; font-size: 12.5px; color: var(--muted); }
+.clocklabel { margin: -6px 0 0; font-size: 12.5px; color: var(--muted); }
 .controls { display: grid; gap: 12px; border-top: var(--k-rule); padding-top: 14px; }
 .controls h2 { font-size: 16px; }
-.stub { display: grid; gap: 12px; align-content: start; }
-.stub h2 { font-size: 20px; }
 
-/* Calendar */
-.calhead { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.calnav { width: 28px; height: 28px; border: var(--k-border); border-radius: 8px; font: 700 14px var(--font-display); line-height: 1; transition: transform var(--k-dur) var(--k-ease); }
-.calnav:active { transform: scale(var(--k-press)); }
-.calnav:focus-visible { outline: 2px solid var(--accent2); outline-offset: 2px; }
-.cal { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 0; border-top: var(--k-rule); }
-.cal .dow { font: 700 11px var(--font-display); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); text-align: center; padding: 6px 0; border-bottom: var(--k-rule); }
-.cal .day { position: relative; aspect-ratio: 1 / 0.82; display: flex; align-items: center; justify-content: center; font: 13px var(--font-mono); font-variant-numeric: tabular-nums; border-bottom: 1px dashed color-mix(in srgb, var(--rule) 55%, transparent); }
-.cal .day.out { color: var(--muted); opacity: .45; }
-.cal .day.used::after { content: ""; position: absolute; left: 50%; bottom: 3px; width: 5px; height: 5px; margin-left: -2.5px; border-radius: 50%; background: var(--accent2); }
-.cal .day.ends::after { background: var(--positive); }
-.cal .day.today { font-weight: 700; color: var(--on-accent); }
-.cal .day.today::before { content: ""; position: absolute; inset: 3px; z-index: 0; border-radius: 6px; background: var(--accent); }
-.cal .day span { position: relative; z-index: 1; }
-.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--muted); }
-.legend i { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; background: var(--accent2); }
-.legend i.g { background: var(--positive); }
-.summary { font-family: var(--font-mono); font-size: 12.5px; color: var(--muted); text-transform: uppercase; margin: 0; }
-.summary b { color: var(--ink); }
+/* Wall clock (SVG). Every colour is a token, so it follows light/dark. */
+.wallclock .wood { fill: var(--wood); }
+.wallclock .grain { fill: none; stroke: var(--brass); stroke-width: .7; opacity: .35; }
+.wallclock .brass { fill: none; stroke: var(--brass); stroke-width: 5; }
+.wallclock .brass-fill { fill: var(--brass); }
+.wallclock .hair { fill: none; stroke: var(--ink); stroke-width: .8; opacity: .7; }
+.wallclock .dial { fill: var(--paper); }
+.wallclock .tick { stroke: var(--ink); stroke-width: 1; }
+.wallclock .tick.hr { stroke-width: 2.2; }
+.wallclock .num { font: 700 17px var(--font-display); fill: var(--ink); text-anchor: middle; dominant-baseline: central; letter-spacing: .02em; }
+.wallclock .track { fill: none; stroke: var(--rule); stroke-width: 5; opacity: .6; }
+.wallclock .span { fill: none; stroke: var(--accent2); stroke-width: 5; stroke-linecap: butt; }
+.wallclock .span.open { stroke-dasharray: 2 5; }
+.wallclock .gem { fill: var(--accent); stroke: var(--ink); stroke-width: 1; }
+.wallclock .plate { fill: var(--surface); stroke: var(--brass); stroke-width: 2; }
+.wallclock .digits { font: 700 15px var(--font-mono); fill: var(--ink); text-anchor: middle; dominant-baseline: central; font-variant-numeric: tabular-nums; }
+.wallclock .cap { font: 700 7.5px var(--font-display); fill: var(--muted); text-anchor: middle; letter-spacing: .14em; text-transform: uppercase; }
+.wallclock .hand { fill: var(--ink); }
+.wallclock .sec { stroke: var(--accent); stroke-width: 1.3; }
+.wallclock .rod { stroke: var(--brass); stroke-width: 3; }
+.wallclock .stain { fill: var(--rule); opacity: .22; }
+.pend { transform-box: view-box; transform-origin: 160px 322px; }
+.on .pend { animation: swing 2s ease-in-out infinite alternate; }
+@keyframes swing { from { transform: rotate(-7deg); } to { transform: rotate(7deg); } }
 
 /* Buttons: condensed uppercase, spring press */
 .btn {
@@ -126,27 +119,26 @@ h1, h2, .caps { font-family: var(--font-display); text-transform: uppercase; let
 .note { font-size: 12.5px; color: var(--muted); margin: 0; }
 .err { color: var(--negative); font-family: var(--font-mono); font-size: 12.5px; min-height: 1.2em; }
 
-/* Departures board */
-.board { border: var(--k-border); border-radius: var(--k-radius); background: var(--surface); overflow: hidden; }
-.board h2 { padding: 12px 20px; font-size: 20px; border-bottom: var(--k-rule); display: flex; justify-content: space-between; align-items: baseline; }
-.board h2 span { font: 400 12.5px var(--font-mono); color: var(--muted); }
-table { width: 100%; border-collapse: collapse; }
-th, td { height: 40px; padding: 0 20px; text-align: left; font-family: var(--font-mono); font-size: 13px; border-bottom: var(--k-rule); font-variant-numeric: tabular-nums; }
-th { font: 700 12.5px var(--font-display); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
-tr:last-child td { border-bottom: 0; }
-td.word { font-family: var(--font-display); font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
-td.word.expired { color: var(--positive); } td.word.stopped { color: var(--muted); }
-.empty { padding: 22px 20px; font-family: var(--font-mono); font-size: 13px; color: var(--muted); text-transform: uppercase; }
-.preview .btn, .preview .chip, .preview .calnav { pointer-events: none; }
-@media (max-width: 640px) {
-  .hero { grid-template-columns: 140px minmax(0, 1fr); }
+/* Recent sessions: one slim strip */
+.recent { border: var(--k-border); border-radius: var(--k-radius); background: var(--surface); padding: 10px 16px; display: flex; align-items: center; gap: 8px 20px; flex-wrap: wrap; min-height: 0; }
+.recent h2 { font-size: 15px; margin-right: 4px; }
+.recent .total { font: 12.5px var(--font-mono); color: var(--muted); }
+.recent ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 18px; flex: 1 1 auto; min-width: 0; }
+.recent li { font: 12.5px var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.recent li b { font-family: var(--font-display); letter-spacing: .06em; text-transform: uppercase; }
+.recent li b.expired { color: var(--positive); } .recent li b.stopped { color: var(--muted); }
+.recent .empty { font: 12.5px var(--font-mono); color: var(--muted); text-transform: uppercase; }
+.preview .btn, .preview .chip, .preview .sw { pointer-events: none; }
+@media (max-width: 700px) {
+  .wrap { height: auto; min-height: 100vh; overflow: visible; }
   .ticket { grid-template-columns: 1fr; }
-  .main { border-right: 0; border-bottom: var(--k-rule); }
+  .clockside { border-right: 0; border-bottom: var(--k-rule); }
+  .wallclock { height: 300px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .btn, .chip, .sw, .sw::after, .calnav, .tower .ring, .tower .beam { transition: none; }
+  .btn, .chip, .sw, .sw::after { transition: none; }
   .btn:active, .chip:active { transform: none; opacity: .8; }
-  .label-in { animation: none; }
+  .label-in, .on .pend { animation: none; }
 }
 </style>
 </head>
@@ -158,41 +150,76 @@ td.word.expired { color: var(--positive); } td.word.stopped { color: var(--muted
   </header>
 
   <section class="ticket" id="ticket">
-    <div class="main">
+    <div class="clockside">
+      <svg class="wallclock" viewBox="0 0 320 404" role="img" aria-labelledby="clockTitle">
+        <title id="clockTitle">Wall clock. The blue band runs from now to when your Mac may sleep again.</title>
+        <defs>
+          <filter id="paper" x="0" y="0" width="100%" height="100%">
+            <feTurbulence type="fractalNoise" baseFrequency=".85" numOctaves="2" seed="7" result="n" />
+            <feColorMatrix in="n" type="matrix" values="0 0 0 0 .36  0 0 0 0 .27  0 0 0 0 .14  0 0 0 .9 -.28" />
+            <feComposite in2="SourceGraphic" operator="in" />
+          </filter>
+          <radialGradient id="age" cx="50%" cy="50%" r="50%">
+            <stop offset="62%" style="stop-color: var(--wood); stop-opacity: 0" />
+            <stop offset="100%" style="stop-color: var(--wood); stop-opacity: .38" />
+          </radialGradient>
+        </defs>
+
+        <!-- pendulum (behind the case) -->
+        <g class="pend">
+          <line class="rod" x1="160" y1="322" x2="160" y2="378" />
+          <circle class="brass-fill" cx="160" cy="384" r="15" />
+          <circle class="hair" cx="160" cy="384" r="9" />
+        </g>
+
+        <!-- crown + finial -->
+        <path class="brass" d="M118 30 Q160 -6 202 30" />
+        <circle class="brass-fill" cx="160" cy="9" r="7" />
+        <circle class="wood" cx="160" cy="9" r="3" />
+
+        <!-- wooden case, grain rings, brass studs -->
+        <circle class="wood" cx="160" cy="170" r="150" />
+        <circle class="grain" cx="160" cy="170" r="146" />
+        <circle class="grain" cx="160" cy="170" r="143" />
+        <circle class="grain" cx="160" cy="170" r="140" />
+        <g class="brass-fill">
+          <circle cx="160" cy="29" r="3.4" /><circle cx="160" cy="311" r="3.4" />
+          <circle cx="19" cy="170" r="3.4" /><circle cx="301" cy="170" r="3.4" />
+        </g>
+
+        <!-- brass bezel + paper dial -->
+        <circle class="brass" cx="160" cy="170" r="134" />
+        <circle class="dial" cx="160" cy="170" r="130" />
+        <circle cx="160" cy="170" r="130" fill="var(--ink)" filter="url(#paper)" opacity=".5" />
+        <circle class="stain" cx="108" cy="118" r="16" /><circle class="stain" cx="222" cy="236" r="11" /><circle class="stain" cx="206" cy="104" r="6" />
+        <circle cx="160" cy="170" r="130" fill="url(#age)" />
+        <circle class="hair" cx="160" cy="170" r="130" />
+        <circle class="hair" cx="160" cy="170" r="120" />
+
+        <!-- awake band: from now until the Mac may sleep -->
+        <circle class="track" cx="160" cy="170" r="125" />
+        <path class="span" id="span" d="" />
+        <path class="gem" id="gem" d="M0 -9 L6 0 L0 9 L-6 0 Z" style="display:none" />
+
+        <g id="dialMarks"></g>
+
+        <!-- countdown plate -->
+        <rect class="plate" x="116" y="196" width="88" height="34" rx="5" />
+        <text class="cap" id="faceCap" x="160" y="206">Not running</text>
+        <text class="digits" id="faceTime" x="160" y="220">--:--:--</text>
+
+        <!-- hands: the real time of day -->
+        <path class="hand" id="hHour" d="M0 14 L-3.2 0 L-3.2 -30 L0 -54 L3.2 -30 L3.2 0 Z" transform="translate(160 170)" />
+        <path class="hand" id="hMin" d="M0 16 L-2.2 0 L-2.2 -62 L0 -84 L2.2 -62 L2.2 0 Z" transform="translate(160 170)" />
+        <g id="hSec" transform="translate(160 170)"><line class="sec" x1="0" y1="22" x2="0" y2="-90" /><circle class="sec" cx="0" cy="-70" r="3.2" fill="var(--accent)" /></g>
+        <circle class="brass-fill" cx="160" cy="170" r="6" /><circle class="wood" cx="160" cy="170" r="2.2" />
+      </svg>
+    </div>
+    <div class="stub">
       <div class="serial"><span id="serial">Session —</span><span id="since">—</span></div>
-      <div class="hero">
-        <svg class="tower" viewBox="0 0 150 290" role="img" aria-labelledby="towerTitle">
-          <title id="towerTitle">Clock tower showing how long the Mac will stay awake</title>
-          <defs>
-            <pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-              <line class="hatch" x1="0" y1="0" x2="0" y2="6" />
-            </pattern>
-          </defs>
-          <!-- beacon lamp + beams -->
-          <path class="beam" d="M75 12v-10M60 20l-9-6M90 20l9-6" />
-          <circle class="lamp-glow" cx="75" cy="22" r="6" />
-          <!-- spire -->
-          <path class="wall" d="M75 28 L120 74 H30 Z" /><path d="M75 28 L120 74 H30 Z" fill="url(#hatch)" />
-          <!-- clock chamber -->
-          <rect class="wall" x="20" y="74" width="110" height="118" />
-          <rect x="20" y="74" width="110" height="118" fill="url(#hatch)" opacity=".5" />
-          <path class="line" d="M14 74h122M14 192h122" />
-          <circle class="face" cx="75" cy="133" r="50" />
-          <circle class="track" cx="75" cy="133" r="43" />
-          <circle class="ring" id="ring" cx="75" cy="133" r="43" transform="rotate(-90 75 133)" stroke-dasharray="270.2" stroke-dashoffset="270.2" />
-          <text class="digits" id="faceTime" x="75" y="133">--:--:--</text>
-          <text class="cap" id="faceCap" x="75" y="151">Not running</text>
-          <!-- shaft + door -->
-          <path class="wall" d="M34 192 L26 270 H124 L116 192 Z" /><path d="M34 192 L26 270 H124 L116 192 Z" fill="url(#hatch)" opacity=".5" />
-          <path class="wall" d="M64 270v-34a11 11 0 0 1 22 0v34z" />
-          <path class="line" d="M16 270h118M10 278h130" />
-        </svg>
-        <div class="readout">
-          <div class="status"><span class="lamp"></span><span id="status">Mac can sleep normally</span></div>
-          <p class="clocklabel" id="clockLabel">Not running</p>
-          <div class="err" id="err" role="status"></div>
-        </div>
-      </div>
+      <div class="status"><span class="lamp"></span><span id="status">Mac can sleep normally</span></div>
+      <p class="clocklabel" id="clockLabel">Not running</p>
+      <div class="err" id="err" role="status"></div>
       <div class="controls">
         <h2>Keep awake for</h2>
         <div class="chips" id="chips" role="group" aria-label="Duration"></div>
@@ -205,21 +232,12 @@ td.word.expired { color: var(--positive); } td.word.stopped { color: var(--muted
         <p class="note">Runs macOS <code>caffeinate</code>. Closing this tab does not stop it.</p>
       </div>
     </div>
-    <div class="stub">
-      <div class="calhead">
-        <button class="calnav" id="prev" type="button" aria-label="Previous month">&lsaquo;</button>
-        <h2 id="calTitle">Month</h2>
-        <button class="calnav" id="next" type="button" aria-label="Next month">&rsaquo;</button>
-      </div>
-      <div class="cal" id="cal" role="grid" aria-labelledby="calTitle"></div>
-      <div class="legend"><span><i></i>Awake that day</span><span><i class="g"></i>Mac can sleep after</span></div>
-      <p class="summary" id="summary">No sessions yet</p>
-    </div>
   </section>
 
-  <section class="board" aria-label="Recent sessions">
-    <h2>History <span id="total"></span></h2>
-    <div id="log"></div>
+  <section class="recent" aria-label="Recent sessions">
+    <h2>History</h2>
+    <ul id="log"></ul>
+    <span class="total" id="total"></span>
   </section>
 </div>
 
@@ -291,48 +309,56 @@ function renderLog() {
     .reduce((a, e) => a + (e.end - e.start), 0);
   $("total").textContent = log.length ? `Awake today: ${dur(secs)}` : "";
   if (!log.length) {
-    $("log").innerHTML = '<div class="empty">No sessions yet</div>';
+    $("log").innerHTML = '<li class="empty">No sessions yet</li>';
     return;
   }
-  const rows = log.slice(0, 8).map((e) => {
+  $("log").innerHTML = log.slice(0, 3).map((e) => {
     const word = e.reason === "expired" ? "Finished" : e.reason === "replaced" ? "Changed" : "Stopped early";
-    const plan = e.planned ? dur(e.planned) : "No limit";
-    return `<tr><td>${clock(e.start)}</td><td>${dur(e.end - e.start)}</td><td>${plan}</td>` +
-      `<td class="word ${e.reason === "expired" ? "expired" : "stopped"}">${word}</td></tr>`;
+    return `<li>${clock(e.start)} · ${dur(e.end - e.start)} of ${e.planned ? dur(e.planned) : "no limit"} · ` +
+      `<b class="${e.reason === "expired" ? "expired" : "stopped"}">${word}</b></li>`;
   }).join("");
-  $("log").innerHTML = `<table><caption class="sr" style="display:none">Recent sessions</caption>` +
-    `<thead><tr><th scope="col">Started</th><th scope="col">Lasted</th><th scope="col">Set for</th><th scope="col">Result</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
-const RING = 2 * Math.PI * 43;
-// ---- calendar ----
-let calMonth = new Date(); calMonth.setDate(1); calMonth.setHours(0, 0, 0, 0);
-const dayKey = (d) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-function renderCal() {
-  const first = new Date(calMonth), y = first.getFullYear(), m = first.getMonth();
-  $("calTitle").textContent = first.toLocaleDateString([], { month: "long", year: "numeric" });
-  const used = new Set((state.log || []).map((e) => dayKey(new Date(e.start * 1000))));
-  if (state.active) used.add(dayKey(new Date(state.start * 1000)));
-  const endsKey = state.active && state.ends ? dayKey(new Date(state.ends * 1000)) : null;
-  const todayKey = dayKey(new Date());
-  let html = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => `<div class="dow" role="columnheader">${d}</div>`).join("");
-  const lead = (first.getDay() + 6) % 7;                 // Monday-first
-  const start = new Date(y, m, 1 - lead);
-  const weeks = Math.ceil((lead + new Date(y, m + 1, 0).getDate()) / 7);
-  for (let i = 0; i < weeks * 7; i++) {
-    const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i), k = dayKey(d);
-    const cls = ["day", d.getMonth() !== m && "out", k === todayKey && "today", used.has(k) && "used", k === endsKey && "ends"].filter(Boolean).join(" ");
-    const label = d.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" }) +
-      (used.has(k) ? ", Mac was kept awake" : "") + (k === endsKey ? ", Mac can sleep after " + clock(state.ends) : "");
-    html += `<div class="${cls}" role="gridcell" aria-label="${label}"><span>${d.getDate()}</span></div>`;
+const CX = 160, CY = 170;
+const pt = (r, deg) => [CX + r * Math.sin(deg * Math.PI / 180), CY - r * Math.cos(deg * Math.PI / 180)];
+const dialAngle = (ms) => { const d = new Date(ms); return ((d.getHours() % 12) + d.getMinutes() / 60 + d.getSeconds() / 3600) * 30; };
+
+function buildDial() {
+  const ROMAN = ["XII", "I", "II", "III", "IIII", "V", "VI", "VII", "VIII", "IX", "X", "XI"];
+  let h = "";
+  for (let i = 0; i < 60; i++) {
+    const hr = i % 5 === 0, [x1, y1] = pt(hr ? 108 : 112, i * 6), [x2, y2] = pt(118, i * 6);
+    h += `<line class="tick${hr ? " hr" : ""}" x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" />`;
   }
-  $("cal").innerHTML = html;
-  const today = new Date().toDateString();
-  const secs = (state.log || []).filter((e) => new Date(e.start * 1000).toDateString() === today).reduce((a, e) => a + (e.end - e.start), 0)
-    + (state.active ? Math.max(0, nowSrv() - Math.max(state.start, new Date().setHours(0, 0, 0, 0) / 1000)) : 0);
-  $("summary").innerHTML = state.active
-    ? (state.ends ? `Sleep allowed after <b>${clock(state.ends)}</b>` : "<b>No end time</b> · until you stop it") + ` · today <b>${dur(secs)}</b>`
-    : secs ? `Awake today <b>${dur(secs)}</b>` : "No sessions yet";
+  ROMAN.forEach((r, i) => { const [x, y] = pt(90, i * 30); h += `<text class="num" x="${x.toFixed(1)}" y="${y.toFixed(1)}">${r}</text>`; });
+  $("dialMarks").innerHTML = h;
+}
+
+// Awake band on the bezel: from the current time of day to the end time.
+function drawSpan(now, ends) {
+  const span = $("span"), gem = $("gem");
+  span.classList.remove("open"); gem.style.display = "none";
+  if (!state.active) { span.setAttribute("d", ""); return; }
+  const R = 125;
+  if (!ends) {                                  // no end time: dotted full ring
+    span.classList.add("open");
+    span.setAttribute("d", `M${CX} ${CY - R} A${R} ${R} 0 1 1 ${CX - 0.01} ${CY - R}`);
+    return;
+  }
+  const a0 = dialAngle(now * 1000), left = Math.max(0, ends - now);
+  if (left >= 43200) { span.setAttribute("d", `M${CX} ${CY - R} A${R} ${R} 0 1 1 ${CX - 0.01} ${CY - R}`); return; }
+  const a1 = a0 + left / 120;                   // 12 h per revolution = 30 deg per hour
+  const [x0, y0] = pt(R, a0), [x1, y1] = pt(R, a1);
+  span.setAttribute("d", left < 1 ? "" : `M${x0.toFixed(2)} ${y0.toFixed(2)} A${R} ${R} 0 ${a1 - a0 > 180 ? 1 : 0} 1 ${x1.toFixed(2)} ${y1.toFixed(2)}`);
+  gem.setAttribute("transform", `translate(${x1.toFixed(2)} ${y1.toFixed(2)}) rotate(${a1.toFixed(1)})`);
+  gem.style.display = "";
+}
+
+function drawHands() {
+  const d = new Date(), s = d.getSeconds() + d.getMilliseconds() / 1000, m = d.getMinutes() + s / 60, h = (d.getHours() % 12) + m / 60;
+  $("hHour").setAttribute("transform", `translate(${CX} ${CY}) rotate(${(h * 30).toFixed(2)})`);
+  $("hMin").setAttribute("transform", `translate(${CX} ${CY}) rotate(${(m * 6).toFixed(2)})`);
+  $("hSec").setAttribute("transform", `translate(${CX} ${CY}) rotate(${(Math.floor(s) * 6)})`);
 }
 
 function tick() {
@@ -346,7 +372,7 @@ function tick() {
     $("status").textContent = "Mac can sleep normally";
     $("faceTime").textContent = "--:--:--";
     $("faceCap").textContent = "Not running";
-    $("ring").style.strokeDashoffset = RING;
+    drawSpan(0, null);
     $("clockLabel").textContent = "Not running";
     $("since").textContent = "—";
     return;
@@ -358,12 +384,12 @@ function tick() {
     const left = Math.max(0, state.ends - n);
     $("faceTime").textContent = hms(left);
     $("faceCap").textContent = "Time left";
-    $("ring").style.strokeDashoffset = RING * (1 - left / Math.max(1, state.ends - state.start));
+    drawSpan(n, state.ends);
     $("clockLabel").textContent = "Time left · Mac can sleep after " + clock(state.ends);
   } else {
     $("faceTime").textContent = hms(Math.max(0, n - state.start));
     $("faceCap").textContent = "Awake for";
-    $("ring").style.strokeDashoffset = 0;
+    drawSpan(n, null);
     $("clockLabel").textContent = "Awake for · no end time, runs until you stop it";
   }
 }
@@ -371,7 +397,7 @@ function tick() {
 function apply(s) {
   state = s;
   if (s.now) skew = s.now - Date.now() / 1000;
-  tick(); renderLog(); renderChips(); renderCal();
+  tick(); renderLog(); renderChips();
 }
 
 async function api(path, body) {
@@ -399,8 +425,7 @@ async function restart(mins, display) {
 }
 
 async function boot() {
-  $("prev").onclick = () => { calMonth.setMonth(calMonth.getMonth() - 1); renderCal(); };
-  $("next").onclick = () => { calMonth.setMonth(calMonth.getMonth() + 1); renderCal(); };
+  buildDial(); drawHands();
   renderChips();
   fused.params.onChange(renderChips);
   $("go").onclick = toggle;
@@ -419,19 +444,19 @@ async function boot() {
   let st = null;
   try { st = await fused.daemon.status(); } catch (e) { /* offline */ }
   if (st && st.running) await api("state");
-  else { tick(); renderLog(); renderCal(); }
+  else { tick(); renderLog(); }
   setInterval(async () => {
     const s = await fused.daemon.status().catch(() => null);
     if (s && s.running && state.active) api("state");
     else if (s && !s.running && state.active) apply({ active: false, log: state.log });
   }, 5000);
-  setInterval(tick, 1000);
+  setInterval(() => { drawHands(); tick(); }, 1000);
   fused.daemon.watch((s) => { if (s.running) api("state"); else apply({ active: false, log: state.log }); });
 }
 
 if (PREVIEW) {
   document.body.classList.add("preview");
-  renderChips(); tick(); renderLog(); renderCal();
+  buildDial(); drawHands(); renderChips(); tick(); renderLog();
 } else {
   boot();
 }
