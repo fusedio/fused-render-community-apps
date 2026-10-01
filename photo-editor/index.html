@@ -228,6 +228,55 @@
   .layer-foot .icon-btn svg { width: 14px; height: 14px; }
   .layer-foot .spacer { flex: 1; }
 
+  .layer-row.picked { box-shadow: inset 3px 0 0 var(--accent); background: var(--accent-soft); }
+  .layer-controls.aligning { display: block; }
+  .align-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; }
+  .align-bar .align-note { width: 100%; font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+  .align-bar .icon-btn { width: 24px; height: 24px; }
+  .align-bar .icon-btn svg { width: 15px; height: 15px; }
+  .align-bar .ghost-btn.tiny { margin-left: auto; height: 22px; padding: 0 8px; font-size: 11px; }
+  .left-pane { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  .left-pane[hidden] { display: none; }
+  .side-list { flex: 1; overflow-y: auto; padding: 4px 0; }
+  .side-foot { flex: 0 0 auto; border-top: 1px solid var(--line); background: var(--surface-2); padding: 8px 10px; font-size: 11px; color: var(--muted); line-height: 1.5; }
+  .side-foot button { color: var(--accent); font-size: 11px; font-weight: 600; padding: 0; }
+  .side-row {
+    display: grid; grid-template-columns: 44px 1fr auto; gap: 8px; align-items: center; width: 100%; text-align: left;
+    padding: 5px 8px; border-bottom: 1px solid var(--line); color: var(--ink); cursor: pointer; min-height: 44px;
+  }
+  .side-row:hover { background: var(--surface-2); }
+  .side-row.current { background: var(--accent-soft); box-shadow: inset 2px 0 0 var(--accent); }
+  .side-row .thumb { width: 44px; height: 34px; border-radius: 3px; background: var(--surface-3); object-fit: contain; display: block; }
+  .side-row .text { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .side-row .title { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .side-row .sub { font-size: 10.5px; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .side-row .who { font-size: 9.5px; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; padding: 1px 5px; border-radius: 3px; background: var(--surface-3); color: var(--muted); }
+  .side-row .who.agent { background: var(--accent-soft); color: var(--accent); }
+  .side-row .del { opacity: 0; width: 22px; height: 22px; border-radius: 4px; color: var(--faint); display: grid; place-items: center; }
+  .side-row:hover .del { opacity: 1; }
+  .side-row .del:hover { color: var(--danger); background: var(--danger-soft); }
+  .side-row .del svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+
+  .save-state {
+    font-size: 11.5px; color: var(--faint); padding: 3px 7px; border-radius: 4px; border: 1px solid transparent; white-space: nowrap;
+  }
+  .save-state:hover { color: var(--ink); border-color: var(--line-soft); background: var(--surface-2); }
+  .save-state.busy { color: var(--muted); }
+  .save-state.error { color: var(--danger); }
+  .save-state[hidden] { display: none; }
+
+  .recent { margin-top: 20px; text-align: left; }
+  .recent:empty { display: none; }
+  .recent h3 { margin: 0 0 8px; font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--faint); }
+  .recent-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 10px; }
+  .recent-card { text-align: left; border-radius: 6px; padding: 6px; border: 1px solid var(--line-soft); background: var(--surface-2); color: var(--ink); cursor: pointer; min-width: 0; }
+  .recent-card:hover { border-color: var(--accent); }
+  .recent-card img, .recent-card .ph { width: 100%; height: 70px; object-fit: contain; display: block; border-radius: 3px; background: var(--surface-3); }
+  .recent-card .title { margin-top: 5px; font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .recent-card .sub { font-size: 10.5px; color: var(--faint); }
+
+  .toast button.act { margin-left: 10px; color: var(--accent); font-weight: 600; font-size: 12.5px; padding: 0; }
+
   .empty-layers { padding: 26px 16px; text-align: center; color: var(--faint); font-size: 12px; line-height: 1.6; }
 
   .add-menu {
@@ -254,7 +303,7 @@
   .drop-veil { position: absolute; inset: 0; display: grid; place-items: center; padding: 40px; z-index: 3; }
   .drop-veil.hidden { display: none; }
   .drop-card {
-    width: min(420px, 100%); padding: 40px 32px; border: 1px dashed var(--line-soft); border-radius: 10px;
+    width: min(540px, 100%); max-height: 100%; overflow-y: auto; padding: 40px 32px; border: 1px dashed var(--line-soft); border-radius: 10px;
     background: var(--surface); text-align: center; transition: border-color 0.12s, background 0.12s; box-shadow: var(--shadow);
   }
   .drop-veil.dragging .drop-card { border-color: var(--accent); background: var(--accent-soft); }
@@ -319,6 +368,23 @@
     display: flex; flex-direction: column; min-height: 0;
   }
   .props .panel-tabs button { padding: 0 10px; }
+
+  /* ---------- Collapsible side panels ---------- */
+  .panel-tabs .panel-collapse {
+    flex: 0 0 30px; padding: 0; border-right: 0; background: var(--bg); color: var(--faint); display: grid; place-items: center;
+  }
+  .panel-tabs .panel-collapse:hover { color: var(--ink-strong); background: var(--surface-3); }
+  .panel-collapse svg, .panel-strip svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .layers.collapsed, .props.collapsed { display: none; }
+  .panel-strip {
+    flex: 0 0 26px; display: none; flex-direction: column; align-items: center; gap: 10px; padding: 9px 0;
+    background: var(--surface); color: var(--muted); cursor: pointer;
+  }
+  .panel-strip.left { border-right: 1px solid var(--line); }
+  .panel-strip.right { border-left: 1px solid var(--line); }
+  .panel-strip.show { display: flex; }
+  .panel-strip:hover { color: var(--ink-strong); background: var(--surface-2); }
+  .panel-strip .vlabel { -webkit-writing-mode: vertical-rl; writing-mode: vertical-rl; font-size: 11px; font-weight: 600; letter-spacing: 0.02em; }
   .props-body { flex: 1; overflow-y: auto; padding: 0 0 20px; }
 
   .section { border-bottom: 1px solid var(--line); }
@@ -565,6 +631,7 @@
   <header class="topbar">
     <div class="brand"><span class="brand-mark"><svg viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/></svg></span><span>Photo Editor</span></div>
     <input class="file-name" id="fileName" value="Untitled" spellcheck="false" />
+    <button class="save-state" id="saveState" title="Autosaved. Click or press ⌘S to save a PNG copy to the save folder." hidden></button>
     <span class="doc-meta link" id="docMeta" title="Page setup"></span>
     <div class="spacer"></div>
 
@@ -588,8 +655,12 @@
   <div class="body">
     <nav class="toolbar" id="toolbar"></nav>
 
-    <aside class="layers">
-      <div class="panel-tabs"><button class="active">Layers</button><span class="fill"></span></div>
+    <button class="panel-strip left" id="leftStrip" title="Show Layers, History and Files (Tab shows all panels)"><svg viewBox="0 0 24 24"><path d="M13 17l5-5-5-5"/><path d="M6 17l5-5-5-5"/></svg><span class="vlabel">Layers</span></button>
+    <aside class="layers" id="leftPanel">
+      <div class="panel-tabs" id="leftTabs"><button class="active" data-ltab="layers">Layers</button><button data-ltab="history">History</button><button data-ltab="files">Files</button><span class="fill"></span><button class="panel-collapse" data-collapse="left" title="Collapse panel (Tab hides all panels)"><svg viewBox="0 0 24 24"><path d="M11 17l-5-5 5-5"/><path d="M18 17l-5-5 5-5"/></svg></button></div>
+      <div class="left-pane" id="paneHistory" hidden><div class="side-list" id="historyList"></div></div>
+      <div class="left-pane" id="paneFiles" hidden><div class="side-list" id="filesList"></div><div class="side-foot" id="filesFoot"></div></div>
+      <div class="left-pane" id="paneLayers">
       <div class="layer-controls" id="layerControls"></div>
       <div class="layer-list" id="layerList"></div>
       <div class="layer-foot">
@@ -599,6 +670,7 @@
         <button class="icon-btn" id="downLayerBtn" title="Send backward (⌘[)"><svg viewBox="0 0 24 24"><path d="M12 5v14M6 13l6 6 6-6"/></svg></button>
         <span class="spacer"></span>
         <button class="icon-btn" id="delLayerBtn" title="Delete layer"><svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M18 7l-1 13H7L6 7"/></svg></button>
+      </div>
       </div>
     </aside>
 
@@ -619,6 +691,7 @@
             <button class="ghost-btn" id="browseBtn">Open photo</button>
           </div>
           <input type="file" id="fileInput" accept="image/*" hidden />
+          <div class="recent" id="recentDocs"></div>
         </div>
       </div>
 
@@ -629,7 +702,8 @@
       <div class="toast" id="toast"></div>
     </main>
 
-    <aside class="props">
+    <button class="panel-strip right" id="rightStrip" title="Show Properties, Adjust, Filters and Generative (Tab shows all panels)"><svg viewBox="0 0 24 24"><path d="M11 17l-5-5 5-5"/><path d="M18 17l-5-5 5-5"/></svg><span class="vlabel">Properties</span></button>
+    <aside class="props" id="rightPanel">
       <div class="panel-tabs" id="propsTabs"></div>
       <div class="props-body" id="propsBody"></div>
     </aside>
@@ -696,9 +770,15 @@
   const themeColor = (token, fallback) =>
     (getComputedStyle(document.documentElement).getPropertyValue(token).trim() || fallback);
 
-  function toast(message, isError) {
+  function toast(message, isError, action) {
     const node = $("toast");
     node.textContent = message;
+    if (action) {
+      const button = document.createElement("button");
+      button.className = "act"; button.textContent = action.label;
+      button.onclick = () => { node.classList.remove("show"); action.run(); };
+      node.appendChild(button);
+    }
     node.classList.toggle("error", !!isError);
     node.classList.add("show");
     clearTimeout(toast._timer);
@@ -1352,8 +1432,9 @@
   }
 
   let historyTimer = null;
-  function commitHistory(label) {
+  function commitHistory(label, opts) {
     clearTimeout(historyTimer);
+    if (!(opts && opts.local)) scheduleSave(label);
     state.history = state.history.slice(0, state.historyIndex + 1);
     state.history.push({ label, snap: snapshot() });
     if (state.history.length > 60) state.history.shift();
@@ -1377,6 +1458,670 @@
     renderHistoryButtons();
     const label = state.history[delta < 0 ? next + 1 : next].label;
     toast((delta < 0 ? "Undo " : "Redo ") + label);
+    scheduleSave((delta < 0 ? "undo " : "redo ") + label);
+  }
+
+  // ---------------------------------------------------------------- documents on disk
+  //
+  // Every commitHistory() autosaves a revision through docstore.py, so nothing
+  // is lost when you start another document, and each step lands in the
+  // History tab. Claude edits the same files through the MCP tools in agent/;
+  // pollDisk() notices their revisions in current.json and loads them.
+
+  const CURRENT_FILE = ".fused/data/documents/current.json";
+  const store = { gen: 0, id: null, newId: "", prevId: "", rev: 0, pending: null, timer: null, error: "", seq: null, leftTab: "layers", steps: [], docs: [], saveDir: "",
+    queue: Promise.resolve(), inflight: 0, jobSeq: 0, staleThrough: 0, revOf: {}, retry: 0, recovering: false, deleted: new Set() };
+  const docPy = (params) => fused.runPython(PY, params, { key: null });
+  const baseName = (path) => String(path || "").split("/").pop();
+
+  function setDocParam() {
+    if ((fused.params.get("doc") || "") !== (store.id || "")) fused.params.set("doc", store.id || "");
+    tabSet(OPEN_KEY, store.id || "");
+  }
+
+  // Refresh safety. sessionStorage belongs to this tab and survives a reload,
+  // so it remembers which document the tab had open (in case the shell reloads
+  // without the ?doc= param) and holds the newest step until the disk has it:
+  // a refresh inside the autosave delay, or before a brand-new document's
+  // first save lands, then recovers that step instead of dropping it.
+  const OPEN_KEY = "photo_editor.openDoc", STASH_KEY = "photo_editor.unsaved";
+  // Same shape as docstore.new_id(): d<yyyymmdd>-<8 hex>.
+  function newDocId() {
+    const b = new Uint8Array(4); crypto.getRandomValues(b);
+    const d = new Date(), pad = (n) => String(n).padStart(2, "0");
+    return "d" + d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + "-" + Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
+  }
+  function tabGet(key) { try { return sessionStorage.getItem(key) || ""; } catch (e) { return ""; } }
+  function tabSet(key, value) { try { if (value) sessionStorage.setItem(key, value); else sessionStorage.removeItem(key); } catch (e) { } }
+  function stashPending() {
+    if (!store.id && !store.newId) store.newId = newDocId();
+    try { tabSet(STASH_KEY, JSON.stringify({ id: store.id || store.newId, label: store.pending || "edit", name: state.fileName, snap: snapshot() })); } catch (e) { }
+  }
+  // Two snapshots show the same page (image URLs aside, which the disk never keeps).
+  function snapKey(snap) {
+    return JSON.stringify(Object.assign({}, snap, { layers: (snap.layers || []).map((l) => { const c = Object.assign({}, l); delete c.src; return c; }) }));
+  }
+  const sameSnap = (a, b) => !!a && !!b && snapKey(a) === snapKey(b);
+  function readStash() { try { return JSON.parse(tabGet(STASH_KEY) || "null"); } catch (e) { return null; } }
+
+  function recoverStash(stash, loaded) {
+    if (!stash || !stash.snap) return;
+    tabSet(STASH_KEY, "");
+    if (stash.id && stash.id === store.id) {
+      // Compare content, not revision numbers: a save still in flight at the
+      // reload can land before or after the load, with this snapshot or an
+      // older one. Only a disk copy that already matches makes the stash moot.
+      if (loaded && sameSnap(loaded.snap, stash.snap)) return;
+      restore(hydrate(stash.snap));
+      store.recovering = true;
+      commitHistory(stash.label);
+      toast("Recovered your last change from before the reload");
+      return;
+    }
+    // A document whose first save never landed, or whose record is gone:
+    // bring it back under its own id (a create that did land just takes the
+    // snapshot as its next step) so the work is saved again.
+    store.prevId = store.id || "";
+    store.gen++; store.id = null; store.rev = 0; store.newId = stash.id || ""; store.recovering = true;
+    state.history = []; state.historyIndex = -1;
+    restore(hydrate(stash.snap));
+    state.fileName = stash.name || "Untitled"; $("fileName").value = state.fileName;
+    $("dropVeil").classList.add("hidden");
+    setDropCard();
+    fitToScreen();
+    commitHistory(stash.label || "recovered");
+    toast("Recovered “" + state.fileName + "” from before the reload");
+  }
+
+  function hydrate(snap) {
+    (snap.layers || []).forEach((l) => { if (l.type === "image" && !l.src && l.workingPath) l.src = fused.rawUrl(l.workingPath); });
+    return snap;
+  }
+
+  // The page as a small PNG, composed the way renderOutput() composes an export.
+  function pageCanvas(maxSide) {
+    const k = Math.min(1, maxSide / Math.max(doc.width, doc.height)), z = state.zoom;
+    const out = document.createElement("canvas");
+    out.width = Math.max(1, Math.round(doc.width * k)); out.height = Math.max(1, Math.round(doc.height * k));
+    const ctx = out.getContext("2d");
+    if (!doc.transparent) { ctx.fillStyle = doc.background; ctx.fillRect(0, 0, out.width, out.height); }
+    const region = { x: stage.x(), y: stage.y(), width: doc.width * z, height: doc.height * z, pixelRatio: k / z };
+    doc.layers.forEach((layer) => {
+      if (!layer.visible) return;
+      const canvas = layer.konva.toCanvas(region);
+      ctx.save();
+      ctx.globalCompositeOperation = layer.blend === "normal" ? "source-over" : layer.blend;
+      if (layer.type === "image") { const f = previewFilter(layer); if (f && "filter" in ctx) ctx.filter = f; }
+      ctx.drawImage(canvas, 0, 0, out.width, out.height);
+      ctx.restore();
+    });
+    return out;
+  }
+
+  function thumbData() {
+    try { return pageCanvas(320).toDataURL("image/png"); } catch (e) { return ""; }
+  }
+
+  function scheduleSave(label) {
+    if (!doc.ready) return;
+    store.pending = label || store.pending || "edit";
+    stashPending();
+    clearTimeout(store.timer);
+    store.timer = setTimeout(flushSave, 350);
+    renderSaveState();
+  }
+
+  // Hand the pending step to the save queue now. The snapshot is taken here,
+  // synchronously, so starting or opening another document straight after
+  // cannot lose it. Returns a promise that settles once everything queued so
+  // far is on disk (or has failed).
+  function flushSaveNow() {
+    if (store.pending) { clearTimeout(store.timer); return flushSave(); }
+    return store.queue;
+  }
+
+  function flushSave() {
+    const label = store.pending;
+    if (!label || !doc.ready) return store.queue;
+    store.pending = null;
+    if (!store.id && !store.newId) store.newId = newDocId();
+    const job = {
+      seq: ++store.jobSeq, gen: store.gen, id: store.id, newId: store.newId, prev: store.id ? "" : store.prevId,
+      rev: store.rev, label, name: state.fileName || "Untitled", recovering: store.recovering, tries: 0,
+      params: { snap_json: JSON.stringify(snapshot()), label, thumb: thumbData() },
+    };
+    store.recovering = false;
+    return enqueueSave(job);
+  }
+
+  function enqueueSave(job) {
+    store.inflight++; renderSaveState();
+    store.queue = store.queue.then(() => runSave(job)).finally(() => {
+      store.inflight--;
+      renderSaveState();
+      refreshSide();
+    });
+    return store.queue;
+  }
+
+  async function runSave(job) {
+    const docId = job.id || job.newId;
+    // Deleted, or overtaken by a revision loaded after a conflict.
+    if (store.deleted.has(docId) || job.seq <= store.staleThrough) return;
+    const current = () => store.gen === job.gen;
+    try {
+      if (!job.id) {
+        const r = await docPy(Object.assign({}, job.params, { action: "doc_create", doc_id: job.newId, name: job.name, prev_doc: job.prev }));
+        store.revOf[r.id] = r.rev;
+        if (current()) { store.id = r.id; store.rev = r.rev; store.prevId = ""; setDocParam(); }
+      } else {
+        const base = store.revOf[job.id] != null ? store.revOf[job.id] : job.rev;
+        const r = await docPy(Object.assign({}, job.params, { action: "doc_save", doc_id: job.id, base_rev: String(base) }));
+        if (!r.conflict) {
+          store.revOf[job.id] = r.rev;
+          if (current()) store.rev = r.rev;
+        } else if (sameSnap(r.doc.snap, JSON.parse(job.params.snap_json))) {
+          // Our own write already landed (a flush on reload, say): nothing to redo.
+          store.revOf[job.id] = r.rev;
+          if (current()) store.rev = r.rev;
+        } else if (job.recovering && r.doc.source !== "agent") {
+          // Recovering after a reload: an older save of ours landed first.
+          // The recovered step is newer, so write it on top.
+          store.revOf[job.id] = r.rev;
+          job.recovering = false;
+          return runSave(job);
+        } else if (current()) {
+          store.staleThrough = store.jobSeq;
+          store.pending = null; clearTimeout(store.timer);
+          applyRecord(r.doc, "update");
+          toast(r.doc.source === "agent"
+            ? "Claude changed this document at the same moment — showing its version. Redo your last step if you still want it."
+            : "This document changed in another window — showing that version. Redo your last step if you still want it.", true);
+        }
+      }
+      store.error = ""; store.retry = 0;
+      if (!store.pending && current() && store.inflight <= 1) tabSet(STASH_KEY, "");
+    } catch (error) {
+      console.warn("[photo_editor] autosave failed", error);
+      if (store.deleted.has(docId)) return;
+      store.error = error.message || String(error);
+      const wait = Math.min(30000, 1000 * 2 ** store.retry++);
+      if (current()) {
+        // Retry with whatever is on screen by then (this step or newer); the
+        // stash keeps it across a reload meanwhile.
+        store.pending = store.pending || job.label;
+        clearTimeout(store.timer);
+        store.timer = setTimeout(flushSave, wait);
+      } else if (job.tries++ < 3) {
+        // A document the page has already left: nothing newer will follow, so
+        // retry this very step.
+        setTimeout(() => enqueueSave(job), wait);
+      }
+    }
+  }
+
+  function renderSaveState() {
+    const node = $("saveState");
+    node.hidden = !doc.ready;
+    const busy = store.inflight > 0 || !!store.pending;
+    node.classList.toggle("busy", busy);
+    node.classList.toggle("error", !!store.error && !busy);
+    node.textContent = busy ? "Saving…" : store.error ? "Not saved" : store.id ? "Saved" : "";
+    node.title = store.error && !busy ? "Autosave failed: " + store.error : "Autosaved with every step. Click or press ⌘S to save a PNG copy to " + (store.saveDir || "~/Pictures/Photo Editor") + ".";
+  }
+
+  // Swap in a revision from disk. `why` is "open" (user picked it), "switch"
+  // (Claude opened it), or "update" (a newer revision of this document).
+  function applyRecord(record, why) {
+    const snap = hydrate(JSON.parse(JSON.stringify(record.snap)));
+    const resize = !doc.ready || why !== "update" || snap.width !== doc.width || snap.height !== doc.height;
+    const keep = doc.activeId;
+    if (why !== "update") { state.history = []; state.historyIndex = -1; store.gen++; }
+    store.id = record.id; store.rev = record.rev; store.revOf[record.id] = record.rev; store.pending = null; clearTimeout(store.timer);
+    state.fileName = record.name || "Untitled"; $("fileName").value = state.fileName;
+    if (why === "update" && keep && snap.layers.some((l) => l.id === keep) && record.source !== "agent") snap.activeId = keep;
+    if (why !== "update") { closeCropOverlay(); if (state.tool !== "move") setTool("move"); }
+    restore(snap);
+    $("dropVeil").classList.add("hidden");
+    setDropCard();
+    if (resize) fitToScreen();
+    commitHistory(record.label || "load", { local: true });
+    setDocParam();
+    renderSaveState();
+    refreshSide();
+  }
+
+  async function loadDoc(id, why) {
+    const r = await docPy({ action: "doc_load", doc_id: id });
+    applyRecord(r.doc, why);
+    return r.doc;
+  }
+
+  async function openDoc(id) {
+    if (id === store.id && doc.ready) return;
+    flushSaveNow();
+    try { const d = await loadDoc(id, "open"); toast("Opened " + d.name); }
+    catch (error) { toast(error.message || String(error), true); }
+  }
+
+  // Claude's edits arrive as new revisions; the page follows along. Reading one
+  // small JSON file a second is cheap, and a Python call only happens when it
+  // actually changed.
+  async function pollDisk() {
+    if (document.hidden) return;
+    let cur;
+    try { cur = JSON.parse(await fused.readFile(CURRENT_FILE)); } catch (e) { return; }
+    if (!cur || !cur.seq || cur.seq === store.seq) return;
+    // Mid-gesture or mid-save: look again next tick rather than yank the page.
+    // A running AI edit / upscale / cutout swaps pixels into a layer when it
+    // finishes, so it must not be rebuilt underneath it either.
+    if (store.inflight || store.pending || editingLayer || shaping.active || state.tool === "crop" ||
+        state.generating || state.upscaling || state.bgBusy) return;
+    store.seq = cur.seq;
+    try {
+      if (cur.id === store.id) {
+        if (cur.rev > store.rev) {
+          const d = await loadDoc(cur.id, "update");
+          if (d.source === "agent") toast("Claude · " + d.label);
+        }
+      } else if (cur.source === "agent") {
+        flushSaveNow();
+        const d = await loadDoc(cur.id, "switch");
+        toast("Claude opened " + d.name);
+      }
+    } catch (error) { console.warn("[photo_editor] could not load a revision from disk", error); }
+  }
+
+  async function renameDoc(name) {
+    if (!store.id) return;
+    try { await docPy({ action: "doc_rename", doc_id: store.id, name: name || "Untitled" }); refreshSide(); }
+    catch (error) { toast(error.message || String(error), true); }
+  }
+
+  async function reveal(path) {
+    try { await docPy({ action: "reveal", path: path || "" }); } catch (error) { toast(error.message || String(error), true); }
+  }
+
+  // ⌘S / the "Saved" chip: a full-size PNG copy in the save folder.
+  async function saveCopy() {
+    if (!doc.ready) return;
+    closeTextEditor(false);
+    flushSaveNow();
+    try {
+      const dataUrl = pageCanvas(Math.max(doc.width, doc.height)).toDataURL("image/png");
+      if (!doc.localSession) doc.localSession = newSessionId();
+      const session = (doc.layers.find((l) => l.type === "image") || {}).sessionId || doc.localSession;
+      const frame = await py({ action: "save_frame", session_id: session, image_data: dataUrl });
+      const result = await py({ action: "export", session_id: session, source: frame.path, fmt: "png", background: doc.background, dpi: String(doc.dpi), save: "true", file_name: state.fileName || "design" });
+      toast("Saved " + baseName(result.path) + " to " + (store.saveDir || "~/Pictures/Photo Editor").replace(/^.*\/(Pictures\/)/, "$1"), false,
+        { label: "Show in Finder", run: () => reveal(result.path) });
+    } catch (error) { toast(error.message || String(error), true); }
+  }
+
+  // ---------------------------------------------------------------- collapsible panels
+  //
+  // Like Adobe's docks: each side panel folds into a thin strip that brings it
+  // back, Tab hides or shows both, and View > Reset panel layout restores them.
+  // Remembered per browser; it is a viewing preference, not document state.
+
+  const panels = (() => {
+    try { return Object.assign({ left: true, right: true }, JSON.parse(localStorage.getItem("photo_editor.panels") || "{}")); }
+    catch (e) { return { left: true, right: true }; }
+  })();
+
+  function setPanels(left, right, quiet) {
+    const before = $("stageWrap").clientWidth, fitted = doc.ready && Math.abs(state.zoom - state.fitZoom) < 1e-6;
+    panels.left = !!left; panels.right = !!right;
+    $("leftPanel").classList.toggle("collapsed", !panels.left);
+    $("rightPanel").classList.toggle("collapsed", !panels.right);
+    $("leftStrip").classList.toggle("show", !panels.left);
+    $("rightStrip").classList.toggle("show", !panels.right);
+    try { localStorage.setItem("photo_editor.panels", JSON.stringify(panels)); } catch (e) { }
+    if (quiet || !doc.ready) return;
+    // Keep the page where the eye is: refit if it was fitted, else recentre.
+    requestAnimationFrame(() => {
+      if (fitted) fitToScreen();
+      else { stage.x(stage.x() + ($("stageWrap").clientWidth - before) / 2); stage.batchDraw(); }
+      positionFloatBar(); scheduleChrome();
+    });
+  }
+
+  function togglePanels() {
+    if (panels.left || panels.right) setPanels(false, false); else setPanels(true, true);
+  }
+
+  // ---------------------------------------------------------------- View settings shared with Claude
+  //
+  // The page publishes its View settings (and the grid spacing in page pixels,
+  // which for "Auto" follows the zoom) to view.json, so the agent tools snap
+  // to the same grid, guides and edges you see. set_view writes the same file
+  // with source "agent"; pollView() applies it here.
+
+  const VIEW_FILE = ".fused/data/documents/view.json";
+  const REQUEST_FILE = ".fused/data/documents/request.json";
+  const VIEW_SHARED = ["rulers", "grid", "gridSize", "snap", "guides", "printGuides", "unit"];
+  const shared = { viewSeq: "", published: "", viewTimer: null, reqSeen: "", capturing: false };
+
+  // gridSpacing() without the "is the grid on" check.
+  function gridStepPx() {
+    const m = /^([\d.]+)(mm|in|px)$/.exec(state.view.gridSize || "");
+    const unit = m ? m[2] : state.view.unit;
+    const major = m ? Number(m[1]) : rulerScale(unit).major;
+    const step = major * unitPx(unit), z = state.zoom;
+    return step / subdivisions(major, unit, step * z, 10);
+  }
+
+  function publishView() {
+    clearTimeout(shared.viewTimer);
+    shared.viewTimer = setTimeout(async () => {
+      const view = {};
+      VIEW_SHARED.forEach((k) => { view[k] = state.view[k]; });
+      if (doc.ready) { view.grid_step = Math.round(gridStepPx() * 1000) / 1000; view.grid_doc = store.id || ""; }
+      const text = JSON.stringify(view);
+      if (text === shared.published) return;
+      try {
+        const r = await docPy({ action: "view_save", values_json: JSON.stringify({ view, base_seq: shared.viewSeq }) });
+        if (r.view && r.view.conflict) { applySharedView(r.view); return; }
+        shared.published = text; shared.viewSeq = r.view.seq;
+      } catch (e) { console.warn("[photo_editor] could not publish view settings", e); }
+    }, 400);
+  }
+
+  function applySharedView(view) {
+    shared.viewSeq = view.seq || "";
+    const changed = VIEW_SHARED.filter((k) => k in view && view[k] !== state.view[k]);
+    if (!changed.length) return;
+    changed.forEach((k) => { state.view[k] = view[k]; });
+    syncGuideNodes();
+    applyView();
+    toast("Claude · " + changed.map((k) => {
+      const item = VIEW_TOGGLES.find((t) => t[0] === k);
+      return typeof view[k] === "boolean" ? (item ? item[1] : k) + (view[k] ? " on" : " off") : k + " " + view[k];
+    }).join(", "));
+  }
+
+  async function pollView() {
+    let view;
+    try { view = JSON.parse(await fused.readFile(VIEW_FILE)); } catch (e) { return; }
+    if (!view || !view.seq || view.seq === shared.viewSeq) return;
+    if (view.source === "agent") applySharedView(view);
+    else shared.viewSeq = view.seq;
+  }
+
+  // ---------------------------------------------------------------- screenshots for Claude
+  //
+  // screenshot_editor writes request.json; the page that has that document
+  // open (at that revision or newer) renders it and posts the PNG back.
+
+  async function imagesReady(limitMs) {
+    const until = Date.now() + limitMs;
+    const ready = () => doc.layers.every((l) => l.type !== "image" || l.node.image());
+    while (Date.now() < until) {
+      if (ready()) return true;
+      await sleep(100);
+    }
+    return ready();
+  }
+
+  // The canvas area exactly as it is on screen: every Konva layer in order
+  // (artboard, your layers with their blend modes and live adjustments, mask,
+  // grid and guides, selection handles) plus the rulers.
+  function editorCanvas(maxSide) {
+    const wrap = $("stageWrap");
+    const W = wrap.clientWidth, H = wrap.clientHeight - 22;
+    const pr = Math.min(window.devicePixelRatio || 1, maxSide / Math.max(W, H));
+    const out = document.createElement("canvas");
+    out.width = Math.max(1, Math.round(W * pr)); out.height = Math.max(1, Math.round(H * pr));
+    const ctx = out.getContext("2d");
+    ctx.fillStyle = themeColor("--stage-bg", "#cfcfcf"); ctx.fillRect(0, 0, out.width, out.height);
+    stage.getLayers().forEach((kl) => {
+      if (!kl.visible()) return;
+      const canvas = kl.toCanvas({ x: 0, y: 0, width: W, height: H, pixelRatio: pr });
+      const owner = doc.layers.find((l) => l.konva === kl);
+      ctx.save();
+      if (owner) {
+        ctx.globalCompositeOperation = owner.blend === "normal" ? "source-over" : owner.blend;
+        if (owner.type === "image") { const f = previewFilter(owner); if (f && "filter" in ctx) ctx.filter = f; }
+      }
+      ctx.drawImage(canvas, 0, 0, out.width, out.height);
+      ctx.restore();
+    });
+    const origin = wrap.getBoundingClientRect();
+    ["rulerTop", "rulerLeft", "rulerCorner"].forEach((id) => {
+      const el = $(id);
+      if (!el || el.offsetParent === null || el.tagName !== "CANVAS") return;
+      const r = el.getBoundingClientRect();
+      ctx.drawImage(el, (r.left - origin.left) * pr, (r.top - origin.top) * pr, r.width * pr, r.height * pr);
+    });
+    return out;
+  }
+
+  async function pollRequests() {
+    if (shared.capturing) return;
+    let req;
+    try { req = JSON.parse(await fused.readFile(REQUEST_FILE)); } catch (e) { return; }
+    if (!req || !req.id || req.id === shared.reqSeen) return;
+    if (Date.now() / 1000 - (req.time || 0) > 30) { shared.reqSeen = req.id; return; }
+    // Not ours yet: the agent's pointer switches this page to the document,
+    // then the revision arrives; answer once both are here.
+    if (req.doc !== store.id || store.rev < req.rev || store.inflight || store.pending) return;
+    shared.reqSeen = req.id; shared.capturing = true;
+    try {
+      if (!(await imagesReady(4000))) {
+        // Blank image layers would pass for a real shot; let the agent fall
+        // back to the Python render, which reads the files itself.
+        await docPy({ action: "screenshot_save", request_id: req.id, image_data: "", values_json: JSON.stringify({ reason: "image layers still loading", rev: store.rev, doc: store.id }) });
+        return;
+      }
+      if (document.fonts && document.fonts.ready) await document.fonts.ready;
+      stage.draw();
+      const max = Math.max(200, Math.min(4096, Number(req.max_size) || 1600));
+      const canvas = req.mode === "editor" ? editorCanvas(max) : pageCanvas(max);
+      const meta = { width: canvas.width, height: canvas.height, mode: req.mode, rev: store.rev, doc: store.id,
+        zoom: Math.round(state.zoom * 1000) / 1000, scale: req.mode === "editor" ? null : Math.round(canvas.width / doc.width * 10000) / 10000 };
+      await docPy({ action: "screenshot_save", request_id: req.id, image_data: canvas.toDataURL("image/png"), values_json: JSON.stringify(meta) });
+    } catch (error) { console.warn("[photo_editor] screenshot for Claude failed", error); }
+    finally { shared.capturing = false; }
+  }
+
+  // ---------------------------------------------------------------- align & distribute
+  //
+  // Shift- or ⌘-click rows in the Layers list to pick several layers; the
+  // align bar then lines them up against each other. The Position menu aligns
+  // one layer to the page.
+
+  const alignSet = new Set();
+  const ALIGN_ICONS = {
+    left: ["M4 3v18", "M8 7h11v4H8z", "M8 13h6v4H8z"], center: ["M12 3v18", "M6 7h12v4H6z", "M8 13h8v4H8z"],
+    right: ["M20 3v18", "M5 7h11v4H5z", "M10 13h6v4h-6z"], top: ["M3 4h18", "M7 8h4v11H7z", "M13 8h4v6h-4z"],
+    middle: ["M3 12h18", "M7 6h4v12H7z", "M13 8h4v8h-4z"], bottom: ["M3 20h18", "M7 5h4v11H7z", "M13 10h4v6h-4z"],
+    distH: ["M4 3v18", "M20 3v18", "M10 7h4v10h-4z"], distV: ["M3 4h18", "M3 20h18", "M7 10h10v4H7z"],
+  };
+  const ALIGN_LABEL = { left: "left edges", center: "centres", right: "right edges", top: "tops", middle: "middles", bottom: "bottoms" };
+
+  function alignBarHtml() {
+    return '<div class="align-bar"><span class="align-note">' + alignSet.size + " layers</span>" +
+      ["left", "center", "right", "top", "middle", "bottom"].map((a) => '<button class="icon-btn" data-align-many="' + a + '" title="Align ' + ALIGN_LABEL[a] + '">' + icon(ALIGN_ICONS[a]) + "</button>").join("") +
+      '<button class="icon-btn" data-dist="h" title="Distribute horizontally"' + (alignSet.size < 3 ? " disabled" : "") + ">" + icon(ALIGN_ICONS.distH) + "</button>" +
+      '<button class="icon-btn" data-dist="v" title="Distribute vertically"' + (alignSet.size < 3 ? " disabled" : "") + ">" + icon(ALIGN_ICONS.distV) + "</button>" +
+      '<button class="ghost-btn tiny" data-align-clear title="Clear the selection (Esc)">Done</button></div>';
+  }
+
+  function wireAlignBar(root) {
+    root.querySelectorAll("[data-align-many]").forEach((b) => b.onclick = () => alignLayers(doc.layers.filter((l) => alignSet.has(l.id)), b.dataset.alignMany, "selection"));
+    root.querySelectorAll("[data-dist]").forEach((b) => b.onclick = () => distributeLayers(doc.layers.filter((l) => alignSet.has(l.id)), b.dataset.dist));
+    root.querySelectorAll("[data-align-clear]").forEach((b) => b.onclick = () => { alignSet.clear(); renderLayers(); });
+  }
+
+  // A text label and the box add_text() put behind it ("<name> box") move as
+  // one unit, the way the agent's align tools treat them.
+  function alignUnits(list) {
+    const isBoxOf = (b, t) => b.type === "rect" && t.type === "text" && b.name === t.name + " box";
+    return list.filter((l) => !list.some((t) => isBoxOf(l, t)))
+      .map((l) => [l].concat(doc.layers.filter((b) => !b.locked && isBoxOf(b, l))));
+  }
+  function unitBox(unit) {
+    const bs = unit.map(nodeBox);
+    const x = Math.min(...bs.map((b) => b.x)), y = Math.min(...bs.map((b) => b.y));
+    return { x, y, width: Math.max(...bs.map((b) => b.x + b.width)) - x, height: Math.max(...bs.map((b) => b.y + b.height)) - y };
+  }
+  function moveUnit(unit, dx, dy) { unit.forEach((l) => { l.node.move({ x: dx, y: dy }); afterNodeTransform(l); }); }
+
+  function alignLayers(list, how, ref) {
+    const units = alignUnits(list.filter((l) => l && !l.locked));
+    if (!units.length) return;
+    const boxes = units.map(unitBox);
+    let box;
+    if (ref === "page") { const t = trimRect(); box = { x: t.x, y: t.y, width: t.width, height: t.height }; }
+    else {
+      const x0 = Math.min(...boxes.map((b) => b.x)), y0 = Math.min(...boxes.map((b) => b.y));
+      box = { x: x0, y: y0, width: Math.max(...boxes.map((b) => b.x + b.width)) - x0, height: Math.max(...boxes.map((b) => b.y + b.height)) - y0 };
+    }
+    units.forEach((unit, i) => {
+      const b = boxes[i];
+      const dx = how === "left" ? box.x - b.x : how === "center" ? box.x + box.width / 2 - (b.x + b.width / 2) : how === "right" ? box.x + box.width - (b.x + b.width) : 0;
+      const dy = how === "top" ? box.y - b.y : how === "middle" ? box.y + box.height / 2 - (b.y + b.height / 2) : how === "bottom" ? box.y + box.height - (b.y + b.height) : 0;
+      moveUnit(unit, dx, dy);
+    });
+    commitHistory("align " + how + (ref === "page" ? " to page" : ""));
+  }
+
+  function distributeLayers(list, dir) {
+    const units = alignUnits(list.filter((l) => l && !l.locked));
+    if (units.length < 3) return;
+    const pos = dir === "h" ? "x" : "y", size = dir === "h" ? "width" : "height";
+    const items = units.map((u) => ({ u, b: unitBox(u) })).sort((a, b) => a.b[pos] - b.b[pos]);
+    const span = items[items.length - 1].b[pos] + items[items.length - 1].b[size] - items[0].b[pos];
+    const gap = (span - items.reduce((s, it) => s + it.b[size], 0)) / (items.length - 1);
+    let cursor = items[0].b[pos];
+    items.forEach(({ u, b }) => {
+      moveUnit(u, dir === "h" ? cursor - b.x : 0, dir === "h" ? 0 : cursor - b.y);
+      cursor += b[size] + gap;
+    });
+    commitHistory("distribute " + (dir === "h" ? "horizontally" : "vertically"));
+  }
+
+  // ---------------------------------------------------------------- History / Files tabs
+
+  function setLeftTab(tab) {
+    store.leftTab = tab;
+    document.querySelectorAll("#leftTabs [data-ltab]").forEach((b) => b.classList.toggle("active", b.dataset.ltab === tab));
+    $("paneLayers").hidden = tab !== "layers";
+    $("paneHistory").hidden = tab !== "history";
+    $("paneFiles").hidden = tab !== "files";
+    refreshSide();
+  }
+
+  const WHEN = (t) => {
+    const d = new Date((t || 0) * 1000), now = new Date();
+    return d.toDateString() === now.toDateString() ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : d.toLocaleDateString([], { month: "short", day: "numeric" }) + " " + d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  };
+  const thumbSrc = (path, bust) => path ? fused.rawUrl(path) + "&_t=" + encodeURIComponent(bust || "") : "";
+  const DEL_ICON = '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+
+  let sideTimer = null;
+  function refreshSide() {
+    clearTimeout(sideTimer);
+    sideTimer = setTimeout(() => {
+      if (store.leftTab === "history") renderHistoryTab();
+      else if (store.leftTab === "files") renderFilesTab();
+      if (!doc.ready) renderRecent();
+    }, 60);
+  }
+
+  async function renderHistoryTab() {
+    const list = $("historyList");
+    if (!store.id) {
+      list.innerHTML = '<div class="empty-layers">' + (doc.ready ? "Saving the first step…" : "Every step you or Claude take shows up here. Click one to go back to it.") + "</div>";
+      return;
+    }
+    let steps;
+    try { steps = (await docPy({ action: "doc_history", doc_id: store.id })).steps; } catch (e) { return; }
+    list.innerHTML = steps.slice().reverse().map((st) =>
+      '<button class="side-row' + (st.rev === store.rev ? " current" : "") + '" data-rev="' + st.rev + '" title="Go back to this step">' +
+      (st.thumb ? '<img class="thumb" src="' + thumbSrc(st.thumb, st.rev) + '" />' : '<span class="thumb"></span>') +
+      '<span class="text"><span class="title">' + st.rev + ". " + esc(st.label || "edit") + '</span><span class="sub">' + esc(WHEN(st.time)) + " · " + st.layers + " layer" + (st.layers === 1 ? "" : "s") + "</span></span>" +
+      '<span class="who' + (st.source === "agent" ? " agent" : "") + '">' + (st.source === "agent" ? "Claude" : "You") + "</span></button>").join("") ||
+      '<div class="empty-layers">No steps yet.</div>';
+    list.querySelectorAll("[data-rev]").forEach((row) => row.onclick = async () => {
+      const rev = Number(row.dataset.rev);
+      if (rev === store.rev) return;
+      await flushSaveNow();
+      try {
+        const r = await docPy({ action: "doc_restore", doc_id: store.id, rev: String(rev) });
+        applyRecord(r.doc, "update");
+        toast("Back to step " + rev + " — later steps are still in History");
+      } catch (error) { toast(error.message || String(error), true); }
+    });
+  }
+
+  async function loadDocList() {
+    try {
+      const r = await docPy({ action: "doc_list" });
+      store.docs = r.documents || []; store.saveDir = r.save_folder || "";
+    } catch (e) { store.docs = []; }
+    return store.docs;
+  }
+
+  async function deleteDoc(id, name) {
+    if (!confirm("Delete “" + name + "” and its history? Files you saved or exported are kept.")) return;
+    try {
+      // Queued autosaves of this document must not bring it back, and the open
+      // canvas goes with it (an edit would otherwise recreate it).
+      store.deleted.add(id);
+      if (id === store.id || id === store.newId) closeDocument();
+      await store.queue;
+      await docPy({ action: "doc_delete", doc_id: id });
+      refreshSide();
+    } catch (error) { toast(error.message || String(error), true); }
+  }
+
+  async function renderFilesTab() {
+    const docs = await loadDocList();
+    const list = $("filesList");
+    list.innerHTML = docs.map((d) =>
+      '<div class="side-row' + (d.id === store.id ? " current" : "") + '" data-open="' + esc(d.id) + '" title="Open">' +
+      (d.thumb ? '<img class="thumb" src="' + thumbSrc(d.thumb, d.rev) + '" />' : '<span class="thumb"></span>') +
+      '<span class="text"><span class="title">' + esc(d.name) + '</span><span class="sub">' + esc(WHEN(d.updated_at)) + " · " + (d.width || "?") + " × " + (d.height || "?") + "</span></span>" +
+      '<button class="del" data-del="' + esc(d.id) + '" data-name="' + esc(d.name) + '" title="Delete document">' + DEL_ICON + "</button></div>").join("") ||
+      '<div class="empty-layers">No documents yet. They are saved automatically as you edit.</div>';
+    list.querySelectorAll("[data-open]").forEach((row) => row.onclick = (e) => { if (!e.target.closest("[data-del]")) openDoc(row.dataset.open); });
+    list.querySelectorAll("[data-del]").forEach((b) => b.onclick = () => deleteDoc(b.dataset.del, b.dataset.name));
+    $("filesFoot").innerHTML = "Documents autosave with every step. Save (⌘S) and Export write to <b>" + esc((store.saveDir || "~/Pictures/Photo Editor").replace(/^\/Users\/[^/]+/, "~")) + '</b> · <button id="revealSaveDir">Show folder</button>';
+    $("revealSaveDir").onclick = () => reveal("");
+  }
+
+  async function renderRecent() {
+    const docs = (await loadDocList()).slice(0, 6);
+    const box = $("recentDocs");
+    if (doc.ready || !docs.length) { box.innerHTML = ""; return; }
+    box.innerHTML = "<h3>Recent</h3><div class=\"recent-grid\">" + docs.map((d) =>
+      '<button class="recent-card" data-open="' + esc(d.id) + '" title="' + esc(d.name) + '">' +
+      (d.thumb ? '<img src="' + thumbSrc(d.thumb, d.rev) + '" />' : '<span class="ph"></span>') +
+      '<div class="title">' + esc(d.name) + '</div><div class="sub">' + esc(WHEN(d.updated_at)) + "</div></button>").join("") + "</div>";
+    box.querySelectorAll("[data-open]").forEach((b) => b.onclick = () => openDoc(b.dataset.open));
+  }
+
+  async function startDocuments() {
+    try { const cur = JSON.parse(await fused.readFile(CURRENT_FILE)); store.seq = cur && cur.seq; } catch (e) { store.seq = ""; }
+    const stash = readStash();
+    // The stash names the document this tab was last editing, which may be a
+    // new one ?doc= does not know about yet.
+    const wanted = (stash && stash.id) || fused.params.get("doc") || tabGet(OPEN_KEY) || "";
+    let loaded = null;
+    if (wanted) {
+      try { loaded = await loadDoc(wanted, "open"); }
+      catch (e) {
+        store.id = null; setDocParam();
+        if (!stash) toast("Couldn't reopen the last document: " + (e.message || e), true);
+      }
+    }
+    recoverStash(stash, loaded);
+    renderRecent();
+    setInterval(() => { pollDisk(); pollView(); pollRequests(); }, 1000);
+    publishView();
+    window.addEventListener("pagehide", flushSaveNow);
+    document.addEventListener("visibilitychange", () => { if (document.hidden) flushSaveNow(); });
   }
 
   // ---------------------------------------------------------------- view
@@ -1413,7 +2158,7 @@
     drawSmartMarkers();
   }
 
-  function renderZoom() { $("zoomReadout").textContent = Math.round(state.zoom * 100) + "%"; }
+  function renderZoom() { $("zoomReadout").textContent = Math.round(state.zoom * 100) + "%"; if (state.view.grid && (state.view.gridSize || "auto") === "auto") publishView(); }
 
   function renderStatus() {
     const layer = activeLayer();
@@ -1837,6 +2582,7 @@
       GRID_CHOICES.map(([id, label]) => '<button class="chip' + (v.gridSize === id ? " active" : "") + '" data-vg="' + id + '">' + label + "</button>").join("") + "</div>" +
       '<div class="sep"></div><button data-va="page"' + (doc.ready ? "" : " disabled") + '><span class="check"></span>Page setup…</button>' +
       '<button data-va="clear"' + (doc.guides.length ? "" : " disabled") + '><span class="check"></span>Clear guides</button>' +
+      '<button data-va="panels"' + (panels.left && panels.right ? " disabled" : "") + '><span class="check"></span>Reset panel layout<span class="kbd">Tab</span></button>' +
       '<div class="menu-label" style="text-transform:none;letter-spacing:0;font-weight:500;max-width:250px;line-height:1.4;padding-bottom:6px">Drag from a ruler to add a guide, drag it back to remove. Hold Shift to snap to ruler ticks, ⌘ while dragging a layer to skip snapping.</div>';
     menu.querySelectorAll("[data-vt]").forEach((b) => { b.onclick = () => { toggleView(b.dataset.vt, true); renderViewMenu(); }; });
     menu.querySelectorAll("[data-vu]").forEach((b) => { b.onclick = () => { setUnit(b.dataset.vu); renderViewMenu(); }; });
@@ -1844,6 +2590,7 @@
     menu.querySelectorAll("[data-va]").forEach((b) => {
       b.onclick = () => {
         if (b.dataset.va === "page") { closeViewMenu(); openPageSetup(); }
+        else if (b.dataset.va === "panels") { setPanels(true, true); closeViewMenu(); }
         else if (b.dataset.va === "clear") { doc.guides = []; syncGuideNodes(); guideLayer.batchDraw(); commitHistory("clear guides"); renderViewMenu(); }
       };
     });
@@ -1869,6 +2616,7 @@
 
   function applyView() {
     saveView();
+    publishView();
     $("snapBtn").classList.toggle("on", !!state.view.snap);
     scheduleChrome();
     renderArtboard();
@@ -2091,6 +2839,13 @@
     ["fill", "Fit inside page", ["M4 4h16v16H4z", "M9 9h6v6H9z"]],
     ["fillpage", "Fill page incl. bleed", ["M3 3h18v18H3z", "M7 7h10v10H7z"]],
     ["reset", "Reset rotation & flip", ["M3 12a9 9 0 1 0 2.6-6.4", "M3 4v5h5"]],
+    null,
+    ["al-left", "Align left to page", ["M4 3v18", "M8 7h11v4H8z", "M8 13h6v4H8z"]],
+    ["al-center", "Align centre to page", ["M12 3v18", "M6 7h12v4H6z", "M8 13h8v4H8z"]],
+    ["al-right", "Align right to page", ["M20 3v18", "M5 7h11v4H5z", "M10 13h6v4h-6z"]],
+    ["al-top", "Align top to page", ["M3 4h18", "M7 8h4v11H7z", "M13 8h4v6h-4z"]],
+    ["al-middle", "Align middle to page", ["M3 12h18", "M7 6h4v12H7z", "M13 8h4v8h-4z"]],
+    ["al-bottom", "Align bottom to page", ["M3 20h18", "M7 5h4v11H7z", "M13 10h4v6h-4z"]],
   ];
 
   function togglePosMenu() { if ($("posMenu").classList.contains("show")) closePosMenu(); else openPosMenu(); }
@@ -2124,6 +2879,7 @@
   function posMenuAction(action) {
     const layer = activeLayer();
     if (!layer) return;
+    if (action.startsWith("al-")) { alignLayers([layer], action.slice(3), "page"); closePosMenu(); return; }
     const n = layer.node;
     if (action === "rotate-ccw") n.rotation(n.rotation() - 90);
     else if (action === "rotate-cw") n.rotation(n.rotation() + 90);
@@ -2520,6 +3276,7 @@
 
   function newBlankDocument(spec) {
     clearDocument();
+    state.fileName = "Untitled"; $("fileName").value = state.fileName;
     setupPage(spec);
     $("dropVeil").classList.add("hidden");
     if (state.tool !== "move") setTool("move");
@@ -2532,6 +3289,12 @@
   let pendingOpen = null;
 
   function clearDocument() {
+    // A new document: the one on screen is already autosaved, so start a fresh
+    // record (and a fresh undo stack) instead of overwriting it.
+    flushSaveNow();
+    store.prevId = store.id || "";
+    store.gen++; store.id = null; store.rev = 0; store.pending = null; store.newId = ""; store.recovering = false;
+    state.history = []; state.historyIndex = -1;
     closeTextEditor(true);
     closeCropOverlay();
     doc.layers.slice().forEach((l) => l.konva.destroy());
@@ -2539,6 +3302,22 @@
     if (maskNode) maskNode.visible(false);
     doc.guides = [];
     syncGuideNodes();
+  }
+
+  // Back to the start screen with nothing open (the open document was deleted).
+  function closeDocument() {
+    clearTimeout(store.timer); store.pending = null; tabSet(STASH_KEY, "");
+    clearDocument();
+    store.prevId = "";
+    doc.ready = false;
+    state.fileName = "Untitled"; $("fileName").value = state.fileName;
+    $("dropVeil").classList.remove("hidden");
+    renderArtboard();
+    afterDocChange();
+    setDropCard();
+    setDocParam();
+    renderSaveState();
+    renderRecent();
   }
 
   function setupPage(spec, photo) {
@@ -2705,12 +3484,12 @@
           '<div class="fineprint">Currently ' + esc(docSummaryParts().join(" · ")) + ". Undo with ⌘Z.</div></div>"
         : "") +
       (setup ? "" : '<div class="nd-actions">' +
-      '<button class="big-btn' + (doc.ready ? " danger" : "") + '" id="ndCreate">' + (doc.ready ? "Replace with blank " : "Create blank ") + esc(spec.name) + "</button>" +
+      '<button class="big-btn" id="ndCreate">Create blank ' + esc(spec.name) + "</button>" +
       '<button class="big-btn secondary" id="ndOpen">Open photo…</button>' +
       '<label class="mini">When opening a photo<select id="ndPhotoMode">' +
       [["own", "Use the photo's own size"], ["fill", "Fill this page (crops edges)"], ["fit", "Fit inside this page"]].map(([v, l]) => '<option value="' + v + '"' + (nd.photoMode === v ? " selected" : "") + ">" + l + "</option>").join("") + "</select></label>" +
       '<div class="fineprint">' + (nd.photoMode === "own" ? "The page takes the photo's pixels at " + nd.dpi + " DPI" + (nd.bleed ? "; bleed comes off its edges." : ".") : "The photo is scaled onto " + esc(spec.name) + (nd.photoMode === "fill" ? ", covering the bleed." : ", inside the trim.")) +
-      (doc.ready ? " Replacing the current design can be undone with ⌘Z." : "") + "</div></div>");
+      (doc.ready ? " “" + esc(state.fileName) + "” is autosaved and stays in the Files tab." : "") + "</div></div>");
     $("newDocBody").innerHTML = '<div class="nd-cats">' + cats + '</div><div class="nd-grid">' + grid + '</div><div class="nd-side">' + side + "</div>";
     drawPagePreview($("ndCanvas"), spec, 268, 168);
 
@@ -3554,15 +4333,14 @@
       if (!doc.localSession) doc.localSession = newSessionId();
       const session = (doc.layers.find((l) => l.type === "image") || {}).sessionId || doc.localSession;
       const frame = await py({ action: "save_frame", session_id: session, image_data: dataUrl });
-      const result = await py({ action: "export", session_id: session, source: frame.path, fmt: L.format, quality: String(c.quality), background: L.print ? "#ffffff" : doc.background, dpi: String(L.dpi) });
+      // Written straight into the save folder (~/Pictures/Photo Editor), not
+      // handed to the browser as a download.
+      const result = await py({ action: "export", session_id: session, source: frame.path, fmt: L.format, quality: String(c.quality), background: L.print ? "#ffffff" : doc.background, dpi: String(L.dpi), save: "true", file_name: (c.fileName || "").trim() || "design" });
       const ext = { jpeg: "jpg", tiff: "tif" }[L.format] || L.format;
-      const anchor = document.createElement("a");
-      anchor.href = fused.rawUrl(result.path);
-      anchor.download = ((c.fileName || "").trim() || "design").replace(/[\\/:*?"<>|]+/g, "-") + "." + ext;
-      document.body.appendChild(anchor); anchor.click(); anchor.remove();
       closeExport();
       const size = result.bytes > 1048576 ? (result.bytes / 1048576).toFixed(1) + " MB" : Math.round(result.bytes / 1024) + " KB";
-      toast("Exported " + ext.toUpperCase() + " · " + (L.print ? L.sizeName + " " + fmtSize(L.tmm.w, L.tmm.h) + " @ " + L.dpi + " DPI" : L.pageW + " × " + L.pageH + " px") + " · " + size);
+      toast("Saved " + baseName(result.path) + " · " + (L.print ? L.sizeName + " " + fmtSize(L.tmm.w, L.tmm.h) + " @ " + L.dpi + " DPI" : L.pageW + " × " + L.pageH + " px") + " · " + size, false,
+        { label: "Show in Finder", run: () => reveal(result.path) });
     } catch (error) {
       toast(error.message || String(error), true);
       if ($("exportVeil").classList.contains("show")) renderExport();
@@ -3761,7 +4539,14 @@
     const list = $("layerList");
     const active = activeLayer();
     const controls = $("layerControls");
-    if (active) {
+    [...alignSet].forEach((id) => { if (!doc.layers.some((l) => l.id === id)) alignSet.delete(id); });
+    if (alignSet.size >= 2) {
+      controls.style.display = "";
+      controls.classList.add("aligning");
+      controls.innerHTML = alignBarHtml();
+      wireAlignBar(controls);
+    } else if (active) {
+      controls.classList.remove("aligning");
       controls.style.display = "";
       controls.innerHTML =
         '<label>Blend<select class="compact" id="blendSel">' + BLENDS.map((b) => '<option value="' + b + '"' + (active.blend === b ? " selected" : "") + ">" + b.replace("-", " ") + "</option>").join("") + "</select></label>" +
@@ -3774,7 +4559,7 @@
       list.innerHTML = '<div class="empty-layers">' + (doc.ready ? "No layers yet.<br />Draw a shape, add text, or place an image." : "Open a photo or start a blank canvas to begin.") + "</div>";
     } else {
       list.innerHTML = doc.layers.slice().reverse().map((l) =>
-        '<div class="layer-row' + (l.id === doc.activeId ? " active" : "") + (l.visible ? "" : " hidden-layer") + '" data-id="' + l.id + '" draggable="true">' +
+        '<div class="layer-row' + (l.id === doc.activeId ? " active" : "") + (alignSet.has(l.id) ? " picked" : "") + (l.visible ? "" : " hidden-layer") + '" data-id="' + l.id + '" draggable="true">' +
         '<button class="eye' + (l.visible ? "" : " off") + '" title="Toggle visibility">' + icon(l.visible ? I.eye : I.eyeOff) + "</button>" +
         '<div class="layer-thumb">' + (l.thumb ? '<img data-thumb="' + l.id + '" src="' + l.thumb + '" />' : '<img data-thumb="' + l.id + '" />') + "</div>" +
         '<div class="layer-name" title="Double-click to rename"><span class="label">' + esc(l.name) + '</span><span class="kind">' + kindLabel(l) + "</span></div>" +
@@ -3798,7 +4583,17 @@
   let dragId = null;
   function wireLayerRow(row) {
     const layer = doc.layers.find((l) => l.id === row.dataset.id);
-    row.onclick = (e) => { if (e.target.closest(".eye, .lock, input")) return; selectLayer(layer.id); };
+    row.onclick = (e) => {
+      if (e.target.closest(".eye, .lock, input")) return;
+      if (e.shiftKey || e.metaKey || e.ctrlKey) {
+        if (!alignSet.size && doc.activeId && doc.activeId !== layer.id) alignSet.add(doc.activeId);
+        if (alignSet.has(layer.id)) alignSet.delete(layer.id); else alignSet.add(layer.id);
+        renderLayers();
+        return;
+      }
+      alignSet.clear();
+      selectLayer(layer.id);
+    };
     row.querySelector(".eye").onclick = () => { layer.visible = !layer.visible; afterDocChange(); commitHistory("visibility"); };
     row.querySelector(".lock").onclick = () => { layer.locked = !layer.locked; afterDocChange(); commitHistory("lock"); };
     row.querySelector(".layer-name").ondblclick = (e) => {
@@ -4117,7 +4912,8 @@
   }
 
   function renderProps() {
-    $("propsTabs").innerHTML = PROP_TABS.map(([id, label]) => '<button data-ptab="' + id + '" class="' + (state.propsTab === id ? "active" : "") + '">' + label + "</button>").join("") + '<span class="fill"></span>';
+    $("propsTabs").innerHTML = PROP_TABS.map(([id, label]) => '<button data-ptab="' + id + '" class="' + (state.propsTab === id ? "active" : "") + '">' + label + "</button>").join("") + '<span class="fill"></span>' +
+      '<button class="panel-collapse" data-collapse="right" title="Collapse panel (Tab hides all panels)"><svg viewBox="0 0 24 24"><path d="M13 17l5-5-5-5"/><path d="M6 17l5-5-5-5"/></svg></button>';
     $("propsTabs").querySelectorAll("[data-ptab]").forEach((b) => { b.onclick = () => { state.propsTab = b.dataset.ptab; fused.params.set("panel", state.propsTab); renderProps(); }; });
     const builders = { properties: buildProperties, adjust: buildAdjust, filters: buildFilters, generative: buildGenerative };
     $("propsBody").innerHTML = builders[state.propsTab]();
@@ -4297,6 +5093,7 @@
     $("dropTitle").textContent = ready ? "Drop to place" : "Start a document";
     $("dropText").textContent = ready ? "The image is added as a new layer on this page." : "Drop a photo here, or pick a page size — A4, Letter, photo prints, cards, posters or screen. Everything stays on this Mac.";
     $("dropActions").style.display = ready ? "none" : "";
+    $("recentDocs").style.display = ready ? "none" : "";
   }
 
   function wireChrome() {
@@ -4355,6 +5152,13 @@
     $("redoBtn").onclick = () => stepHistory(1);
     $("exportBtn").onclick = openExport;
     $("fileName").oninput = (event) => { state.fileName = event.target.value || "Untitled"; };
+    $("fileName").onchange = () => renameDoc(state.fileName);
+    $("saveState").onclick = saveCopy;
+    $("leftTabs").onclick = (e) => { const b = e.target.closest("[data-ltab]"); if (b) setLeftTab(b.dataset.ltab); };
+    document.addEventListener("click", (e) => { const b = e.target.closest("[data-collapse]"); if (b) setPanels(b.dataset.collapse === "left" ? false : panels.left, b.dataset.collapse === "right" ? false : panels.right); });
+    $("leftStrip").onclick = () => setPanels(true, panels.right);
+    $("rightStrip").onclick = () => setPanels(panels.left, true);
+    setPanels(panels.left, panels.right, true);
 
     $("addLayerBtn").onclick = (e) => openAddMenu(e.currentTarget);
     $("dupLayerBtn").onclick = () => { const l = activeLayer(); if (l) duplicateLayer(l); };
@@ -4390,8 +5194,10 @@
       if (meta && !typing && event.key === ";") { event.preventDefault(); toggleView("printGuides"); return; }
       if (meta && !typing && !event.shiftKey && event.key.toLowerCase() === "r") { event.preventDefault(); toggleView("rulers"); return; }
       if (meta && event.shiftKey && event.key.toLowerCase() === "e") { event.preventDefault(); openExport(); return; }
+      if (meta && !event.shiftKey && event.key.toLowerCase() === "s") { event.preventDefault(); saveCopy(); return; }
       if (meta && event.key.toLowerCase() === "z") { event.preventDefault(); if (!typing) stepHistory(event.shiftKey ? 1 : -1); return; }
       if (typing) return;
+      if (event.key === "Tab" && !meta && !event.altKey) { event.preventDefault(); togglePanels(); return; }
       const layer = activeLayer();
       if (meta && event.key === "0") { event.preventDefault(); fitToScreen(); }
       else if (meta && (event.key === "=" || event.key === "+")) { event.preventDefault(); setZoom(state.zoom * 1.25); }
@@ -4403,7 +5209,7 @@
         if (state.tool === "brush") clearMask();
         else if (layer && state.tool === "move") { removeLayer(layer); toast("Deleted " + layer.name); }
       }
-      else if (event.key === "Escape") { if (state.tool !== "move") setTool("move"); else selectLayer(null); }
+      else if (event.key === "Escape") { if (alignSet.size) { alignSet.clear(); renderLayers(); } else if (state.tool !== "move") setTool("move"); else selectLayer(null); }
       else if (event.key === " " && !state.spaceDown) { event.preventDefault(); state.spaceDown = true; syncModeToTool(); }
       else if (!meta && !event.altKey) {
         const map = { v: "move", h: "hand", r: "rect", o: "ellipse", l: "line", t: "text", b: "brush", e: "eraser", c: "crop" };
@@ -4447,7 +5253,7 @@
       if (p && PROP_TABS.some(([id]) => id === p) && p !== state.propsTab) { state.propsTab = p; renderProps(); }
     });
     setDropCard();
-    if (!doc.ready) openNewDoc();
+    await startDocuments();
     try {
       state.capabilities = await py({ action: "status" });
       renderProps();

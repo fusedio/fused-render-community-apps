@@ -1,0 +1,183 @@
+# MCP tools for the Photo Editor, served by `fused app serve <this folder>`.
+# Every tool edits a document in ../.fused/data/documents; an open editor
+# follows along within a second. See tools.py for the model.
+
+[[tool]]
+name = "list_documents"
+description = "List Photo Editor documents, newest first, with ids, names, sizes, which one is open in the editor, and the save folder."
+file = "tools.py"
+entrypoint = "list_documents"
+
+[[tool]]
+name = "new_document"
+description = "Create a blank document and open it in the editor. Use preset (a4, a5, a3, letter, legal, tabloid, p4x6, p5x7, p8x10, bcard, postcard, dl, a2, a1, a0, p18x24, p24x36, ig-post, ig-portrait, story, fhd, qhd, uhd, yt-thumb, fb-cover, x-header, li-banner, ...) with landscape true/false, or width and height in pixels. background is any CSS colour."
+file = "tools.py"
+entrypoint = "new_document"
+
+[[tool]]
+name = "open_image"
+description = "Open a photo file (path on this Mac; JPEG, PNG, HEIC, WebP, TIFF ...) as a new document the size of the photo, and show it in the editor."
+file = "tools.py"
+entrypoint = "open_image"
+
+[[tool]]
+name = "open_document"
+description = "Show an existing document (id or exact name) in the editor. Later tools that omit `document` then act on it."
+file = "tools.py"
+entrypoint = "open_document"
+
+[[tool]]
+name = "get_document"
+description = "Describe a document: page size, trim box, background, and every layer bottom-to-top with id, name, type, bounds (page pixels) and style. Omit `document` for the one open in the editor."
+file = "tools.py"
+entrypoint = "get_document"
+
+[[tool]]
+name = "rename_document"
+description = "Rename a document."
+file = "tools.py"
+entrypoint = "rename_document"
+
+[[tool]]
+name = "set_page"
+description = "Change the page background colour, or make it transparent."
+file = "tools.py"
+entrypoint = "set_page"
+
+[[tool]]
+name = "add_image"
+description = "Place an image file on the page as a new layer. Size with width or height (page pixels), or fit='fit' (inside the page) / fit='fill' (cover the page). Place with position (center, top, bottom, left, right, top-left, top-right, bottom-left, bottom-right) or x/y for the top-left corner."
+file = "tools.py"
+entrypoint = "add_image"
+
+[[tool]]
+name = "add_text"
+description = "Add a text layer. position (center, top, bottom, left, right, top-left, ...) places it inside the safe margin and sets the alignment; x/y give the top-left corner instead. color, font (Source Sans 3, Source Serif 4, Helvetica Neue, Arial, Georgia, Times New Roman, Futura, Avenir Next, Gill Sans, Impact, Courier New, Menlo), weight (400, 500, 600, 700), italic, font_size in page pixels, outline_color/outline_width. background_color adds a rounded label box behind the text (a marker/badge)."
+file = "tools.py"
+entrypoint = "add_text"
+
+[[tool]]
+name = "add_shape"
+description = "Add a rectangle, square, ellipse or circle. width/height in page pixels (circle and square use width), fill and stroke as CSS colours (fill '' for outline only), stroke_width, corner_radius, rotation in degrees, opacity 0-1. Place with position or x/y (top-left of the shape's box)."
+file = "tools.py"
+entrypoint = "add_shape"
+
+[[tool]]
+name = "add_line"
+description = "Add a straight line from (x1, y1) to (x2, y2) in page pixels. arrow_end / arrow_start add arrowheads; dashed makes it dashed."
+file = "tools.py"
+entrypoint = "add_line"
+
+[[tool]]
+name = "update_layer"
+description = "Change a layer (id or name; omit for the selected one). `changes` is an object with any of: name, visible, locked, opacity, blend, x, y (top-left of its box), position, width, height, rotation, text, color/fill, stroke, stroke_width, font, weight, font_size, align, corner_radius, line_height, letter_spacing."
+file = "tools.py"
+entrypoint = "update_layer"
+
+[[tool]]
+name = "delete_layer"
+description = "Delete a layer by id or name."
+file = "tools.py"
+entrypoint = "delete_layer"
+
+[[tool]]
+name = "arrange_layer"
+description = "Move a layer in the stack: to = front, back, forward or backward."
+file = "tools.py"
+entrypoint = "arrange_layer"
+
+[[tool]]
+name = "adjust_image"
+description = "Bake adjustments into an image layer's pixels. Each value is -100..100 (0 = unchanged): brightness, contrast, saturation, temperature, tint, highlights, shadows, sharpness; vignette and blur are 0..100."
+file = "tools.py"
+entrypoint = "adjust_image"
+
+[[tool]]
+name = "apply_filter"
+description = "Bake a look into an image layer: filter = vivid, mono, noir, warm, cool or faded; strength 0-100."
+file = "tools.py"
+entrypoint = "apply_filter"
+
+[[tool]]
+name = "remove_background"
+description = "Cut the subject out of an image layer with macOS Vision, leaving a transparent background."
+file = "tools.py"
+entrypoint = "remove_background"
+
+[[tool]]
+name = "crop_image"
+description = "Crop an image layer to a box in that image's own pixels (left, top, width, height). The kept part stays where it was on the page."
+file = "tools.py"
+entrypoint = "crop_image"
+
+[[tool]]
+name = "render_document"
+description = "Render a document (or an earlier step with rev) to a PNG and return its path, to look at what it contains."
+file = "tools.py"
+entrypoint = "render_document"
+
+[[tool]]
+name = "save_document"
+description = "Save the finished image as png, jpeg, webp, pdf or tiff into the save folder (~/Pictures/Photo Editor unless folder is given). scale multiplies the pixel size. Returns the file path."
+file = "tools.py"
+entrypoint = "save_document"
+
+[[tool]]
+name = "list_history"
+description = "List every step of a document: rev, what changed, who did it (user or agent), when."
+file = "tools.py"
+entrypoint = "list_history"
+
+[[tool]]
+name = "restore_version"
+description = "Go back to step `rev` of a document. This is added as a new step, so nothing after it is lost."
+file = "tools.py"
+entrypoint = "restore_version"
+
+[[tool]]
+name = "undo"
+description = "Undo the last step of a document (recorded as a new step)."
+file = "tools.py"
+entrypoint = "undo"
+[[tool]]
+name = "get_view"
+description = "The editor's View settings: grid (on/off, spacing, and grid_step = spacing in page pixels), snap, rulers, guides, bleed/trim overlay, ruler unit."
+file = "tools.py"
+entrypoint = "get_view"
+
+[[tool]]
+name = "set_view"
+description = "Turn the editor's grid, snap, rulers, guides or bleed/trim overlay (print_guides) on or off, set grid_size (auto, 5mm, 10mm, 25mm, 0.25in, 0.5in, 1in, 100px) or the ruler unit. With snap on, every tool that places or moves a layer snaps its edges and centre to the page, trim, safe margin, guides and (when shown) grid lines, like dragging in the editor."
+file = "tools.py"
+entrypoint = "set_view"
+
+[[tool]]
+name = "add_guide"
+description = "Add a ruler guide: axis 'x'/'vertical' at x = position, or 'y'/'horizontal' at y = position, in page pixels. Placed layers snap to guides."
+file = "tools.py"
+entrypoint = "add_guide"
+
+[[tool]]
+name = "clear_guides"
+description = "Remove every ruler guide from a document."
+file = "tools.py"
+entrypoint = "clear_guides"
+
+[[tool]]
+name = "align_layers"
+description = "Align layers: align = left, center, right, top, middle or bottom. layers = list of ids/names, [\"all\"], or omit for the selected layer. relative_to = page (trim box), selection (box around them), a layer id/name to align to, or auto (page for one layer, selection for several). A text label's box moves with its text."
+file = "tools.py"
+entrypoint = "align_layers"
+
+[[tool]]
+name = "distribute_layers"
+description = "Space layers evenly, direction horizontal or vertical. Without gap the two outermost stay put and the gaps between are equalised; with gap (page pixels) they are packed that far apart from the first. layers = ids/names or [\"all\"]."
+file = "tools.py"
+entrypoint = "distribute_layers"
+
+[[tool]]
+name = "screenshot_editor"
+description = "Screenshot the open editor to check placement, and return the PNG path (open it to look). mode 'page' = the page drawn by the editor itself (real fonts); mode 'editor' = the canvas as it is on screen with grid, guides, rulers and selection. Falls back to the Python render if no editor is open. Use after edits to verify layout."
+file = "tools.py"
+entrypoint = "screenshot_editor"
+

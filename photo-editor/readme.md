@@ -28,9 +28,74 @@ the panel that needs them.
 | **Background Remover** | One click. `VNGenerateForegroundInstanceMaskRequest` on the Neural Engine — class-agnostic, sub-second, no model download. |
 | **Page sizes** | New document dialog with Paper (A3-A6, B4/B5, Letter, Legal, Tabloid), Photo prints, Cards & flyers, Posters, Screen & social and Custom sizes, plus resolution (DPI), bleed and safe margin. Opened photos keep their pixels and show the size they print at. Page setup in Properties changes any of it later. |
 | **Rulers, grid & guides** | View menu: rulers in mm / cm / in / px, a measurement grid, bleed / trim / safe-area overlay with crop marks, guides dragged out of the rulers, and snapping to page edges, margins and guides. |
-| **Export** | Print: original size or any paper size (fit / fill), 150-600 DPI, bleed, crop marks with a page-info slug, optionally centred on an A4 / Letter / A3 sheet, as PDF, PNG, JPEG or TIFF with DPI written into the file. Digital: original, 2x, 1/2x, custom width or a screen preset as PNG, JPEG or WebP. Warns about photos under 150 ppi and missing bleed. |
+| **Export** | Print: original size or any paper size (fit / fill), 150-600 DPI, bleed, crop marks with a page-info slug, optionally centred on an A4 / Letter / A3 sheet, as PDF, PNG, JPEG or TIFF with DPI written into the file. Digital: original, 2x, 1/2x, custom width or a screen preset as PNG, JPEG or WebP. Warns about photos under 150 ppi and missing bleed. Files go to the save folder (below), not ~/Downloads. |
+| **Autosave & documents** | Every step is saved as you go, so starting a new document never loses the last one, and a reload reopens the document you had open. A step made just before a reload, including a new document's first step, is kept in the tab until the disk has it, then saved. The start screen lists recent documents; the **Files** tab lists all of them. **⌘S** (or the "Saved" label next to the name) writes a full-size PNG copy to the save folder, `~/Pictures/Photo Editor`. |
+| **History** | The **History** tab lists every step, yours and Claude's, with a thumbnail. Click one to go back to it. Going back is recorded as a new step, so the later steps are still there. |
+| **Agent tools (MCP)** | Claude can drive the editor: open photos, add text, shapes, arrows and images, move and restyle layers, adjust, filter, crop, cut out, render to look at the result, and save. An open editor follows along within a second. See [Driving it from Claude](#driving-it-from-claude). |
 
 Undo/redo, zoom, View (rulers, grid, guides) and Export are in the top bar.
+Either side panel folds into a thin strip with the « button in its tab bar;
+click the strip to bring it back. **Tab** hides or shows both panels, and
+View › Reset panel layout restores them.
+
+To align several layers, Shift- or ⌘-click them in the Layers list: an align
+bar replaces the blend controls, with align left / centre / right / top /
+middle / bottom and (for three or more) distribute. The Position menu over a
+layer aligns that one layer to the page.
+
+## Driving it from Claude
+
+`agent/` is an MCP server made with fused-render's app-MCP support: `mcp.toml`
+lists the tools and `tools.py` implements them. Register it once, at user
+scope, so every Claude session sees it, including fused-render's own Claude
+chat:
+
+```sh
+claude mcp add --scope user photo-editor -- ~/.fused-render/fused-bin/fused app serve "$PWD/agent"
+```
+
+Run that from this folder, then start a new chat; a chat that is already open
+does not pick up new servers. fused-render's MCP panel cannot do this
+registration for you: it only serves an app's root folder, and the root's
+dependencies cannot be installed by `serve` (see the end of this section). Then ask something like *"open ~/Desktop/team.jpg in
+the photo editor, put 'Aman' at the top centre on a red label, circle the face
+on the left and save it as a JPEG"*. The tools:
+
+| Tool | What it does |
+|---|---|
+| `list_documents`, `new_document`, `open_image`, `open_document`, `get_document`, `rename_document`, `set_page` | Documents. `new_document` takes the same presets as the dialog (`a4`, `letter`, `ig-post`, `story` ...) or a pixel size. `get_document` returns every layer's id, bounds and style. |
+| `add_text`, `add_shape`, `add_line`, `add_image` | New layers. `position` (`center`, `top`, `bottom-right` ...) places them inside the safe margin; `x`/`y` place them exactly. `add_text(background_color=...)` makes a label or badge. |
+| `update_layer`, `delete_layer`, `arrange_layer` | Move, resize, recolour, rename, hide, reorder. |
+| `adjust_image`, `apply_filter`, `crop_image`, `remove_background` | Pixel edits, done with the same Pillow and Vision code the panels use. |
+| `screenshot_editor` | What the open editor shows, as a PNG Claude can look at: `mode="page"` is the page drawn by the editor itself (real fonts, blend modes), `mode="editor"` is the canvas as it is on screen with grid, guides, rulers and the selection. Falls back to the Python render when no editor is open. |
+| `render_document`, `save_document` | A PNG to look at, and the finished file in the save folder. |
+| `get_view`, `set_view`, `add_guide`, `clear_guides` | The editor's View settings (grid and its spacing, snap, rulers, guides, bleed/trim overlay) and ruler guides. With Snap on, every placement snaps to the page and trim edges, centre, safe margin and guides, and, when the grid is showing, onto the grid. |
+| `align_layers`, `distribute_layers` | Align left / centre / right / top / middle / bottom, to the page, to the group, or to one layer; spread layers evenly or at a fixed gap. |
+| `list_history`, `restore_version`, `undo` | Step history, shared with the editor's History tab. |
+
+How it works: documents live in `.fused/data/documents/<id>/` as `doc.json`
+plus one `history/NNNNNN.json` snapshot and one thumbnail per step
+(`docstore.py`). The page and the tools both save by committing a new
+revision, and `current.json` records which document is open and its latest
+revision. `view.json` carries the View settings both ways, so the tools snap to
+the grid you see. `request.json` plus `screens/` is how `screenshot_editor` asks
+the open page for a picture and gets it back. The page reads that file once a second and loads any newer revision.
+When Claude opens or creates a document, the editor switches to it. The page
+switches only for documents Claude opens, so two open tabs never pull each
+other to a different document. If you and Claude change the same document at
+the same moment, Claude's revision wins and the editor reloads it. Your
+step from that moment is dropped, and you can redo it.
+
+The tools render with Pillow (`render.py`), so they work while the editor is
+closed. Positions and shapes match the editor exactly. Text uses the macOS
+system copy of each font (Source Sans 3 falls back to Helvetica Neue unless it
+is installed), so text widths in a render or a tool-saved file can differ
+slightly from the editor.
+
+`agent/` has its own `pyproject.toml` (Pillow, numpy, PyObjC Vision) because
+`fused app serve` installs dependencies with `uv pip install`, which ignores
+`[tool.uv.sources]` and so cannot install the vendored `mlx-sam` wheel. The
+tools need no model, so they skip the MLX dependencies entirely.
 
 ### How Remove fills the selection
 
@@ -64,6 +129,9 @@ worker.py           warm-worker entry (main(**params)): SAM, upscaler, weight
 engine.py           resident SAM + SeedVR2 models and their threads
 imaging.py          Pillow/numpy: sessions, masks, fills, compositing
 bgremove.py         macOS Vision subject lifting (and the Smart select fallback)
+docstore.py         documents on disk: autosave, step history, current.json
+render.py           Pillow renderer for a document (agent previews, saves, thumbnails)
+agent/              MCP tools for Claude (mcp.toml + tools.py), own pyproject.toml
 vendor/             the patched mlx-sam wheel, see Requirements
 ```
 
@@ -149,3 +217,8 @@ are touched.
 - Filter presets are CSS filter stacks rather than real LUTs, and baking one
   applies the equivalent brightness/contrast/saturation move through Pillow.
 - Magic Expand (mflux's outpaint/reframe padding) is deliberately out of scope.
+- The generative tools (Remove / Insert, Smart select, Upscale) are not agent
+  tools yet: they need the page's `fused.ai.image` or the warm worker's models.
+- Documents and the images they use are kept until you delete the document in
+  the Files tab. Nothing prunes them automatically, except history beyond 200
+  steps per document.

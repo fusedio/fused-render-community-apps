@@ -15,7 +15,9 @@ import re
 import time
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
-SESSIONS_DIR = os.path.join(APP_DIR, ".fused", "cache", "sessions")
+# In data/, not cache/: saved documents (docstore.py) point at these files, so
+# clearing them would break every document that uses the image.
+SESSIONS_DIR = os.path.join(APP_DIR, ".fused", "data", "sessions")
 
 #: Bump when the on-disk session layout changes so stale folders are ignored
 #: rather than half-read.
@@ -70,10 +72,21 @@ def decode_data_url(data_url: str) -> bytes:
 
 def save_source(session_id: str, data_url: str, name: str = "photo") -> dict:
     """Persist an uploaded photo as the session's immutable source image."""
+    return save_source_bytes(session_id, decode_data_url(data_url), name=name)
+
+
+def save_source_path(session_id: str, path: str, name: str = "") -> dict:
+    """Same as `save_source`, for a file on disk (the agent tools' `add_image`)."""
+    path = os.path.expanduser(path)
+    with open(path, "rb") as handle:
+        raw = handle.read()
+    return save_source_bytes(session_id, raw, name=name or os.path.splitext(os.path.basename(path))[0])
+
+
+def save_source_bytes(session_id: str, raw: bytes, name: str = "photo") -> dict:
     from PIL import Image, ImageOps
 
     folder = session_dir(session_id, create=True)
-    raw = decode_data_url(data_url)
     with Image.open(io.BytesIO(raw)) as handle:
         # Phone photos carry rotation in EXIF; bake it in now so every later
         # stage (mask alignment above all) agrees on which way is up.

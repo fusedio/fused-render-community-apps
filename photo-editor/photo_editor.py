@@ -12,6 +12,7 @@ from __future__ import annotations
 import os
 import time
 
+import docstore
 import imaging
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -23,9 +24,29 @@ def main(action: str = "status", session_id: str = "", image_data: str = "",
          fmt: str = "png", quality: int = 92, background: str = "#ffffff",
          grow: float = 0.0, filter_name: str = "", filter_strength: float = 100.0,
          x: float = 0.5, y: float = 0.5, mode: str = "", generated: str = "",
-         mask: str = "", feather: float = 3.0, dpi: float = 0.0) -> dict:
+         mask: str = "", feather: float = 3.0, dpi: float = 0.0,
+         doc_id: str = "", snap_json: str = "", label: str = "", base_rev: int = -1,
+         rev: int = 0, thumb: str = "", save: bool = False, file_name: str = "",
+         path: str = "", request_id: str = "", prev_doc: str = "") -> dict:
     if action == "status":
         return _status()
+
+    if action == "view_save":
+        import json
+
+        payload = json.loads(values_json or "{}")
+        return {"ok": True, "view": docstore.set_view(payload.get("view") or {}, "user",
+                                                      base_seq=payload.get("base_seq", ""))}
+
+    if action == "screenshot_save":
+        import json
+
+        return {"ok": True, **docstore.save_screenshot(request_id, docstore.decode_png(image_data) if image_data else b"",
+                                                        json.loads(values_json or "{}"))}
+
+    if action.startswith("doc_") or action == "reveal":
+        return _documents(action, doc_id=doc_id, name=name, snap_json=snap_json, label=label,
+                          base_rev=base_rev, rev=rev, thumb=thumb, path=path, prev_doc=prev_doc)
 
     if action == "new_session":
         session_id = session_id or imaging.new_session_id()
@@ -93,7 +114,8 @@ def main(action: str = "status", session_id: str = "", image_data: str = "",
         suffix = {"jpeg": "jpg", "tiff": "tif"}.get(fmt, fmt)
         if suffix not in ("png", "jpg", "webp", "pdf", "tif"):
             raise ValueError(f"Unsupported export format: {fmt!r}")
-        output = os.path.join(folder, f"export-{int(time.time() * 1000)}.{suffix}")
+        output = (docstore.save_path(file_name or name, suffix) if save
+                  else os.path.join(folder, f"export-{int(time.time() * 1000)}.{suffix}"))
         return {"ok": True, **imaging.export_image(_resolve(session_id, source), output,
                                                    fmt=fmt, quality=int(quality),
                                                    background=background, dpi=float(dpi))}
@@ -106,6 +128,53 @@ def main(action: str = "status", session_id: str = "", image_data: str = "",
         imaging.write_atomic(output, imaging.decode_data_url(image_data))
         return {"ok": True, "path": output}
 
+    raise ValueError(f"Unknown action: {action!r}")
+
+
+def _documents(action: str, doc_id: str, name: str, snap_json: str, label: str,
+               base_rev: int, rev: int, thumb: str, path: str, prev_doc: str = "") -> dict:
+    """Autosave, history and the document list (see docstore.py)."""
+    import json
+
+    png = docstore.decode_png(thumb) if thumb else None
+    if action == "doc_create":
+        record = docstore.create(name or "Untitled", json.loads(snap_json), source="user",
+                                 label=label or "new document", thumb_png=png, doc_id=doc_id,
+                                 claim_from=prev_doc)
+        return {"ok": True, "id": record["id"], "rev": record["rev"]}
+    if action == "doc_save":
+        result = docstore.commit(doc_id, json.loads(snap_json), label, "user",
+                                 base_rev=None if base_rev < 0 else base_rev, thumb_png=png)
+        if not result["ok"]:
+            return {"ok": False, "conflict": True, "rev": result["rev"], "doc": result["doc"]}
+        return {"ok": True, "id": doc_id, "rev": result["rev"]}
+    if action == "doc_load":
+        record = docstore.load(doc_id)
+        docstore.set_current(doc_id, record["rev"], "user")
+        return {"ok": True, "doc": record}
+    if action == "doc_rename":
+        return {"ok": True, "name": docstore.rename(doc_id, name)["name"]}
+    if action == "doc_list":
+        return {"documents": docstore.list_documents(), "current": docstore.get_current(),
+                "save_folder": docstore.SAVE_DIR}
+    if action == "doc_history":
+        return {"steps": docstore.history(doc_id)}
+    if action == "doc_restore":
+        result = docstore.restore(doc_id, rev, "user")
+        return {"ok": True, "doc": result["doc"]}
+    if action == "doc_delete":
+        docstore.delete(doc_id)
+        return {"ok": True}
+    if action == "reveal":
+        import subprocess
+
+        target = os.path.realpath(path or docstore.SAVE_DIR)
+        root = os.path.realpath(docstore.SAVE_DIR)
+        if os.path.commonpath([target, root]) != root:
+            raise ValueError("Only files in the save folder can be revealed")
+        os.makedirs(root, exist_ok=True)
+        subprocess.run(["open", "-R", target] if os.path.isfile(target) else ["open", target], check=False)
+        return {"ok": True}
     raise ValueError(f"Unknown action: {action!r}")
 
 
