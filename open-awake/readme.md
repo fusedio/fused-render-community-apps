@@ -10,7 +10,7 @@ Keep your Mac awake. Pick a duration from the dropdown (15 minutes to 8 hours, o
 
 ## How it works
 
-`awake.py` is a fused-render background app (`[tool.fused-render.app] daemon`). Pressing the button starts `caffeinate -i -m -s [-d] [-t secs] -w <daemon pid>`. Nothing starts when the page merely opens or previews.
+`awake.py` is a fused-render background app (`[tool.fused-render.app] daemon`). Pressing the button starts `caffeinate -i -m -s [-d] -w <daemon pid>`. The daemon owns the deadline and stops `caffeinate` once the wall clock passes the end time, so a timed session ends on time even if the Mac slept in between (`caffeinate -t` would pause its timer during sleep). Nothing starts when the page merely opens or previews.
 
 ## Limits
 
