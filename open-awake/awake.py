@@ -46,13 +46,19 @@ def _read_log():
         return []
 
 
-def _close_locked(reason):
-    """Record the running session and clear it. Caller holds LOCK."""
+def _end_locked(reason):
+    """Stop the running caffeinate, record the session and clear it. Caller holds LOCK.
+
+    SIGKILL is immediate and caffeinate holds no state beyond its power
+    assertions, which the kernel releases when the process dies.
+    """
     global SESSION
     s = SESSION
     if not s:
         return
     SESSION = None
+    s["proc"].kill()
+    s["proc"].wait()
     entry = {
         "start": s["start"],
         "end": time.time(),
@@ -72,16 +78,14 @@ def _start(minutes, display):
     if not os.path.exists(exe):
         raise RuntimeError("caffeinate not found: Open Awake needs macOS")
     secs = max(0, int(minutes * 60))
-    # -i idle sleep, -m disk, -s system sleep on AC, -d display (optional)
+    # -i idle sleep, -m disk, -s system sleep on AC, -d display (optional).
+    # No -t: its timer pauses while the Mac sleeps, so the daemon owns the
+    # deadline and ends the session against the wall clock (see _snapshot).
     cmd = [exe, "-i", "-m", "-s", "-w", str(os.getpid())]
     if display:
         cmd.append("-d")
-    if secs:
-        cmd += ["-t", str(secs)]
     with LOCK:
-        if SESSION:
-            SESSION["proc"].terminate()
-            _close_locked("replaced")
+        _end_locked("replaced")
         proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL,
                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         now = time.time()
@@ -93,21 +97,17 @@ def _start(minutes, display):
 
 def _stop():
     with LOCK:
-        if SESSION:
-            SESSION["proc"].terminate()
-            try:
-                SESSION["proc"].wait(2)
-            except subprocess.TimeoutExpired:
-                SESSION["proc"].kill()
-            _close_locked("stopped")
+        _end_locked("stopped")
 
 
 def _snapshot():
     with LOCK:
         s = SESSION
-        if s and s["proc"].poll() is not None:
-            _close_locked("expired" if s["ends"] else "ended")
-            s = None
+        if s and s["ends"] and time.time() >= s["ends"]:
+            _end_locked("expired")
+        elif s and s["proc"].poll() is not None:
+            _end_locked("ended")
+        s = SESSION
         out = {"active": bool(s), "now": time.time(), "log": _read_log()[::-1]}
         if s:
             out.update(start=s["start"], ends=s["ends"], display=s["display"])
