@@ -7,10 +7,12 @@ import subprocess
 import tempfile
 import threading
 import time
+import urllib.parse
 import urllib.request
 import uuid
 import wave
 
+import fused_ai
 import numpy as np
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -23,25 +25,10 @@ SAMPLES_DIR = os.path.join(CACHE_DIR, "samples")
 VOICES_JSON = os.path.join(DATA_DIR, "voices.json")
 HISTORY_JSON = os.path.join(DATA_DIR, "history.json")
 PREFS_JSON = os.path.join(DATA_DIR, "prefs.json")
+DRAFT_JSON = os.path.join(DATA_DIR, "draft.json")
 
 SR = 24000
 MAX_REF_SECONDS = 30.0
-
-BASE = {
-    "17": "mlx-community/Qwen3-TTS-12Hz-1.7B-Base-bf16",
-    "06": "mlx-community/Qwen3-TTS-12Hz-0.6B-Base-bf16",
-}
-CUSTOM = {
-    "17": "mlx-community/Qwen3-TTS-12Hz-1.7B-CustomVoice-bf16",
-    "06": "mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-bf16",
-}
-DESIGN = "mlx-community/Qwen3-TTS-12Hz-1.7B-VoiceDesign-bf16"
-ASR = {
-    "mlx-community/Qwen3-ASR-1.7B-8bit": "qwen3",
-    "mlx-community/Qwen3-ASR-0.6B-8bit": "qwen3",
-    "mlx-community/parakeet-tdt-0.6b-v3": "parakeet",
-}
-ALLOWED_MODELS = set(BASE.values()) | set(CUSTOM.values()) | {DESIGN} | set(ASR)
 
 DEMO_VOICES = [
     ("Narrator Sam", "en_man", "Neutral American male, conversational", "english"),
@@ -55,16 +42,9 @@ SAMPLE_LINES = {
     "korean": "안녕하세요. 이것은 제 목소리 샘플입니다.",
 }
 DEFAULT_SAMPLE_LINE = "Hello there. This is a short sample of my voice, so you can hear how I sound."
-LANGUAGES = {"auto", "english", "chinese", "spanish", "french", "german", "italian", "portuguese", "russian", "japanese", "korean"}
-PRESET_SPEAKERS = {"ryan", "aiden", "vivian", "serena", "uncle_fu", "dylan", "eric", "ono_anna", "sohee"}
 DRAFT_MAX_AGE_S = 3600
 
-MODELS = {}
-PREP = {}
 RUNS = {}
-DOWNLOADED = set()
-LOCK = threading.Lock()
-GEN_LOCK = threading.Lock()
 DATA_LOCK = threading.RLock()
 
 
@@ -93,35 +73,61 @@ def _job_id(s):
     return re.sub(r"[^A-Za-z0-9._:-]", "_", str(s))[:120]
 
 
-def _report_job(body):
+def _post(path, body):
     origin = _server_origin()
     if not origin:
-        return False
+        return {}
     try:
         req = urllib.request.Request(
-            origin + "/api/jobs",
+            origin + path,
             data=json.dumps(body).encode("utf-8"),
             headers={"Content-Type": "application/json", "X-Fused": "1"},
             method="POST",
         )
         with urllib.request.urlopen(req, timeout=3) as r:
             rep = json.loads(r.read() or b"{}")
-        return bool(isinstance(rep, dict) and rep.get("cancel_requested"))
+        return rep if isinstance(rep, dict) else {}
     except Exception:
-        return False
+        return {}
 
 
-MODEL_LABELS = {
-    BASE["17"]: "Qwen3-TTS Base 1.7B",
-    BASE["06"]: "Qwen3-TTS Base 0.6B",
-    CUSTOM["17"]: "Qwen3-TTS CustomVoice 1.7B",
-    CUSTOM["06"]: "Qwen3-TTS CustomVoice 0.6B",
-    DESIGN: "Qwen3-TTS VoiceDesign 1.7B",
-}
+def _report_job(body):
+    return bool(_post("/api/jobs", body).get("cancel_requested"))
 
 
-def _model_label(model_id):
-    return MODEL_LABELS.get(model_id) or model_id.split("/")[-1]
+def _cancel_job(job_id):
+    _post("/api/jobs/" + urllib.parse.quote(job_id, safe="") + "/cancel", {})
+
+
+class Cancelled(Exception):
+    pass
+
+
+def _speak(model_id, text, out, voice=None, instruct=None, ref_audio=None, ref_text=None,
+           language="auto", cancelled=None, progress=None):
+    asked = []
+
+    def watch(job):
+        if progress:
+            progress(job)
+        if cancelled and not asked and cancelled():
+            asked.append(job["id"])
+            _cancel_job(job["id"])
+
+    try:
+        r = fused_ai.speech(text, model=model_id, voice=voice, instruct=instruct,
+                            ref_audio=ref_audio, ref_text=ref_text,
+                            language=language or "auto", on_progress=watch)
+    except fused_ai.ServerNotRunning as e:
+        raise ValueError("FusedRender is not running: " + str(e)) from e
+    except fused_ai.AiError as e:
+        if e.type == "cancelled":
+            raise Cancelled() from e
+        raise ValueError(str(e)) from e
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    shutil.move(r["audio"][0]["path"], out)
+    pcm, sr = _read_wav(out)
+    return pcm, sr
 
 
 def _ensure_dirs():
@@ -319,94 +325,6 @@ def _analyze(pcm, trimmed_from=None):
     }
 
 
-def _hf_blobs_dir(model_id):
-    from huggingface_hub.constants import HF_HUB_CACHE
-
-    return os.path.join(HF_HUB_CACHE, "models--" + model_id.replace("/", "--"), "blobs")
-
-
-def _dir_size(path):
-    total = 0
-    try:
-        for root, _, files in os.walk(path):
-            for f in files:
-                try:
-                    total += os.path.getsize(os.path.join(root, f))
-                except OSError:
-                    pass
-    except OSError:
-        pass
-    return total
-
-
-def _is_downloaded(model_id):
-    if model_id in DOWNLOADED:
-        return True
-    try:
-        from huggingface_hub import snapshot_download
-
-        snapshot_download(model_id, local_files_only=True)
-        DOWNLOADED.add(model_id)
-        return True
-    except Exception:
-        return False
-
-
-def _mlx_available():
-    import importlib.util
-
-    return importlib.util.find_spec("mlx_audio") is not None
-
-
-def _prepare_thread(model_id):
-    st = PREP[model_id]
-    try:
-        from huggingface_hub import HfApi, snapshot_download
-
-        if not _is_downloaded(model_id):
-            st["phase"] = "downloading"
-            try:
-                info = HfApi().model_info(model_id, files_metadata=True)
-                st["total"] = sum(s.size or 0 for s in info.siblings)
-            except Exception:
-                st["total"] = None
-            snapshot_download(model_id)
-            DOWNLOADED.add(model_id)
-        st["phase"] = "loading"
-        if model_id in ASR:
-            from mlx_audio.stt.utils import load_model
-        else:
-            from mlx_audio.tts.utils import load_model
-
-        model = load_model(model_id)
-        with LOCK:
-            MODELS[model_id] = model
-        st["speakers"] = list(getattr(model, "supported_speakers", []) or [])
-        st["phase"] = "ready"
-    except Exception as e:
-        st["phase"] = "error"
-        st["message"] = str(e)
-
-
-def _model_status():
-    out = {}
-    for mid in sorted(ALLOWED_MODELS):
-        st = PREP.get(mid) or {}
-        phase = st.get("phase")
-        row = {
-            "loaded": mid in MODELS,
-            "downloaded": _is_downloaded(mid),
-            "phase": phase,
-            "message": st.get("message"),
-            "total": st.get("total"),
-            "speakers": st.get("speakers"),
-        }
-        if phase == "downloading":
-            row["done"] = _dir_size(_hf_blobs_dir(mid))
-        out[mid] = row
-    return out
-
-
 DEMO_META = {slug: (name, desc, lang) for name, slug, desc, lang in DEMO_VOICES}
 
 
@@ -554,8 +472,6 @@ def _old_draft(v):
 
 
 def a_bootstrap(**_):
-    import sys
-
     with DATA_LOCK:
         vs = _voices(True)
         keep = []
@@ -594,17 +510,14 @@ def a_bootstrap(**_):
     return {
         "voices": _listed(keep),
         "history": hist,
-        "models": _model_status(),
         "runs": _runs_status(),
         "prefs": _prefs(),
         "export": _export_info(),
-        "mlx_available": _mlx_available(),
-        "python": sys.executable,
     }
 
 
 def a_status(**_):
-    return {"models": _model_status(), "runs": _runs_status()}
+    return {"runs": _runs_status()}
 
 
 def _runs_status():
@@ -612,44 +525,6 @@ def _runs_status():
     for gid, ru in list(RUNS.items()):
         out[gid] = {k: v for k, v in ru.items() if k != "cancel"}
     return out
-
-
-def _wait_for_model(model_id, run):
-    a_prepare(model_id=model_id)
-    label = _model_label(model_id)
-    jid = _job_id("model-" + model_id)
-    last = 0.0
-    while True:
-        if model_id in MODELS:
-            if last:
-                _report_job({"id": jid, "state": "done", "detail": label + " ready"})
-            return
-        st = PREP.get(model_id) or {}
-        phase = st.get("phase")
-        if phase == "error":
-            msg = st.get("message") or ("Cannot load " + label)
-            if last:
-                _report_job({"id": jid, "state": "error", "detail": msg})
-            raise ValueError(msg)
-        if not phase:
-            raise ValueError("The engine stopped while it loaded " + label + ". Try again.")
-        row = {"model_phase": phase, "model_id": model_id, "model": label, "total": st.get("total")}
-        if phase == "downloading":
-            row["done"] = _dir_size(_hf_blobs_dir(model_id))
-        run.update(row)
-        now = time.time()
-        if now - last >= 1.0:
-            last = now
-            body = {"id": jid, "title": label, "kind": "download", "unit": "bytes", "state": "running"}
-            if phase == "downloading":
-                body["done"] = row["done"]
-                if st.get("total"):
-                    body["total"] = st["total"]
-                body["detail"] = "Download the weights"
-            else:
-                body["detail"] = "Load into memory"
-            _report_job(body)
-        time.sleep(1.0)
 
 
 def _run_cancelled(gen_id):
@@ -681,22 +556,23 @@ def a_run_generation(gen_id="", **_):
 
     try:
         job("running", detail="The engine starts")
-        model_ids = []
-        for s in man["segments"]:
-            mid = s.get("model_id") or man.get("model_id")
-            if mid and mid not in model_ids:
-                model_ids.append(mid)
-        for mid in model_ids:
-            if _run_cancelled(gen_id):
-                break
-            run.update({"phase": "model", "model_id": mid, "model": _model_label(mid)})
-            _wait_for_model(mid, run)
         for i in range(n):
             if _run_cancelled(gen_id):
                 break
-            run.update({"phase": "generate", "idx": i})
-            job("running", done=i, total=n + 1, detail="Line %d/%d: %s" % (i + 1, n, man["segments"][i]["text"][:60]))
-            a_generate_segment(gen_id=gen_id, idx=i)
+            line = "Line %d/%d" % (i + 1, n)
+            run.update({"phase": "generate", "idx": i, "detail": None})
+            job("running", done=i, total=n + 1, detail=line + ": " + man["segments"][i]["text"][:60])
+
+            def progress(rec, line=line, i=i):
+                run["detail"] = rec.get("detail")
+                if rec.get("detail"):
+                    job("running", done=i, total=n + 1, detail=line + " · " + rec["detail"])
+
+            try:
+                _generate_segment(gen_id, i, False, lambda: _run_cancelled(gen_id), progress)
+            except Cancelled:
+                run["cancel"] = True
+                break
         if _run_cancelled(gen_id):
             with DATA_LOCK:
                 cur = _load_manifest(gen_id)
@@ -730,19 +606,9 @@ def a_run_generation(gen_id="", **_):
         return {"phase": "error", "message": str(e)}
 
 
-def a_prepare(model_id="", **_):
-    if model_id not in ALLOWED_MODELS:
-        raise ValueError("Unknown model id: " + model_id)
-    if not _mlx_available():
-        raise ValueError("The local engine operates without mlx-audio. Load the page again to restart the engine.")
-    if model_id in MODELS:
-        return {"phase": "ready"}
-    st = PREP.get(model_id)
-    if st and st.get("phase") in ("starting", "downloading", "loading"):
-        return {"phase": st["phase"]}
-    PREP[model_id] = {"phase": "starting", "total": None, "message": None}
-    threading.Thread(target=_prepare_thread, args=(model_id,), daemon=True).start()
-    return {"phase": "starting"}
+def a_save_draft(text="", **_):
+    _write_json(DRAFT_JSON, {"text": text})
+    return {"ok": True}
 
 
 def a_set_prefs(prefs_json="", **_):
@@ -831,47 +697,6 @@ def a_import_voice(path="", audio_b64="", filename="", name="", **_):
     return {"voice": entry, "quality": quality}
 
 
-def _abs(path):
-    return path if os.path.isabs(path) else os.path.join(APP_DIR, path)
-
-
-def a_transcribe(path="", model_id="", language="auto", **_):
-    if model_id not in ASR:
-        raise ValueError("Unknown speech-recognition model: " + model_id)
-    model = MODELS.get(model_id)
-    if model is None:
-        raise ValueError("Model %s is not loaded. Load it first." % model_id.split("/")[-1])
-    src = _abs(path)
-    if not os.path.isfile(src):
-        raise ValueError("The app cannot find the audio: " + path)
-    pcm, sr = _read_wav(src) if src.lower().endswith(".wav") else (_decode_any(path=src), SR)
-    if len(pcm) < sr * 0.1:
-        raise ValueError("The audio is empty.")
-    if sr != 16000:
-        n = int(round(len(pcm) * 16000 / sr))
-        pcm = np.interp(np.linspace(0, len(pcm) - 1, n), np.arange(len(pcm)), pcm).astype(np.float32)
-    kw = {}
-    audio = pcm
-    if ASR[model_id] == "qwen3" and language and language != "auto":
-        kw["language"] = language
-    if ASR[model_id] == "parakeet":
-        import mlx.core as mx
-
-        audio = mx.array(pcm)
-    t0 = time.time()
-    with GEN_LOCK:
-        r = model.generate(audio, **kw)
-    text = (getattr(r, "text", "") or "").strip()
-    dur = len(pcm) / 16000.0
-    return {
-        "text": text,
-        "language": getattr(r, "language", None),
-        "seconds": round(time.time() - t0, 2),
-        "duration": round(dur, 2),
-        "model": model_id,
-    }
-
-
 def a_update_voice(voice_id="", fields_json="", **_):
     fields = json.loads(fields_json or "{}")
     allowed = {"name", "description", "language", "engine", "ref_text", "draft"}
@@ -906,29 +731,16 @@ def a_delete_voice(voice_id="", **_):
     return {"voices": _listed(keep)}
 
 
-def _generate_audio(model_id, text, kw):
-    model = MODELS.get(model_id)
-    if model is None:
-        raise ValueError("Model %s is not loaded. Load it first." % model_id.split("/")[-1])
-    with GEN_LOCK:
-        results = list(model.generate(text=text, split_pattern="\n\n", **kw))
-    if not results:
-        raise ValueError("The model returned no audio")
-    audio = np.concatenate([np.array(r.audio, dtype=np.float32) for r in results])
-    return audio, int(results[0].sample_rate)
-
-
-def a_design_preview(description="", text="", language="auto", **_):
+def a_design_preview(description="", text="", language="auto", model_id="", **_):
     if not description.strip():
         raise ValueError("Describe the voice first")
+    if not model_id:
+        raise ValueError("No VoiceDesign model is available")
     text = text.strip() or DEFAULT_SAMPLE_LINE
-    kw = {"instruct": description.strip()}
-    if language and language != "auto":
-        kw["lang_code"] = language
     t0 = time.time()
-    audio, sr = _generate_audio(DESIGN, text, kw)
     did = "d" + uuid.uuid4().hex[:10]
-    _write_wav(os.path.join(DESIGNS_DIR, did + ".wav"), audio, sr)
+    audio, sr = _speak(model_id, text, os.path.join(DESIGNS_DIR, did + ".wav"),
+                       instruct=description.strip(), language=language)
     return {
         "design_id": did,
         "path": ".fused/data/designs/" + did + ".wav",
@@ -979,27 +791,19 @@ def a_save_design(design_id="", name="", description="", language="auto", text="
 
 
 def a_preset_sample(speaker="", model_id="", language="auto", **_):
-    if model_id not in CUSTOM.values():
-        raise ValueError("Preset samples need a CustomVoice model")
-    known = PRESET_SPEAKERS | {str(s).lower() for s in getattr(MODELS.get(model_id), "supported_speakers", None) or []}
-    if str(speaker).lower() not in known or not str(speaker).replace("_", "").isalnum():
-        raise ValueError("Unknown preset speaker: " + str(speaker))
     language = language or "auto"
-    if language not in LANGUAGES:
-        raise ValueError("Unknown language: " + str(language))
+    for name, value in (("speaker", speaker), ("language", language)):
+        if not str(value).replace("_", "").isalnum():
+            raise ValueError("Unknown %s: %s" % (name, value))
     key = "%s_%s_%s.wav" % (model_id.split("/")[-1], speaker.lower(), language)
     path = os.path.join(SAMPLES_DIR, key)
     if not os.path.exists(path):
-        line = SAMPLE_LINES.get(language, DEFAULT_SAMPLE_LINE)
-        kw = {"voice": speaker}
-        if language and language != "auto":
-            kw["lang_code"] = language
-        audio, sr = _generate_audio(model_id, line, kw)
-        _write_wav(path, audio, sr)
+        _speak(model_id, SAMPLE_LINES.get(language, DEFAULT_SAMPLE_LINE), path,
+               voice=speaker, language=language)
     return {"path": ".fused/cache/samples/" + key}
 
 
-def _gen_kwargs(voice):
+def _speech_options(voice):
     if voice["type"] == "clone":
         entry = _find_voice(voice.get("voice_id"))
         if entry is None:
@@ -1008,41 +812,33 @@ def _gen_kwargs(voice):
             raise ValueError("Voice '%s' has no reference transcript. Add it on the Voices page." % entry["name"])
         if (entry.get("quality") or {}).get("peak") == 0:
             raise ValueError("Voice '%s' has a silent sample. Delete the voice and record it again." % entry["name"])
-        kw = {"ref_audio": os.path.join(APP_DIR, entry["path"]), "ref_text": entry["ref_text"]}
-        lang = voice.get("language") or entry.get("language")
-        if lang and lang != "auto":
-            kw["lang_code"] = lang
-        return kw
-    kw = {"voice": voice.get("speaker") or "ryan"}
-    if voice.get("language") and voice["language"] != "auto":
-        kw["lang_code"] = voice["language"]
-    if (voice.get("instruct") or "").strip():
-        kw["instruct"] = voice["instruct"].strip()
-    return kw
+        return {
+            "ref_audio": os.path.join(APP_DIR, entry["path"]),
+            "ref_text": entry["ref_text"],
+            "language": voice.get("language") or entry.get("language") or "auto",
+        }
+    return {
+        "voice": voice.get("speaker"),
+        "instruct": (voice.get("instruct") or "").strip() or None,
+        "language": voice.get("language") or "auto",
+    }
 
 
 def _check_voice(voice, model_id):
     if not model_id or not voice:
         raise ValueError("The line has no voice. Select a voice.")
-    if model_id not in set(BASE.values()) | set(CUSTOM.values()):
-        raise ValueError("Unknown model id: %s. Select a voice again." % model_id)
-    if not isinstance(voice, dict) or voice.get("type") not in ("clone", "preset"):
+    if not isinstance(model_id, str) or not isinstance(voice, dict) or voice.get("type") not in ("clone", "preset"):
         raise ValueError("The voice data is not correct. Select a voice again.")
-    if (voice.get("language") or "auto") not in LANGUAGES:
-        raise ValueError("Unknown language: " + str(voice.get("language")))
+    if not isinstance(voice.get("language") or "auto", str):
+        raise ValueError("The language must be text.")
     if voice["type"] == "clone":
         if not isinstance(voice.get("voice_id"), str) or not voice["voice_id"]:
             raise ValueError("The voice data has no voice id. Select a voice again.")
-        if model_id not in BASE.values():
-            raise ValueError("A cloned voice needs a Base model. Select the voice again.")
         return
-    known = PRESET_SPEAKERS | {str(s).lower() for s in getattr(MODELS.get(model_id), "supported_speakers", None) or []}
-    if not isinstance(voice.get("speaker"), str) or voice["speaker"].lower() not in known:
-        raise ValueError("Unknown preset speaker: " + str(voice.get("speaker")))
+    if not isinstance(voice.get("speaker"), str) or not voice["speaker"]:
+        raise ValueError("The preset voice has no speaker. Select the voice again.")
     if not isinstance(voice.get("instruct") or "", str):
         raise ValueError("The style instruction must be text.")
-    if model_id not in CUSTOM.values():
-        raise ValueError("A preset speaker needs a CustomVoice model. Select the voice again.")
 
 
 def _check_time(name, value):
@@ -1229,8 +1025,10 @@ def a_delete_segment(gen_id="", idx=0, **_):
 
 
 def a_generate_segment(gen_id="", idx=0, force=False, **_):
-    idx = int(idx)
-    force = str(force).lower() in ("1", "true", "yes", "on")
+    return _generate_segment(gen_id, int(idx), str(force).lower() in ("1", "true", "yes", "on"))
+
+
+def _generate_segment(gen_id, idx, force, cancelled=None, progress=None):
     man = _load_manifest(gen_id)
     seg = _seg_at(man, idx)
     path = _seg_path(gen_id, seg)
@@ -1240,9 +1038,10 @@ def a_generate_segment(gen_id="", idx=0, force=False, **_):
     model_id = seg.get("model_id") or man.get("model_id")
     if not voice or not model_id:
         raise ValueError("Line %d has no voice. Select a voice." % (idx + 1))
-    kw = _gen_kwargs(voice)
     t0 = time.time()
-    audio, sr = _generate_audio(model_id, seg["text"], kw)
+    tmp = path + ".new.wav"
+    audio, sr = _speak(model_id, seg["text"], tmp, cancelled=cancelled, progress=progress,
+                       **_speech_options(voice))
     with DATA_LOCK:
         man = _load_manifest(gen_id)
         cur = next((s for s in man["segments"] if s["sid"] == seg["sid"]), None)
@@ -1252,9 +1051,9 @@ def a_generate_segment(gen_id="", idx=0, force=False, **_):
             or (cur.get("voice") or man.get("voice")) != voice
             or (cur.get("model_id") or man.get("model_id")) != model_id
         ):
+            os.remove(tmp)
             return {"duration": None, "cached": False, "changed": True, "manifest": man}
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        _write_wav(path, audio, sr)
+        os.replace(tmp, path)
         cur["duration"] = round(len(audio) / sr, 3)
         cur["rev"] = cur.get("rev", 0) + 1
         if man["status"] == "done":
@@ -1443,11 +1242,10 @@ def a_pick_export_dir(**_):
 ACTIONS = {
     "bootstrap": a_bootstrap,
     "status": a_status,
-    "prepare": a_prepare,
     "set_prefs": a_set_prefs,
+    "save_draft": a_save_draft,
     "fetch_demo_voices": a_fetch_demo_voices,
     "import_voice": a_import_voice,
-    "transcribe": a_transcribe,
     "update_voice": a_update_voice,
     "delete_voice": a_delete_voice,
     "design_preview": a_design_preview,
@@ -1474,7 +1272,7 @@ ACTIONS = {
 }
 
 
-UNLOCKED = {"bootstrap", "status", "fetch_demo_voices", "import_voice", "transcribe", "design_preview", "save_design", "preset_sample", "generate_segment", "run_generation", "assemble", "export_info", "export_audio", "reveal", "pick_export_dir"}
+UNLOCKED = {"bootstrap", "status", "fetch_demo_voices", "import_voice", "design_preview", "save_design", "preset_sample", "generate_segment", "run_generation", "assemble", "export_info", "export_audio", "reveal", "pick_export_dir"}
 
 
 def main(action="status", **params):

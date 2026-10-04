@@ -636,21 +636,10 @@ function isPreview() {
   return false;
 }
 
-const BASE_IDS = { "17": "mlx-community/Qwen3-TTS-12Hz-1.7B-Base-bf16", "06": "mlx-community/Qwen3-TTS-12Hz-0.6B-Base-bf16" };
-const CUSTOM_IDS = { "17": "mlx-community/Qwen3-TTS-12Hz-1.7B-CustomVoice-bf16", "06": "mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-bf16" };
-const DESIGN_ID = "mlx-community/Qwen3-TTS-12Hz-1.7B-VoiceDesign-bf16";
-const MODEL_INFO = [
-  { id: BASE_IDS["17"], name: "Base 1.7B", use: "Cloned & designed voices · best quality", size: "4.5 GB" },
-  { id: BASE_IDS["06"], name: "Base 0.6B", use: "Cloned & designed voices · faster", size: "2.5 GB" },
-  { id: CUSTOM_IDS["17"], name: "CustomVoice 1.7B", use: "Preset speakers · style instructions", size: "4.5 GB" },
-  { id: CUSTOM_IDS["06"], name: "CustomVoice 0.6B", use: "Preset speakers · faster", size: "2.5 GB" },
-  { id: DESIGN_ID, name: "VoiceDesign 1.7B", use: "Create voices from a description", size: "4.5 GB" },
-  { id: "mlx-community/Qwen3-ASR-1.7B-8bit", name: "Qwen3-ASR 1.7B", use: "Speech to text · 30 languages", size: "2.5 GB", asr: true },
-  { id: "mlx-community/Qwen3-ASR-0.6B-8bit", name: "Qwen3-ASR 0.6B", use: "Speech to text · fast", size: "1.0 GB", asr: true },
-  { id: "mlx-community/parakeet-tdt-0.6b-v3", name: "Parakeet TDT v3", use: "NVIDIA ASR · 25 European languages", size: "2.5 GB", asr: true },
-];
-MODEL_INFO.forEach((m) => { m.fam = m.asr ? "" : "Qwen3-TTS "; });
-const MODEL_NAME = Object.fromEntries(MODEL_INFO.map((m) => [m.id, m]));
+const TTS = "text-to-speech";
+const ASR_CAP = "automatic-speech-recognition";
+const FAMILY_MODE = { base: "clone", custom: "preset", design: "design" };
+const MODE_NAME = { clone: "Base", preset: "CustomVoice", design: "VoiceDesign" };
 
 const LANGS = ["auto", "english", "chinese", "spanish", "french", "german", "italian", "portuguese", "russian", "japanese", "korean"];
 const LANG_NATIVE = { auto: "Detect from the script", english: "English", chinese: "中文", spanish: "Español", french: "Français", german: "Deutsch", italian: "Italiano", portuguese: "Português", russian: "Русский", japanese: "日本語", korean: "한국어" };
@@ -904,7 +893,7 @@ const P = {
 };
 
 const state = {
-  voices: [], history: [], models: {}, runs: {}, prefs: {}, mlx: true, pendingSpec: null, following: {},
+  voices: [], history: [], tts: null, asr: null, downloads: {}, runs: {}, prefs: {}, pendingSpec: null, following: {},
   manifests: {}, dub: null, busyGen: false, busyDub: false, busyRow: {},
   clone: { phase: "idle" }, design: { phase: "idle" }, popOpen: false,
 };
@@ -922,7 +911,6 @@ async function run(action, params) {
         toast("FusedRender has an update. The voice engine restarts now.");
         await fused.daemon.stop();
         await fused.daemon.start();
-        state.models = {};
       })().finally(() => { healing = null; });
     }
     await healing;
@@ -942,15 +930,17 @@ function toast(msg, kind, action) {
 }
 function fail(e) { toast((e && e.message) || String(e), "err"); }
 
-function autoEngine(ids) {
-  const big = modelState(ids["17"]), small = modelState(ids["06"]);
-  return (small.downloaded || small.loaded) && !(big.downloaded || big.loaded) ? "06" : "17";
+function autoEngine(mode) {
+  const list = ttsModels(mode);
+  const local = list.filter((m) => m.downloaded);
+  const pick = local.length === 1 ? local[0] : list[0];
+  return pick ? engineOf(pick) : "17";
 }
 function profileInfo(v) {
-  return { key: "c:" + v.id, kind: v.kind, family: "base", name: v.name, desc: v.description || "", lang: v.language || "auto", engine: v.engine || autoEngine(BASE_IDS), profile: v };
+  return { key: "c:" + v.id, kind: v.kind, family: "base", name: v.name, desc: v.description || "", lang: v.language || "auto", engine: v.engine || autoEngine("clone"), profile: v };
 }
 function presetInfo(p) {
-  return { key: "p:" + p.speaker, kind: "preset", family: "custom", name: p.name, desc: p.desc, lang: p.lang, engine: state.prefs.preset_engine || autoEngine(CUSTOM_IDS), preset: p };
+  return { key: "p:" + p.speaker, kind: "preset", family: "custom", name: p.name, desc: p.desc, lang: p.lang, engine: state.prefs.preset_engine || autoEngine("preset"), preset: p };
 }
 function voiceGroups() {
   return {
@@ -961,7 +951,12 @@ function voiceGroups() {
 }
 function allVoices() { const g = voiceGroups(); return g.mine.concat(g.demo, g.presets); }
 function voiceByKey(k) { return allVoices().find((v) => v.key === k) || null; }
-function modelFor(info, engine) { return (info.family === "base" ? BASE_IDS : CUSTOM_IDS)[engine || info.engine || "17"]; }
+function modelFor(info, engine) {
+  const list = ttsModels(FAMILY_MODE[info.family]);
+  const want = engine || info.engine;
+  const m = list.find((x) => engineOf(x) === want) || list[0];
+  return m ? m.id : "";
+}
 function specFor(info, lang, instruct) {
   if (info.family === "base") return { type: "clone", voice_id: info.profile.id, language: lang || info.lang };
   return { type: "preset", speaker: info.preset.speaker, language: lang || "auto", instruct: instruct || "" };
@@ -976,7 +971,6 @@ function currentVoice() {
   const ok = (v) => !(v.profile && v.profile.quality && v.profile.quality.peak === 0);
   return voiceByKey(k) || voiceGroups().mine.filter(ok)[0] || voiceGroups().demo[0] || presetInfo(PRESETS[0]);
 }
-function modelState(id) { return state.models[id] || {}; }
 
 function voiceOptionsHtml(selKey) {
   const g = voiceGroups();
@@ -987,70 +981,95 @@ function voiceOptionsHtml(selKey) {
 
 /* ---------------- engines ---------------- */
 
-async function refreshStatus() {
-  const r = await run("status");
-  state.models = r.models;
-  state.runs = r.runs || {};
+function ttsModels(mode) {
+  const list = ((state.tts && state.tts.models) || []).filter((m) => !mode || m.voiceMode === mode);
+  const order = Object.keys(MODE_NAME);
+  return list.slice().sort((a, b) => order.indexOf(a.voiceMode) - order.indexOf(b.voiceMode) || (b.size_gb || 0) - (a.size_gb || 0));
+}
+function asrModels() { return (state.asr && state.asr.available && state.asr.models) || []; }
+function engineOf(m) { return String(m.params || "").replace(/\D/g, "").padStart(2, "0"); }
+function designModel() { const m = ttsModels("design")[0]; return m ? m.id : ""; }
+function sizeLabel(gb) { return gb ? (gb < 1 ? Math.round(gb * 1000) + " MB" : (Math.round(gb * 10) / 10) + " GB") : ""; }
+function modelMeta(id) {
+  const m = ttsModels().concat(asrModels()).find((x) => x.id === id);
+  if (!m) return { id: id, name: id, fam: "", size: "", use: "", capability: TTS };
+  const tts = !!m.voiceMode;
+  return {
+    id: id,
+    name: tts ? MODE_NAME[m.voiceMode] + " " + (m.params || "") : m.nickname || m.label || id,
+    fam: tts ? "Qwen3-TTS " : "",
+    size: sizeLabel(m.size_gb),
+    use: m.note || "",
+    capability: tts ? TTS : ASR_CAP,
+  };
+}
+function modelState(id) {
+  const m = ttsModels().concat(asrModels()).find((x) => x.id === id) || {};
+  const dl = state.downloads[id];
+  return { downloaded: !!m.downloaded, loaded: !!m.loaded, phase: dl ? "downloading" : null, done: dl && dl.done, total: dl && dl.total };
+}
+
+async function refreshCatalog() {
+  const cat = await fused.ai.models.catalog();
+  const row = (c) => (cat.capabilities || []).find((r) => r.capability === c) || null;
+  state.tts = row(TTS);
+  state.asr = row(ASR_CAP);
+  state.asrOpts = null;
   renderEngines();
-  return r.models;
+  return state.tts;
 }
 
 const preparing = {};
 function ensureModel(modelId) {
   if (!modelId) return Promise.reject(new Error("A line has no voice. Select a voice for each line."));
+  if (modelState(modelId).downloaded) return Promise.resolve();
   if (preparing[modelId]) return preparing[modelId];
+  const meta = modelMeta(modelId);
   const p = (async () => {
-    let st = modelState(modelId);
-    if (!st.loaded) st = (await refreshStatus())[modelId] || {};
-    if (st.loaded) return;
-    const meta = MODEL_NAME[modelId] || { name: modelId, size: "" };
-    if (!st.downloaded) toast("The app downloads " + (meta.fam || "") + meta.name + " (" + meta.size + "). This occurs one time. The download manager shows the progress.");
-    const job = fused.trackJob({ title: (meta.fam || "") + meta.name, kind: "download", unit: "bytes", id: jobId("model-" + modelId) });
-    try {
-      await run("prepare", { model_id: modelId });
-      for (;;) {
-        await sleep(1500);
-        st = (await refreshStatus())[modelId] || {};
-        if (st.phase === "error") throw new Error(st.message || "Cannot load " + meta.name);
-        if (st.loaded) { job.finish(meta.name + " ready"); return; }
-        if (!st.phase) throw new Error("The engine stopped while it loaded " + meta.name + ". Try again.");
-        if (st.phase === "downloading") job.update({ done: st.done || 0, total: st.total || undefined, detail: "Download the weights" });
-        else job.update({ detail: "Load into memory" });
-      }
-    } catch (e) { job.fail(e); throw e; }
+    toast("The app downloads " + meta.fam + meta.name + (meta.size ? " (" + meta.size + ")" : "") + ". This occurs one time. The download manager shows the progress.");
+    state.downloads[modelId] = {};
+    renderEngines();
+    const r = await fused.ai.models.download(modelId, { capability: meta.capability });
+    if (r && r.jobId) {
+      const rec = await fused.watchJob(r.jobId).watch((j) => { state.downloads[modelId] = { done: j.done, total: j.total }; renderEngines(); });
+      if (rec && rec.state !== "done") throw new Error(rec.message || "The download of " + meta.name + " stopped.");
+    }
+    await refreshCatalog();
   })();
   preparing[modelId] = p;
-  const settle = () => { if (preparing[modelId] === p) delete preparing[modelId]; renderEngines(); };
+  const settle = () => { delete state.downloads[modelId]; if (preparing[modelId] === p) delete preparing[modelId]; renderEngines(); };
   p.then(settle, settle);
   return p;
 }
 async function ensureModels(ids) { for (const id of Array.from(new Set(ids))) await ensureModel(id); }
 
 function renderEngines() {
-  const ms = MODEL_INFO.map((m) => ({ m: m, st: modelState(m.id) }));
-  const busy = ms.find((x) => x.st.phase === "downloading" || x.st.phase === "loading" || x.st.phase === "starting");
+  const ms = ttsModels().concat(asrModels()).map((m) => ({ m: modelMeta(m.id), st: modelState(m.id) }));
+  const busy = ms.find((x) => x.st.phase === "downloading");
   const loaded = ms.filter((x) => x.st.loaded).length;
   const btn = $("#engBtn");
   btn.className = "pillbtn" + (busy ? " busy" : loaded ? " ok" : "");
   if (busy) {
-    const pct = busy.st.phase === "downloading" && busy.st.total && busy.st.done ? " " + Math.min(99, Math.round(busy.st.done / busy.st.total * 100)) + "%" : "";
-    $("#engTxt").textContent = (busy.st.phase === "downloading" ? "Downloading " : "Loading ") + busy.m.name + pct;
-  } else if (!state.mlx) {
-    $("#engTxt").textContent = "Engine is off";
+    const pct = busy.st.total && busy.st.done ? " " + Math.min(99, Math.round(busy.st.done / busy.st.total * 100)) + "%" : "";
+    $("#engTxt").textContent = "Downloading " + busy.m.name + pct;
+  } else if (state.tts && !state.tts.available) {
+    $("#engTxt").textContent = "Speech is off";
+  } else if (!state.tts) {
+    $("#engTxt").textContent = "Engines";
   } else {
     const dl = ms.filter((x) => x.st.downloaded).length;
     $("#engTxt").textContent = loaded ? loaded + " engine" + (loaded > 1 ? "s" : "") + " ready" : dl ? dl + " downloaded · idle" : "No engines on disk";
   }
-  $("#engList").innerHTML = ms.map((x, i) => {
+  const off = state.tts && !state.tts.available ? '<div class="note">' + esc(state.tts.reason || "Text to speech is not available on this Mac.") + "</div>" : "";
+  $("#engList").innerHTML = off + ms.map((x, i) => {
     const st = x.st;
-    const head = i === 0 ? '<div class="grp" style="padding-left:0">Speech · Qwen3-TTS</div>' : x.m.asr && !ms[i - 1].m.asr ? '<div class="grp" style="padding-left:0;margin-top:10px">Transcription</div>' : "";
+    const asr = x.m.capability === ASR_CAP;
+    const head = i === 0 ? '<div class="grp" style="padding-left:0">Speech · Qwen3-TTS</div>' : asr && ms[i - 1].m.capability !== ASR_CAP ? '<div class="grp" style="padding-left:0;margin-top:10px">Transcription</div>' : "";
     let stat, act = "";
     if (st.loaded) stat = '<span class="badge ok">Loaded</span>';
     else if (st.phase === "downloading") stat = '<span class="badge warn">Downloading ' + (st.total && st.done ? Math.round(st.done / st.total * 100) + "%" : "") + "</span>";
-    else if (st.phase === "loading" || st.phase === "starting") stat = '<span class="badge warn">Loading…</span>';
-    else if (st.phase === "error") { stat = '<span class="badge bad">Error</span>'; act = '<button class="btn sm" data-prep="' + esc(x.m.id) + '">Retry</button>'; }
-    else if (st.downloaded) { stat = '<span class="badge">On disk</span>'; act = '<button class="btn sm" data-prep="' + esc(x.m.id) + '">Load</button>'; }
-    else { stat = '<span class="badge">' + x.m.size + "</span>"; act = '<button class="btn sm" data-prep="' + esc(x.m.id) + '">Download</button>'; }
+    else if (st.downloaded) stat = '<span class="badge">On disk</span>';
+    else { stat = '<span class="badge">' + esc(x.m.size) + "</span>"; act = '<button class="btn sm" data-prep="' + esc(x.m.id) + '">Download</button>'; }
     return head + '<div class="mrow"><div class="mi"><div class="mn">' + esc(x.m.name) + '</div><div class="md">' + esc(x.m.use) + "</div></div>" + stat + act + "</div>";
   }).join("");
   $$("#engList [data-prep]").forEach((b) => b.addEventListener("click", () => ensureModel(b.dataset.prep).catch(fail)));
@@ -1060,8 +1079,6 @@ function renderEngines() {
 function engineStatus(st) {
   if (st.loaded) return { text: "ready", cls: "ok" };
   if (st.phase === "downloading") return { text: "downloading" + (st.total && st.done ? " " + Math.round(st.done / st.total * 100) + "%" : ""), cls: "warn" };
-  if (st.phase === "loading" || st.phase === "starting") return { text: "loading", cls: "warn" };
-  if (st.phase === "error") return { text: "error", cls: "bad" };
   if (st.downloaded) return { text: "on disk", cls: "" };
   return { text: "not downloaded", cls: "" };
 }
@@ -1070,13 +1087,13 @@ function renderEngineSelect() {
   const eng = $("#cEng").value || info.engine || "17";
   const id = modelFor(info, eng);
   const st = modelState(id);
-  const meta = MODEL_NAME[id] || { name: id, size: "" };
+  const meta = modelMeta(id);
   const es = engineStatus(st);
-  const known = Object.keys(state.models).length > 0;
+  const known = !!state.tts;
   const dot = !known ? "" : es.cls || (st.downloaded ? "" : "none");
   const stText = !known ? "checking" : st.downloaded || st.loaded || st.phase ? es.text : "not downloaded · " + meta.size;
   $("#cEngBtn").innerHTML = '<span class="dot ' + dot + '"></span><span class="fv">' + esc(meta.name.split(" ").pop()) + "</span>" + CHEV;
-  $("#cEngBtn").title = "Speech model: " + (meta.fam || "") + meta.name + " (" + stText + ")";
+  $("#cEngBtn").title = "Speech model: " + meta.fam + meta.name + " (" + stText + ")";
   if (!$("#eMenu").classList.contains("hidden")) renderEngineMenu();
   renderDownloadButton();
 }
@@ -1094,33 +1111,32 @@ function openEngineMenu(anchor) {
   const h = m.offsetHeight;
   m.style.top = (useBelow ? r.bottom + 8 : r.top - h - 8) + "px";
   m.style.left = Math.max(12, Math.min(r.left, window.innerWidth - m.offsetWidth - 12)) + "px";
-  refreshStatus().catch(() => {});
+  refreshCatalog().catch(() => {});
 }
 function closeEngineMenu() { $("#eMenu").classList.add("hidden"); }
 
 function renderEngineMenu() {
   const info = currentVoice();
   const cur = $("#cEng").value || info.engine || "17";
-  const fam = info.family === "base" ? "Base" : "CustomVoice";
+  const mode = FAMILY_MODE[info.family];
   const why = info.family === "base" ? "Cloned and designed voices use the Qwen3-TTS Base models." : "Preset speakers use the Qwen3-TTS CustomVoice models.";
-  const rows = ["17", "06"].map((eng) => {
-    const id = modelFor(info, eng);
-    const st = modelState(id);
-    const meta = MODEL_NAME[id] || { name: id, size: "", use: "" };
+  const rows = ttsModels(mode).map((m) => {
+    const eng = engineOf(m);
+    const st = modelState(m.id);
+    const meta = modelMeta(m.id);
     const es = engineStatus(st);
-    const busy = st.phase === "downloading" || st.phase === "loading" || st.phase === "starting";
     let act = "";
-    if (busy) act = '<span class="badge warn">' + esc(es.text) + "</span>";
+    if (st.phase) act = '<span class="badge warn">' + esc(es.text) + "</span>";
     else if (st.loaded) act = '<span class="badge ok">Ready</span>';
     else if (st.downloaded) act = '<span class="badge">On disk</span>';
-    else act = '<button class="btn sm" data-edl="' + esc(id) + '">Download · ' + esc(meta.size) + "</button>";
+    else act = '<button class="btn sm" data-edl="' + esc(m.id) + '">Download · ' + esc(meta.size) + "</button>";
     return '<div class="erow' + (eng === cur ? " sel" : "") + '" data-eng="' + eng + '" role="button" tabindex="0">' +
-      '<div class="et"><div class="en">' + esc((meta.fam || "") + meta.name) + (eng === cur ? '<svg class="tick" viewBox="0 0 16 16"><path d="M3 8.5l3 3 7-7" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>' : "") + "</div>" +
+      '<div class="et"><div class="en">' + esc(meta.fam + meta.name) + (eng === cur ? '<svg class="tick" viewBox="0 0 16 16"><path d="M3 8.5l3 3 7-7" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>' : "") + "</div>" +
       '<div class="es">' + esc(meta.use) + " · " + esc(meta.size) + "</div>" +
-      '<div class="eid">' + esc(id) + "</div></div>" + act + "</div>";
+      '<div class="eid">' + esc(m.id) + "</div></div>" + act + "</div>";
   }).join("");
-  $("#eMenu").innerHTML = '<div class="mlist scroll"><div class="grp">Speech model · Qwen3-TTS ' + esc(fam) + "</div>" + rows + "</div>" +
-    '<div class="mnote">' + esc(why) + " Each model downloads one time from Hugging Face into the local cache. 1.7B gives the best quality. 0.6B is faster and needs less memory.</div>";
+  $("#eMenu").innerHTML = '<div class="mlist scroll"><div class="grp">Speech model · Qwen3-TTS ' + esc(MODE_NAME[mode]) + "</div>" + rows + "</div>" +
+    '<div class="mnote">' + esc(why) + " FusedRender downloads each model one time and shares it with other apps. The larger model gives the best quality. The smaller model is faster and needs less memory.</div>";
   $$("#eMenu .erow").forEach((r) => r.addEventListener("click", (ev) => {
     if (ev.target.closest("[data-edl]")) return;
     closeEngineMenu();
@@ -1146,48 +1162,45 @@ function renderDownloadButton() {
   const btn = $("#cGen");
   const id = composerModel();
   const st = modelState(id);
-  const meta = MODEL_NAME[id] || { name: id, size: "" };
-  const busy = st.phase === "downloading" || st.phase === "loading" || st.phase === "starting";
-  const need = !(st.downloaded || st.loaded || busy || !Object.keys(state.models).length);
+  const meta = modelMeta(id);
+  const busy = !!st.phase;
+  const need = !!state.tts && !!id && !(st.downloaded || st.loaded || busy);
   if (!need && !busy && state.pendingSpec) state.pendingSpec = null;
   const ask = need && !!state.pendingSpec;
   btn.classList.toggle("primary", !ask);
   btn.classList.toggle("dl", ask);
   if (!ask) btn.classList.remove("ask");
   btn.innerHTML = ask ? '<span class="cl">Confirm download · ' + esc(meta.size) + '</span><span class="cs">Download · ' + esc(meta.size) + '</span>' : "Generate";
-  btn.title = need ? "Generate needs " + (meta.fam || "") + meta.name + " (" + meta.size + "). The download occurs one time." : "Generate (⌘ Enter)";
+  btn.title = need ? "Generate needs " + meta.fam + meta.name + " (" + meta.size + "). The download occurs one time." : "Generate (⌘ Enter)";
 }
 
 /* ---------------- ASR ---------------- */
 
-const ASR_DEFAULT = "w:mlx-community/Qwen3-ASR-1.7B-8bit";
-const WHISPER_NAMES = { "whisper-tiny.en-8bit": "Whisper tiny (English)", "whisper-small-mlx-q4": "Whisper small", "whisper-large-v3-turbo-q4": "Whisper large-v3 turbo", "whisper-large-v3-mlx": "Whisper large-v3" };
-
 async function asrOptions() {
   if (state.asrOpts) return state.asrOpts;
-  const opts = MODEL_INFO.filter((m) => m.asr).map((m) => ({ key: "w:" + m.id, name: m.name, size: m.size }));
-  try {
-    const cat = await fused.ai.models.catalog();
-    const row = (cat.capabilities || []).find((c) => c.capability === "automatic-speech-recognition");
-    if (row && row.available) (row.models || []).forEach((m) => {
-      const tail = m.id.split("/").pop();
-      opts.push({ key: "f:" + m.id, name: WHISPER_NAMES[tail] || tail, size: m.size_gb ? (m.size_gb < 1 ? Math.round(m.size_gb * 1000) + " MB" : m.size_gb + " GB") : "", local: !!m.downloaded });
-    });
-  } catch (e) {}
+  if (!state.asr) await refreshCatalog().catch(() => {});
+  const opts = asrModels().map((m) => ({ key: "f:" + m.id, name: modelMeta(m.id).name, size: sizeLabel(m.size_gb), local: !!m.downloaded }));
   opts.push({ key: "apple", name: "Apple on-device speech", size: "built in", local: true });
   state.asrOpts = opts;
   return opts;
 }
-function asrKey() { return state.prefs.asr_model || ASR_DEFAULT; }
-function asrName(key) { const o = (state.asrOpts || []).find((x) => x.key === key); return o ? o.name : key.replace(/^[wf]:.*\//, ""); }
+function asrDefault() {
+  const big = asrModels().filter((m) => m.downloaded).sort((a, b) => (b.size_gb || 0) - (a.size_gb || 0))[0];
+  const id = big ? big.id : state.asr && state.asr.default;
+  return id ? "f:" + id : "apple";
+}
+function asrKey() {
+  const key = state.prefs.asr_model;
+  return key && (state.asrOpts || []).some((o) => o.key === key) ? key : asrDefault();
+}
+function asrName(key) { const o = (state.asrOpts || []).find((x) => x.key === key); return o ? o.name : key.replace(/^f:/, ""); }
 async function setAsrKey(key) {
   const r = await run("set_prefs", { prefs_json: JSON.stringify({ asr_model: key }) });
   state.prefs = r.prefs;
 }
 function asrSelectHtml(id, sel) {
   const o = state.asrOpts || [];
-  const local = (x) => x.key.startsWith("w:") ? !!(modelState(x.key.slice(2)).downloaded || modelState(x.key.slice(2)).loaded) : x.local;
-  return '<select class="asrsel" id="' + id + '" title="Transcription model">' + o.map((x) => '<option value="' + esc(x.key) + '"' + (x.key === sel ? " selected" : "") + ">" + esc(x.name + (local(x) ? "" : " · " + x.size + " download")) + "</option>").join("") + "</select>";
+  return '<select class="asrsel" id="' + id + '" title="Transcription model">' + o.map((x) => '<option value="' + esc(x.key) + '"' + (x.key === sel ? " selected" : "") + ">" + esc(x.name + (x.local ? "" : " · " + x.size + " download")) + "</option>").join("") + "</select>";
 }
 
 function suspectTranscript(text, seconds) {
@@ -1204,27 +1217,18 @@ async function transcribe(path, language, onNote, key) {
   key = key || asrKey();
   const t0 = performance.now();
   let res;
-  if (key.startsWith("w:")) {
-    const id = key.slice(2);
-    if (onNote && !modelState(id).loaded) onNote(modelState(id).downloaded ? asrName(key) + " loads…" : asrName(key) + " downloads (one time)…");
-    await ensureModel(id);
-    if (onNote) onNote(asrName(key) + " makes the transcript…");
-    const r = await run("transcribe", { path: path, model_id: id, language: language || "auto" });
-    res = { text: r.text, language: r.language };
-  } else {
-    const opts = { path: path };
-    if (key === "apple") { opts.provider = "apple"; opts.model = "afm-speech"; }
-    else { opts.model = key.slice(2); opts.vad = false; }
-    if (language && ISO[language]) opts.language = ISO[language];
-    else if (key === "apple") opts.language = "en";
-    if (onNote) onNote(asrName(key) + " makes the transcript…");
-    for (let i = 0; ; i++) {
-      try { res = await fused.ai.transcribe(opts); break; }
-      catch (e) {
-        if (e && e.type === "model_loading" && i < 200) { if (onNote) onNote(asrName(key) + " downloads (one time)…"); await sleep(3000); continue; }
-        if (e && (e.type === "ai_unavailable" || e.type === "unavailable")) throw new Error(asrName(key) + " is not available on this Mac: " + e.message);
-        throw e;
-      }
+  const opts = { path: path };
+  if (key === "apple") { opts.provider = "apple"; opts.model = "afm-speech"; }
+  else { opts.model = key.slice(2); opts.vad = false; }
+  if (language && ISO[language]) opts.language = ISO[language];
+  else if (key === "apple") opts.language = "en";
+  if (onNote) onNote(asrName(key) + " makes the transcript…");
+  for (let i = 0; ; i++) {
+    try { res = await fused.ai.transcribe(opts); break; }
+    catch (e) {
+      if (e && e.type === "model_loading" && i < 200) { if (onNote) onNote(asrName(key) + " downloads (one time)…"); await sleep(3000); continue; }
+      if (e && (e.type === "ai_unavailable" || e.type === "unavailable")) throw new Error(asrName(key) + " is not available on this Mac: " + e.message);
+      throw e;
     }
   }
   res.model = key;
@@ -1633,14 +1637,13 @@ async function followTake(genId, title, ui) {
   if (state.following[genId]) return state.following[genId];
   const p = (async () => {
     const job = fused.trackJob({ title: "Voiceover: " + title, kind: "task", cancellable: true, id: genId });
-    let cancelSent = false, lastModel = "";
+    let cancelSent = false;
     try {
       for (;;) {
         await sleep(1000);
         let r;
         try { r = await run("status"); } catch (e) { continue; }
-        state.models = r.models; state.runs = r.runs || {};
-        renderEngines();
+        state.runs = r.runs || {};
         const ru = state.runs[genId];
         if (job.cancelRequested && !cancelSent) {
           cancelSent = true;
@@ -1652,22 +1655,11 @@ async function followTake(genId, title, ui) {
           throw new Error(man.status === "cancelled" ? "The take was cancelled." : "The engine stopped before the take was ready. Try again.");
         }
         const n = ru.n || 1;
-        if (ru.phase === "model") {
-          const mdl = ru.model || "the model";
-          if (ru.model_id !== lastModel) { lastModel = ru.model_id; if (ru.phase === "model" && !modelState(ru.model_id).downloaded) toast("The app downloads " + mdl + " one time. You can leave this page. The take continues and shows in History."); }
-          const inner = modelState(ru.model_id) || {};
-          if (inner.phase === "downloading") {
-            const pct = inner.total && inner.done ? Math.min(99, Math.round(inner.done / inner.total * 100)) : null;
-            ui.status("Downloading " + mdl + (pct == null ? "…" : " · " + pct + "% · " + fmtBytes(inner.done) + " of " + fmtBytes(inner.total)), pct == null ? 0 : pct / 100 * 0.4);
-            job.update({ detail: "Downloading " + mdl + (pct == null ? "" : " " + pct + "%") });
-          } else {
-            ui.status("Loading " + mdl + " into memory…", 0.42);
-            job.update({ detail: "Loading " + mdl });
-          }
-        } else if (ru.phase === "generate") {
+        if (ru.phase === "generate") {
           const i = ru.idx || 0;
-          ui.status("Speaking " + (i + 1) + " of " + n + "…", 0.45 + 0.5 * (i / (n + 1)));
-          job.update({ done: i, total: n + 1, detail: "Line " + (i + 1) + "/" + n });
+          const step = ru.detail ? " · " + ru.detail : "";
+          ui.status("Speaking " + (i + 1) + " of " + n + step, 0.05 + 0.9 * (i / (n + 1)));
+          job.update({ done: i, total: n + 1, detail: "Line " + (i + 1) + "/" + n + step });
         } else if (ru.phase === "mix") {
           ui.status("Mixing…", 0.95);
           job.update({ done: n, total: n + 1, detail: "Mixing" });
@@ -1738,15 +1730,16 @@ async function onGenerate() {
     title: title, mode: "text", source_text: text,
     segments: chunkText(text).map((t) => ({ text: t, voice: spec, model_id: model, voice_label: info.name })),
   };
+  if (!model) { toast((state.tts && state.tts.reason) || "No speech model is available on this Mac.", "err"); return; }
   const st = modelState(model);
   if (!st.downloaded && !st.loaded && !st.phase) {
-    const meta = MODEL_NAME[model] || { name: model, size: "" };
+    const meta = modelMeta(model);
     if (state.pendingSpec) { state.pendingSpec = take; await confirmDownload(); return; }
     state.pendingSpec = take;
     renderDownloadButton();
     const btn = $("#cGen");
     btn.classList.remove("ask"); void btn.offsetWidth; btn.classList.add("ask");
-    studioUi().status("Generate downloads " + (meta.fam || "") + meta.name + " (" + meta.size + ") one time. Click Confirm download to start the download and this take.", 0);
+    studioUi().status("Generate downloads " + meta.fam + meta.name + " (" + meta.size + ") one time. Click Confirm download to start the download and this take.", 0);
     return;
   }
   await startTake(take);
@@ -1771,13 +1764,11 @@ async function confirmDownload() {
 
 async function downloadModelUi(id) {
   const ui = studioUi();
-  const meta = MODEL_NAME[id] || { name: id, size: "" };
+  const meta = modelMeta(id);
   const tm = setInterval(() => {
     const st = modelState(id);
-    if (st.phase === "downloading") {
-      const pct = st.total && st.done ? Math.min(99, Math.round(st.done / st.total * 100)) : null;
-      ui.status("Downloading " + (meta.fam || "") + meta.name + (pct == null ? "…" : " · " + pct + "% · " + fmtBytes(st.done) + " of " + fmtBytes(st.total)), pct == null ? 0 : pct / 100 * 0.9);
-    } else if (st.phase) ui.status("Loading " + meta.name + " into memory…", 0.92);
+    const pct = st.total && st.done ? Math.min(99, Math.round(st.done / st.total * 100)) : null;
+    ui.status("Downloading " + meta.fam + meta.name + (pct == null ? "…" : " · " + pct + "% · " + fmtBytes(st.done) + " of " + fmtBytes(st.total)), pct == null ? 0 : pct / 100);
   }, 500);
   try {
     ui.status("The download starts…", 0);
@@ -3007,10 +2998,10 @@ function renderDesign() {
   if (P.get("vpanel", "") !== "design") return;
   const d = state.design;
   const el = $("#vModalBody");
-  const st = modelState(DESIGN_ID);
+  const st = modelState(designModel());
   el.innerHTML = '<div class="row"><h3>Design a voice</h3><span class="spacer"></span><button class="iconbtn" data-close title="Close">✕</button></div>' +
     '<div class="sub">Describe the speaker. Qwen3-TTS VoiceDesign makes the voice. Save a preview that you like. You can then use it again.' +
-    (st.downloaded ? "" : " The first use downloads the VoiceDesign model (4.5 GB).") + "</div>" +
+    (st.downloaded ? "" : " The first use downloads the VoiceDesign model (" + modelMeta(designModel()).size + ").") + "</div>" +
     '<div class="steps"><div class="form">' +
     '<label>Voice description<textarea class="in" id="dsDesc" rows="3" placeholder="For example: warm baritone, light British accent, calm narrator">' + esc(d.desc || "") + "</textarea></label>" +
     '<div class="chips" style="margin-top:0">' + DESIGN_EXAMPLES.map((x, i) => '<button class="chip" data-dex="' + i + '" title="' + esc(x) + '">' + esc(DESIGN_LABELS[i]) + "</button>").join("") + "</div>" +
@@ -3046,8 +3037,8 @@ async function designPreview() {
   if (!d.desc) { toast("Describe the voice first.", "err"); return; }
   const seq = ++designSeq;
   d.phase = "busy"; renderDesign();
-  await ensureModel(DESIGN_ID);
-  const r = await run("design_preview", { description: d.desc, text: d.text, language: d.lang });
+  await ensureModel(designModel());
+  const r = await run("design_preview", { description: d.desc, text: d.text, language: d.lang, model_id: designModel() });
   if (seq !== designSeq || state.design !== d) return;
   d.preview = r;
   if (!d.name) d.name = d.desc.split(",")[0].replace(/^(a|an|the)\s+/i, "").slice(0, 32).replace(/^./, (c) => c.toUpperCase());
@@ -3177,7 +3168,7 @@ function wire() {
       onPick: (v) => { P.set("style", v); renderComposerBar(); },
     });
   });
-  $("#engBtn").addEventListener("click", (e) => { e.stopPropagation(); state.popOpen = !state.popOpen; $("#engPop").classList.toggle("hidden", !state.popOpen); if (state.popOpen) refreshStatus().catch(() => {}); });
+  $("#engBtn").addEventListener("click", (e) => { e.stopPropagation(); state.popOpen = !state.popOpen; $("#engPop").classList.toggle("hidden", !state.popOpen); if (state.popOpen) refreshCatalog().catch(() => {}); });
   document.addEventListener("click", (e) => {
     if (state.popOpen && !e.target.closest("#engPop")) { state.popOpen = false; $("#engPop").classList.add("hidden"); }
     if (!$("#vMenu").classList.contains("hidden") && !e.target.closest("#vMenu") && !e.target.closest("#cVoiceBtn")) closeVoiceMenu();
@@ -3206,7 +3197,7 @@ function updateCount() {
 let draftTimer = 0;
 function saveDraftText() {
   clearTimeout(draftTimer);
-  draftTimer = setTimeout(() => { fused.writeFile(".fused/data/draft.json", JSON.stringify({ text: $("#cText").value })).catch(() => {}); }, 800);
+  draftTimer = setTimeout(() => { run("save_draft", { text: $("#cText").value }).catch(() => {}); }, 800);
 }
 
 function resumeTakes() {
@@ -3225,10 +3216,7 @@ function resumeTakes() {
 let pollTimer = 0;
 function startPolling() {
   clearInterval(pollTimer);
-  pollTimer = setInterval(() => {
-    const busy = Object.values(state.models).some((m) => m.phase === "downloading" || m.phase === "loading" || m.phase === "starting");
-    if (busy || state.popOpen) refreshStatus().catch(() => {});
-  }, 3000);
+  pollTimer = setInterval(() => { if (state.popOpen) refreshCatalog().catch(() => {}); }, 5000);
 }
 
 async function boot() {
@@ -3244,25 +3232,14 @@ async function boot() {
   updateCount();
   render();
   drawWave();
-  const apply = (bs) => {
-    state.voices = bs.voices; state.history = bs.history; state.models = bs.models; state.runs = bs.runs || {}; state.prefs = bs.prefs || {}; state.mlx = bs.mlx_available; state.export = bs.export || state.export;
+  try {
+    $("#engTxt").textContent = "The engine starts…";
+    const [bs] = await Promise.all([run("bootstrap"), refreshCatalog()]);
+    state.voices = bs.voices; state.history = bs.history; state.runs = bs.runs || {}; state.prefs = bs.prefs || {}; state.export = bs.export || state.export;
     renderEngines();
     renderExport();
     render();
-  };
-  try {
-    $("#engTxt").textContent = "The engine starts…";
-    const env = await fused.runPython("env.py", {});
-    let bs = await run("bootstrap");
-    apply(bs);
-    if (!bs.mlx_available && env.mlx_audio) {
-      $("#engTxt").textContent = "The engine restarts…";
-      await fused.daemon.stop();
-      await fused.daemon.start();
-      bs = await run("bootstrap");
-      apply(bs);
-    }
-    if (!bs.mlx_available) throw new Error("The local engine is running without mlx-audio (" + bs.python + "). Load the page again to try again.");
+    if (!state.tts || !state.tts.available) toast((state.tts && state.tts.reason) || "Text to speech is not available on this Mac.", "err");
     if (!P.get("voice", "")) { const v = currentVoice(); $("#cLang").value = v.family === "base" ? v.lang : "auto"; }
     renderComposerBar();
     asrOptions().catch(() => {});
