@@ -1,0 +1,18 @@
+[project]
+name = "voiceover-studio"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "mlx-audio>=0.5.7",
+    "numpy>=1.26",
+    "huggingface-hub>=1.0",
+    "miniaudio>=1.61",
+    "certifi",
+]
+
+[tool.uv]
+package = false
+
+[tool.fused-render.app]
+main = "worker.py"
+idle_timeout_s = 900
