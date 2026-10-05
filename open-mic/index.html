@@ -456,11 +456,14 @@ async function showDetail(hasMeetings) {
   applyTab(el, active);
   renderedMeeting = mid;
   // audio player
-  try {
-    const st = await fused.stat(dir + "audio.webm");
-    if (st) $("audioSlot").innerHTML =
-      `<audio controls src="${fused.rawUrl(dir + "audio.webm")}"></audio>`;
-  } catch (e) {}
+  for (const name of ["audio.webm", "audio.mp4", "audio.ogg"]) {
+    try {
+      if (!(await fused.stat(dir + name))) continue;
+      $("audioSlot").innerHTML =
+        `<audio controls src="${fused.rawUrl(dir + name)}"></audio>`;
+      break;
+    } catch (e) {}
+  }
 }
 
 // Meeting title: hover shows an Edit button; editing offers AI-suggested
@@ -664,19 +667,23 @@ async function start(withBrowserAudio) {
 
   // Audio: MediaRecorder → base64 chunks appended to audio.webm every 10 s.
   // Safari/WebKit before 18.4 cannot record webm and throws on the option, so
-  // fall back to the engine's own default container there.
-  rec = MediaRecorder.isTypeSupported("audio/webm")
+  // fall back to the engine's own default container there, recorded as one
+  // blob at stop and saved under its own extension.
+  const webm = MediaRecorder.isTypeSupported("audio/webm");
+  const r = rec = webm
     ? new MediaRecorder(stream, { mimeType: "audio/webm" })
     : new MediaRecorder(stream);
   rec.ondataavailable = ev => {
     if (!ev.data.size) return;
+    const type = ev.data.type || r.mimeType || "";
+    const ext = webm || /webm/.test(type) ? "webm" : /ogg/.test(type) ? "ogg" : "mp4";
     pendingAudio = pendingAudio.then(async () => {
       const buf = new Uint8Array(await ev.data.arrayBuffer());
       let bin = ""; const CH = 0x8000;
       for (let i = 0; i < buf.length; i += CH)
         bin += String.fromCharCode.apply(null, buf.subarray(i, i + CH));
       await fused.runPython("./meetings.py",
-        { action: "append_audio", meeting_id: curId, audio_b64: btoa(bin) }, { key: null });
+        { action: "append_audio", meeting_id: curId, audio_b64: btoa(bin), ext }, { key: null });
     }).catch(e => console.error("audio save failed", e));
   };
   rec.onstop = () => {
@@ -685,7 +692,7 @@ async function start(withBrowserAudio) {
     if (displayStream) displayStream.getTracks().forEach(t => t.stop());
     if (mixCtx) { mixCtx.close().catch(() => {}); mixCtx = null; }
   };
-  rec.start(10000);
+  if (webm) rec.start(10000); else rec.start();
 
   // Live transcription: browser-native speech recognition.
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
