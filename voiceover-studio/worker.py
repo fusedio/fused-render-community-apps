@@ -4,6 +4,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -12,8 +13,27 @@ import urllib.request
 import uuid
 import wave
 
-import fused_ai
 import numpy as np
+
+
+def _fused_ai():
+    try:
+        import fused_ai
+    except ImportError:
+        home = os.environ.get("FUSED_RENDER_HOME_DIR") or os.path.expanduser("~/.fused-render")
+        try:
+            with open(os.path.join(home, "server.json"), encoding="utf-8") as f:
+                shared = json.load(f).get("shared")
+        except (OSError, ValueError):
+            shared = None
+        if not shared:
+            raise ImportError("FusedRender is not running: fused_ai is not available") from None
+        sys.path.insert(0, shared)
+        import fused_ai
+    return fused_ai
+
+
+fused_ai = _fused_ai()
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(APP_DIR, ".fused", "data")

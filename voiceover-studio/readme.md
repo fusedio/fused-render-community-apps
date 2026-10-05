@@ -39,7 +39,7 @@ Each model downloads one time. Other FusedRender apps and the AI Playground shar
 
 Most transcription models write false text for silence, for example "Thank you.". Thus the app refuses silent recordings before the transcript.
 
-Requirements: Apple Silicon and FusedRender 0.6.6 or later.
+Requirements: Apple Silicon and FusedRender 0.6.3 or later.
 
 ## Data
 
