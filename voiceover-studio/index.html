@@ -1204,11 +1204,10 @@ function asrSelectHtml(id, sel) {
 }
 
 function suspectTranscript(text, seconds) {
-  const t = (text || "").toLowerCase().replace(/[^a-z0-9' ]+/g, " ").trim();
-  const words = t ? t.split(/\s+/).length : 0;
-  if (!words) return "The model found no speech in the sample.";
-  if (seconds > 6 && words / seconds < 0.6) return "The model found only " + words + " word" + (words > 1 ? "s" : "") + " in " + Math.round(seconds) + " s of audio. The text is possibly wrong. Try a different model, or examine the sample.";
-  if (seconds > 4 && HALLU.has(t)) return "Models often write “" + text.trim() + "” for silent or noisy audio. Try a different model, or record again.";
+  const letters = (text.match(/[\p{L}\p{N}]/gu) || []).length;
+  if (!letters) return "The model found no speech in the sample.";
+  if (seconds > 6 && letters / seconds < 1.5) return "The model found only " + letters + " letters in " + Math.round(seconds) + " s of audio. The text is possibly wrong. Try a different model, or examine the sample.";
+  if (seconds > 4 && HALLU.has(tokenize(text).join(" "))) return "Models often write “" + text.trim() + "” for silent or noisy audio. Try a different model, or record again.";
   return "";
 }
 const HALLU = new Set(["thank you", "thanks for watching", "thank you for watching", "you", "bye", "thanks", "okay", "so", "thank you very much"]);
@@ -1220,8 +1219,7 @@ async function transcribe(path, language, onNote, key) {
   const opts = { path: path };
   if (key === "apple") { opts.provider = "apple"; opts.model = "afm-speech"; }
   else { opts.model = key.slice(2); opts.vad = false; }
-  if (language && ISO[language]) opts.language = ISO[language];
-  else if (key === "apple") opts.language = "en";
+  if (ISO[language]) opts.language = ISO[language];
   if (onNote) onNote(asrName(key) + " makes the transcript…");
   for (let i = 0; ; i++) {
     try { res = await fused.ai.transcribe(opts); break; }
@@ -2527,7 +2525,7 @@ function openEditVoice(id) {
     '<label>Name<input type="text" id="eName" value="' + esc(v.name) + '" /></label>' +
     '<label>Description<input type="text" id="eDesc" value="' + esc(v.description || "") + '" placeholder="For example: warm, calm, mid-30s" /></label>' +
     '<div class="row"><label class="grow">Language<select id="eLang">' + langOptions(v.language || "auto") + "</select></label>" +
-    '<label class="grow">Engine<select id="eEng"><option value="">Auto</option><option value="17"' + (v.engine_set && v.engine === "17" ? " selected" : "") + '>1.7B — best quality</option><option value="06"' + (v.engine_set && v.engine === "06" ? " selected" : "") + ">0.6B — faster</option></select></label></div>" +
+    '<label class="grow">Engine<select id="eEng"><option value="">Auto</option><option value="17"' + (v.engine === "17" ? " selected" : "") + '>1.7B — best quality</option><option value="06"' + (v.engine === "06" ? " selected" : "") + ">0.6B — faster</option></select></label></div>" +
     '<div class="txhead"><span class="lab">Reference transcript</span><span class="spacer"></span>' + asrSelectHtml("eAsr", asrKey()) + '<button class="btn sm" id="eRetx">Re-transcribe</button></div>' +
     '<textarea class="in" id="eRef" rows="4">' + esc(v.ref_text || "") + "</textarea>" +
     '<div class="note">Type the exact words that the sample says.</div>' +
@@ -2645,7 +2643,7 @@ function renderClone() {
       "<div>" + txNoteHtml(c) + "</div>" +
       '<label>Name<input type="text" id="rvName" value="' + esc(c.name || "My voice") + '" /></label>' +
       '<label>Description<input type="text" id="rvDesc" placeholder="The app fills this in after the transcript" value="' + esc(c.desc || "") + '" /></label>' +
-      '<div class="row"><label class="grow">Language<select id="rvLang">' + langOptions(c.lang || "english") + "</select></label>" +
+      '<div class="row"><label class="grow">Language<select id="rvLang">' + langOptions(c.lang || "auto") + "</select></label>" +
       '<label class="grow">Engine<select id="rvEng"><option value="">Auto: use the model on disk</option><option value="17">1.7B — best quality</option><option value="06">0.6B — faster</option></select></label></div>' +
       '<div class="row"><span class="spacer"></span><button class="btn" id="rvDiscard">Discard</button><button class="btn primary" id="rvSave"></button></div>' +
       "</div></div>";
@@ -2910,7 +2908,7 @@ async function importVoice(params, src) {
     await asrOptions();
     const r = await run("import_voice", params);
     if (!live()) { run("delete_voice", { voice_id: r.voice.id }).catch(() => {}); return; }
-    state.clone = { phase: "review", voice: r.voice, quality: r.quality, name: params.name || defaultVoiceName(), lang: "english", engine: "", ref: "", desc: "", asr: asrKey(), txPhase: "running", txState: "The transcript starts…" };
+    state.clone = { phase: "review", voice: r.voice, quality: r.quality, name: params.name || defaultVoiceName(), lang: "auto", engine: "", ref: "", desc: "", asr: asrKey(), txPhase: "running", txState: "The transcript starts…" };
     renderClone();
     autoTranscribe();
   } catch (e) {
@@ -2919,8 +2917,10 @@ async function importVoice(params, src) {
   }
 }
 
-const LANG_FROM = Object.assign({}, Object.fromEntries(Object.entries(ISO).map(([k, v]) => [v, k])), Object.fromEntries(LANGS.map((l) => [l, l])));
-function langFromAsr(l) { return l ? LANG_FROM[String(l).toLowerCase().split(/[-_]/)[0]] || LANG_FROM[String(l).toLowerCase()] || "" : ""; }
+function langFromAsr(l) {
+  l = String(l || "").toLowerCase().split(/[-_]/)[0];
+  return ISO[l] ? l : Object.keys(ISO).find((k) => ISO[k] === l) || "";
+}
 
 function describeVoice(q, text) {
   const words = (text.trim().match(/\S+/g) || []).length;
@@ -2947,8 +2947,7 @@ async function autoTranscribe() {
     const text = (r.text || "").trim();
     const s = state.clone;
     Object.assign(s, { ref: text, txPhase: "done", asrUsed: key, txSecs: r.seconds, suspect: suspectTranscript(text, s.quality.duration) });
-    const detected = langFromAsr(r.language);
-    if (detected && detected !== "auto" && s.lang !== detected) s.lang = detected;
+    if (s.lang === "auto") s.lang = langFromAsr(r.language) || "auto";
     if (!s.descTouched) s.desc = describeVoice(s.quality, text);
     renderClone();
   } catch (e) {
