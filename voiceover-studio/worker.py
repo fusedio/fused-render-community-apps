@@ -345,20 +345,13 @@ def _analyze(pcm, trimmed_from=None):
     }
 
 
-DEMO_META = {slug: (name, desc, lang) for name, slug, desc, lang in DEMO_VOICES}
-
-
 def _voice_defaults(v):
-    v.setdefault("kind", "demo" if v.get("slug") else "clone")
+    v.setdefault("kind", "clone")
     v.setdefault("description", "")
     v.setdefault("language", "auto")
-    if not v.get("engine_set"):
-        v["engine"] = None
+    v.setdefault("engine", None)
     v.setdefault("draft", False)
     v.setdefault("quality", None)
-    meta = DEMO_META.get(v.get("slug"))
-    if meta and str(v.get("name", "")).startswith("Demo —"):
-        v["name"], v["description"], v["language"] = meta
     return v
 
 
@@ -727,8 +720,6 @@ def a_update_voice(voice_id="", fields_json="", **_):
             for k, val in fields.items():
                 if k in allowed:
                     v[k] = val
-            if "engine" in fields:
-                v["engine_set"] = bool(fields["engine"])
             found = v
             break
     if found is None:
