@@ -2,6 +2,7 @@
 <html>
 <head>
   <meta name="fused-app">
+  <meta name="fused-api-version" content="1" />
 <meta charset="utf-8" />
 <title>PyTop</title>
 <style>
@@ -34,7 +35,7 @@
   button.toggle.danger:hover { border-color: var(--red); color: var(--red); background: rgba(248,81,73,.1); }
   table { width: 100%; border-collapse: collapse; }
   th { text-align: left; padding: 8px 10px; color: var(--dim); font-size: 11px;
-    text-transform: uppercase; cursor: pointer; user-select: none; white-space: nowrap;
+    text-transform: uppercase; cursor: pointer; -webkit-user-select: none; user-select: none; white-space: nowrap;
     position: sticky; top: 0; background: var(--bg); border-bottom: 1px solid var(--border); }
   th.active { color: var(--blue); }
   td { padding: 4px 10px; border-bottom: 1px solid #1e2025; white-space: nowrap; }

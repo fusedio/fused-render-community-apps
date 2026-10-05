@@ -68,7 +68,7 @@ are migrated to the new directory name on first run.
   Safari and Firefox will record audio but produce no live transcript.
 - `requires_python: true` — `meetings.py` handles all file IO. No third-party
   Python packages.
-- A local model loaded in fused-render, used through `fused.ai(...)` for the
+- A local model loaded in fused-render, used through `fused.ai.text(...)` for the
   title and the summary. No API keys, no remote AI service.
 
 ## Limitations

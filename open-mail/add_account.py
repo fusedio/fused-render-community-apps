@@ -1,9 +1,3 @@
-# /// script
-# dependencies = [
-#     "google-api-python-client",
-#     "google-auth-oauthlib",
-# ]
-# ///
 """Detached OAuth consent worker.
 
 Spawned by mail.py op=start_auth (never through the fused-render engine —

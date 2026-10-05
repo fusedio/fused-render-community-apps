@@ -1,0 +1,8 @@
+[project]
+name = "cog-range-viewer"
+version = "1.0.1"
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.uv]
+package = false

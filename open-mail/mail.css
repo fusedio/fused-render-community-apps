@@ -73,7 +73,7 @@
     position: fixed; top: 0; bottom: 0; width: 9px; cursor: col-resize; z-index: 30;
   }
   #splitbar:hover, body.splitting #splitbar { background: linear-gradient(90deg, transparent 3px, var(--accent) 4px, var(--accent) 5px, transparent 6px); }
-  body.splitting { cursor: col-resize; user-select: none; }
+  body.splitting { cursor: col-resize; -webkit-user-select: none; user-select: none; }
   body.splitting iframe { pointer-events: none; }   /* mail iframes must not eat the drag */
   @media (max-width: 620px) { #splitbar { display: none; } }
   /* A modal owns the screen — no pane resizing (or its hover line) above it. */
@@ -342,7 +342,7 @@
   .chipfield .rchip {
     display: inline-flex; align-items: center; gap: 2px; max-width: 100%;
     background: var(--chip); color: var(--chip-fg); border-radius: 999px;
-    padding: 2px 3px 2px 10px; font-size: 12px; cursor: grab; user-select: none;
+    padding: 2px 3px 2px 10px; font-size: 12px; cursor: grab; -webkit-user-select: none; user-select: none;
   }
   .chipfield .rchip:active { cursor: grabbing; }
   .chipfield .rchip.dragging { opacity: .35; }

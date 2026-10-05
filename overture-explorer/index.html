@@ -2,6 +2,7 @@
 <html>
 <head>
 <meta name="fused-app">
+<meta name="fused-api-version" content="1" />
 <meta charset="utf-8">
 <title>Overture Map Explorer</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
@@ -152,8 +153,12 @@ const COLORS = { places: "#58a6ff", buildings: "#c792ea", transportation: "#f088
 
 // ── Map ──────────────────────────────────────────────────────────────────
 const map = L.map("map", { zoomControl: true });
-L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
-  { attribution: "© OpenStreetMap © CARTO", maxZoom: 19 }).addTo(map);
+// Esri's dark canvas needs no API key (CARTO's dark_all now serves "API KEY REQUIRED" tiles).
+const ESRI = "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/";
+L.tileLayer(ESRI + "World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",
+  { attribution: "Tiles © Esri — Esri, HERE, Garmin, © OpenStreetMap contributors", maxNativeZoom: 16, maxZoom: 19 }).addTo(map);
+L.tileLayer(ESRI + "World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}",
+  { maxNativeZoom: 16, maxZoom: 19 }).addTo(map);
 let dataLayer = null, storyLayers = [];
 
 function viewFromParams() {

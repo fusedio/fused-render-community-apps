@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="fused-app" />
+<meta name="fused-api-version" content="1" />
 <title>Local transcription</title>
 <style>
   :root {
@@ -832,8 +833,14 @@ function drawFiles() {
 // segment is still a diarized run (one where the segmenter heard nobody), and
 // reading only the legend would render that as a plain transcript.
 const NO_SPEAKER = "Unattributed";
+// The run's own facts (task, transcript paths, the speaker legend, an estimated
+// count) live under `providerMetadata[provider]` on the API v1 result frame.
+function runMeta(r) {
+  const pm = (r && r.providerMetadata) || {};
+  return pm[r && r.provider] || pm.local || {};
+}
 function isDiarized(r) {
-  return !!r && (Array.isArray(r.speakers) || (r.segments || []).some((s) => "speaker" in s));
+  return !!r && (Array.isArray(runMeta(r).speakers) || (r.segments || []).some((s) => "speaker" in s));
 }
 
 // The colour comes from the NUMBER in the label, so "Speaker 3" is the third hue
@@ -869,7 +876,7 @@ function drawLegend(segs) {
   // Built from the reply's legend (the labels that actually landed on a
   // segment), with the unattributed entry added only when a segment really has
   // none — a legend row nothing in the transcript refers to reads as a bug.
-  const labels = (result.speakers || []).slice();
+  const labels = (runMeta(result).speakers || []).slice();
   const seen = new Set(labels);
   for (const s of segs) {
     if (s.speaker && !seen.has(s.speaker)) { seen.add(s.speaker); labels.push(s.speaker); }
@@ -934,27 +941,28 @@ function drawResult() {
   el("resultCard").classList.remove("hidden");
 
   drawTiming();
-  const dur = result.duration || (result.segments && result.segments.length ? result.segments[result.segments.length - 1].end : 0);
+  const meta = runMeta(result);
+  const dur = result.durationInSeconds || (result.segments && result.segments.length ? result.segments[result.segments.length - 1].endSecond : 0);
   const words = (result.text || "").trim().split(/\s+/).filter(Boolean).length;
   el("resultMeta").innerHTML = [
-    result.model ? "model <span class='mono'>" + esc(result.model) + "</span>" : "",
+    result.response && result.response.modelId ? "model <span class='mono'>" + esc(result.response.modelId) + "</span>" : "",
     result.language ? "language <b>" + esc(result.language) + "</b>" : "",
-    result.task ? "task " + esc(result.task) : "",
+    meta.task ? "task " + esc(meta.task) : "",
     dur ? "audio " + clock(dur) : "",
     (result.segments || []).length + " segments · " + words + " words",
     // Said in the meta line rather than in a banner, because it qualifies every
     // other number beside it: a live count is a count SO FAR.
     result.partial ? "<b style='color:var(--accent)'>" + esc(result.partial) + "</b>" : "",
-    isDiarized(result) ? (result.speakers || []).length + " speakers identified" : "",
+    isDiarized(result) ? (meta.speakers || []).length + " speakers identified" : "",
     // Present ONLY on a run that had to work the count out, which is what makes
     // its presence the whole message: nobody told this run how many people were
     // in the room. It can exceed the labels beside it — it counts the voices the
     // segmenter heard, including anyone who spoke where no words were
     // transcribed — so it is said as a separate number rather than folded in.
-    result.estimatedSpeakers
-      ? "count <b>estimated</b> — " + result.estimatedSpeakers + " voices heard"
+    meta.estimatedSpeakers
+      ? "count <b>estimated</b> — " + meta.estimatedSpeakers + " voices heard"
       : "",
-    result.url ? `<a href="${esc(result.url)}" target="_blank" style="color:var(--accent)">transcript json</a>` : "",
+    meta.url ? `<a href="${esc(meta.url)}" target="_blank" style="color:var(--accent)">transcript json</a>` : "",
   ].filter(Boolean).map((s) => "<span>" + s + "</span>").join("");
 
   const q = P.q.trim().toLowerCase();
@@ -969,8 +977,8 @@ function drawResult() {
           : "";
         return `<div class="seg${hit ? "" : " dim"}` +
           (diarized ? " spk " + speakerClass(s.speaker) : "") +
-          `" data-i="${i}" data-start="${s.start}">` +
-          `<time class="mono">${clock(s.start)} → ${clock(s.end)}</time>` +
+          `" data-i="${i}" data-start="${s.startSecond}">` +
+          `<time class="mono">${clock(s.startSecond)} → ${clock(s.endSecond)}</time>` +
           `<div>${who}${highlight(s.text || "", q)}</div></div>`;
       }).join("")
     : '<div class="empty">No segments returned.</div>';
@@ -998,8 +1006,8 @@ function drawResult() {
 }
 
 // ── The transcript AS IT DECODES ───────────────────────────────────────────
-// `onSegment` hands over each segment during the run — in order, exactly once,
-// and in the same `{start, end, text}` (+ `speaker`) shape `rec.segments`
+// `onChunk` hands over each segment during the run — in order, exactly once,
+// and in the same `{startSecond, endSecond, text}` (+ `speaker`) shape `rec.segments`
 // carries. So there is no second renderer here: the arriving segments are put
 // into `result` and drawResult() draws them, which is the whole reason the
 // shapes match. A live view that drifted from the final one would be a second
@@ -1028,8 +1036,9 @@ function queueLive(segs, model) {
 function drawLive(segs, model, label) {
   result = {
     partial: label || "decoding…",
-    model,
-    task: P.task,
+    provider: "local",
+    response: { modelId: model },
+    providerMetadata: { local: { task: P.task } },
     segments: segs,
     // The worker's own join (`" ".join(...).strip()`), so switching to Plain
     // text mid-run shows the same words the finished transcript will, and the
@@ -1048,7 +1057,7 @@ function drawLive(segs, model, label) {
 }
 
 // ── Salvage: what survived a run that ended badly ──────────────────────────
-// Two witnesses, and they answer different failures. What `onSegment` already
+// Two witnesses, and they answer different failures. What `onChunk` already
 // delivered is on screen and is complete as far as it goes — the runtime
 // settles its last reads before rejecting, so nothing arrives after this. The
 // worker's `.partial.jsonl` (named by `err.outputPartial`, never derived here)
@@ -1066,7 +1075,12 @@ async function keepWhatSurvived(err, live, model) {
   if (err.outputPartial) {
     try {
       const lines = (await fused.readFile(err.outputPartial)).split("\n").filter(Boolean);
-      const salvaged = lines.map((line) => JSON.parse(line));
+      // Rows in the partial file are RAW `{start, end, text}` — reshape them to
+      // the `startSecond`/`endSecond` frame every other segment here carries.
+      const salvaged = lines.map((line) => {
+        const { start, end, ...rest } = JSON.parse(line);
+        return { ...rest, startSecond: start, endSecond: end };
+      });
       if (salvaged.length > segs.length) segs = salvaged;
     } catch (readErr) {
       /* gone, or half a line at the end of it — the live list stands */
@@ -1089,7 +1103,7 @@ function syncActiveSegment() {
   const t = el("player").currentTime, segs = result && result.segments;
   if (!segs) return;
   let active = -1;
-  for (let i = 0; i < segs.length; i++) if (t >= segs[i].start && t <= segs[i].end) { active = i; break; }
+  for (let i = 0; i < segs.length; i++) if (t >= segs[i].startSecond && t <= segs[i].endSecond) { active = i; break; }
   el("segments").querySelectorAll(".seg").forEach((d) => {
     d.classList.toggle("active", Number(d.dataset.i) === active);
   });
@@ -1599,7 +1613,7 @@ async function transcribe() {
     model,
     task: P.task,
     vad: P.vad,
-    onSegment: (s) => {
+    onChunk: (s) => {
       live.push(s);
       queueLive(live, model);
     },
@@ -1648,7 +1662,7 @@ async function transcribe() {
 
   try {
     // The resolve REPLACES the live stand-in; it does not append to it.
-    // `rec.segments` is the same list `onSegment` was feeding us — the runtime
+    // `rec.segments` is the same list `onChunk` was feeding us — the runtime
     // reconciles by count and delivers whatever the tail missed before it
     // resolves — so the two are the same words, and the swap is only how the
     // fields we could not know live (url, duration, language, the speaker
@@ -1669,7 +1683,7 @@ async function transcribe() {
       unknownMs: span.unknown,
       stages: span.stages.slice(),
       loadMs: pendingLoadMs,          // non-zero only when this run had to load the model
-      audioSec: result.duration || (segs.length ? segs[segs.length - 1].end : lastDone),
+      audioSec: result.durationInSeconds || (segs.length ? segs[segs.length - 1].endSecond : lastDone),
     };
     pendingLoadMs = 0;
     el("progressCard").classList.add("hidden");
@@ -1678,7 +1692,7 @@ async function transcribe() {
   } catch (err) {
     el("progressCard").classList.add("hidden");
     // Whatever decoded before the run ended is still worth having, and there
-    // are two places it can be: on screen already (everything `onSegment`
+    // are two places it can be: on screen already (everything `onChunk`
     // delivered — the runtime settles its last reads BEFORE rejecting, so this
     // list is final by now), and in the `.partial.jsonl` the worker leaves
     // behind on a FAILED run. Prefer whichever is longer, since the file also
@@ -1800,7 +1814,7 @@ function toSrt(segments) {
   };
   return segments.map((s, i) => {
     const prefix = withSpeakers ? speakerName(s.speaker) + ": " : "";
-    return (i + 1) + "\n" + stamp(s.start) + " --> " + stamp(s.end) + "\n" +
+    return (i + 1) + "\n" + stamp(s.startSecond) + " --> " + stamp(s.endSecond) + "\n" +
       prefix + (s.text || "").trim() + "\n";
   }).join("\n");
 }
@@ -1947,7 +1961,7 @@ el("copy").addEventListener("click", async () => {
     el("copy").textContent = "Copied";
     setTimeout(() => (el("copy").textContent = "Copy"), 1200);
   } catch (err) {
-    notice("Clipboard blocked — the transcript is also on disk at <span class='mono'>" + esc(result.outputText || result.output || "") + "</span>");
+    notice("Clipboard blocked — the transcript is also on disk at <span class='mono'>" + esc(runMeta(result).outputText || runMeta(result).output || "") + "</span>");
   }
 });
 

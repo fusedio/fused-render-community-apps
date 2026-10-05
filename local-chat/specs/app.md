@@ -118,7 +118,7 @@ switch in Preferences, which evicts — `assumptions.md §5`).
 build's `/api/ai/runtime` reports both with `available: true` and no `active`
 flag, so the strip names the **first available** entry and says "or Transformers"
 nowhere — guessing which one serves would be a lie the payload cannot support.
-The truthful label is the runner set; the truthful *proof* is `res.model` on the
+The truthful label is the runner set; the truthful *proof* is `res.response.modelId` on the
 first answer, which the Chat meta line shows (`app-chat.md §5`).
 
 If `catalog()` fails or returns no `text-generation` block, the select falls back
@@ -153,7 +153,7 @@ generate({ prompt, history, onChunk, onLoading }) -> {text, model, usage, second
    `onChunk`. There is no `raw` argument — the surface that used it is gone, and
    an unused option that `assumptions.md §1` says conflicts with `history` is a
    trap, not a feature.
-3. Calls `fused.ai`. On `model_loading`, calls `onLoading(record)` per watch tick
+3. Calls `fused.ai.text({prompt, ...opts})`. On `model_loading`, calls `onLoading(record)` per watch tick
    and **retries exactly once** (`assumptions.md §2`).
 4. Starts a clock before the call and stops it at the resolve, returning
    `seconds` alongside `usage` — because `usage.seconds` is missing on every
@@ -174,7 +174,7 @@ Every `fused.ai.*` call site checks it. The dotted calls export cleanly and then
 fail at the reader, so nothing but this check stops them (`assumptions.md §6`).
 When `IS_LOCAL` is false the page renders its chrome, disables every generate
 control, and shows one banner explaining that local AI is not available on a
-hosted copy. In practice this page cannot be exported at all (`fused.ai(` is a
+hosted copy. In practice this page cannot be exported at all (`fused.ai.text(` is a
 textual match and every surface has one), so the gate is belt-and-braces — kept
 because it is the correct habit and cheap, not because we expect to hit it.
 

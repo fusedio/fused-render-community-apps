@@ -11,7 +11,10 @@
 > `_history_problem`), `fused_render/ai/supervisor.py` (`generate_text`,
 > `cancel_generation`), `fused_render/ai/runners/mlx_text/worker.py` (`generate`).
 
-## 1. `fused.ai(prompt, opts)` — the one call this app is built on
+## 1. `fused.ai.text({prompt, ...opts})` — the one call this app is built on
+
+(fused API version 1: `fused.ai` is a namespace; the old callable
+`fused.ai(prompt, opts)` is gone.)
 
 **The destination is decided by the model id, and by nothing else:** an id
 containing a `/` is a Hugging Face repo served by a worker process on this
@@ -19,7 +22,7 @@ machine; anything else goes to the `claude` CLI. **Every call in this app names 
 slashed id**, so this app is entirely the local path. That is not a detail — half
 the options below do not exist on the other one.
 
-**Request.** Only these keys are sent; anything else the bridge drops.
+**Request.** Only these keys are sent; any other key is a `bad_request` naming it.
 
 | Key | Type | Default | Local path |
 |---|---|---|---|
@@ -40,26 +43,20 @@ Bools are refused where a number is expected (`temperature: true` is
 **Reply.** Resolves with the same shape streaming or not:
 
 ```js
-{ text, model, usage }
+{ text, provider, finishReason, warnings, usage,
+  response: { id, modelId, timestamp }, providerMetadata: { local: {...} } }
 ```
 
 - `text` is the **complete** completion even when streaming — the server
   accumulates it and puts it in the terminal `done` frame. A page that streamed
   into a DOM node does not have to have kept the string itself.
-- `model` is the id that actually ran.
+- `response.modelId` is the id that actually ran (there is no top-level `model`).
 
-**`usage` IS NOT THE ANTHROPIC SHAPE ON THIS PATH.** The local relay returns:
+**`usage` is camelCase** (`{inputTokens, outputTokens, totalTokens}`, or null).
+Every surface reads only `usage.outputTokens`; the worker's own generation clock
+is not relied on — the page times the call itself (`app-chat.md §5`).
 
-```js
-usage = { output_tokens: 412, seconds: 9.31 }
-```
-
-There is **no `input_tokens`** — reading it gives `undefined`, and a UI that
-prints it shows a blank where a number belongs. `seconds` is the worker's own
-generation clock and is **absent on a cancelled run** (§3). Every surface reads
-`output_tokens` and treats `seconds` as optional (`app-chat.md §5`).
-
-**Rule: echo the reply, never the request.** `res.model` is what answered; the
+**Rule: echo the reply, never the request.** `res.response.modelId` is what answered; the
 dropdown is only what was asked for. They differ whenever another page or the AI
 Models tab swapped the resident model under us.
 
@@ -68,7 +65,7 @@ Models tab swapped the resident model under us.
 This is the sharpest difference from the sibling app, and getting it wrong is
 the single most likely way to ship a broken first-run experience.
 
-A `fused.ai()` call naming a model that is not resident **rejects immediately**
+A `fused.ai.text()` call naming a model that is not resident **rejects immediately**
 with `.type === "model_loading"` — *having already started the load* — and hands
 back `err.jobId`. It does not wait. The reasoning upstream is explicit: a chat
 box must not hang for the minutes a cold multi-GB load takes, so the first call
@@ -79,11 +76,11 @@ the same one** (`app.md §5`):
 
 ```js
 try {
-  return await fused.ai(prompt, opts);
+  return await fused.ai.text({ prompt, ...opts });
 } catch (err) {
   if (err.type !== "model_loading") throw err;
   await fused.watchJob(err.jobId).watch(onTick);   // bytes; resolves on terminal state
-  return await fused.ai(prompt, opts);             // resident now — retried ONCE
+  return await fused.ai.text({ prompt, ...opts }); // resident now — retried ONCE
 }
 ```
 
@@ -107,8 +104,8 @@ What happens to the in-flight generation is the part that surprises people. The
 worker sees the cancel flag between tokens and closes its stream with
 `{"type":"done","ok":true,"cancelled":true,"tokens":<n>}`. `ok` is **true**, so:
 
-- The `fused.ai()` promise **resolves normally** with the tokens produced so far.
-- `usage.output_tokens` is the partial count; **`usage.seconds` is absent.**
+- The `fused.ai.text()` promise **resolves normally** with the tokens produced so far.
+- `usage.outputTokens` is the partial count; `finishReason` is `"cancelled"`.
 - There is **no `cancelled` rejection type on the text path at all.**
 
 Consequences the surfaces must honour: a stopped answer is **kept**, not
@@ -170,12 +167,12 @@ after a Preferences switch — the concrete reason this section says *always ask
 
 ## 6. Export: this app is local-only, deliberately
 
-- The exporter **rejects any page containing the literal string `fused.ai(`**
+- The exporter **rejects any page containing the literal string `fused.ai.text(`**
   (SPEC RH-11) — a *textual* match, so an `if (fused.env === "local")` guard does
   not make it exportable. Every surface here generates text, so **the entry page
   is non-exportable by construction**. Accepted, and stated in the UI rather than
   worked around.
-- The **dotted** calls (`fused.ai.models.*`, `fused.ai.cancel(`) slip past that
+- The other dotted calls (`fused.ai.models.*`, `fused.ai.cancel(`) slip past that
   match and would export cleanly, then fail at the reader. Nothing stops us at
   export time, so **every dotted call is gated on `fused.env === "local"` by
   hand** (`app.md §6`).

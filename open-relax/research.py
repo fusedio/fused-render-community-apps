@@ -1,6 +1,3 @@
-# /// script
-# dependencies = ["httpx"]
-# ///
 """Build catalog.json: for every tile that can play a real recording, up to six
 Creative Commons clips from Openverse, each verified to be under 1 MB.
 

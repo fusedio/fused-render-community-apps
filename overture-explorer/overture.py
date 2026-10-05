@@ -11,9 +11,6 @@ Everything expensive is disk-cached under ./.cache (fresh subprocess per call,
 so an in-memory cache would never hit). Keys: (action args incl. rounded bbox).
 """
 
-# /// script
-# dependencies = ["duckdb", "numpy", "pandas<3", "pyproj", "requests", "shapely"]
-# ///
 
 import functools
 import hashlib

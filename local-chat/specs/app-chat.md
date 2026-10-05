@@ -96,14 +96,13 @@ Under every assistant turn, one small line:
 Qwen3 8B (4-bit) · 412 tokens · 9.3 s · 44 tok/s
 ```
 
-- **Model** — from `res.model`, the id that actually answered, mapped to its
+- **Model** — from `res.response.modelId`, the id that actually answered, mapped to its
   catalog label. Never the dropdown's value (`assumptions.md §1`).
-- **Tokens** — `res.usage.output_tokens`. **Not `input_tokens`**, which does not
-  exist on this path and would render as `undefined tokens`.
+- **Tokens** — `res.usage.outputTokens` (camelCase since fused API version 1).
 - **Seconds** — the shell's own clock (`app.md §5`), not `usage.seconds`, so the
   number is present on stopped runs too. When the server did report `seconds`
   the two agree to within the round trip; when it did not, ours is the only one.
-- **tok/s** — `output_tokens / seconds`, one decimal. Omitted rather than shown
+- **tok/s** — `outputTokens / seconds`, one decimal. Omitted rather than shown
   as `∞` or `NaN` when tokens is 0 or seconds is under 0.05.
 
 The first turn after a cold start also carries `after a 4.6 GB load` — the load

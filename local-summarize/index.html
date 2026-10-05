@@ -5,6 +5,7 @@
 <!-- Declares this page a fused app's entry — keep it near the top of <head>
      (detection reads only the first 4 KiB). -->
 <meta name="fused-app" />
+<meta name="fused-api-version" content="1" />
 <title>Summarize — text summarization on this machine</title>
 <style>
   /* Two :root blocks, ONE token set, no colour literal anywhere else — the
@@ -65,6 +66,8 @@
   }
   .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 
+  /* Standard twin of the ::-webkit-scrollbar rules below (Firefox reads only these). */
+  * { scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
   ::-webkit-scrollbar { width: 10px; height: 10px; }
   ::-webkit-scrollbar-thumb {
     background: var(--line); border-radius: 6px;
@@ -521,7 +524,9 @@ const CAP = "text-generation";
 let cacheDir = null;
 const cacheReady = (async () => {
   try {
-    cacheDir = (await fused.runPython("./saved.py", { action: "dir" })).dir;
+    /* key:null — the boot-time `list` call on the same file would otherwise
+       supersede (abort) this one, and the folder would never be created. */
+    cacheDir = (await fused.runPython("./saved.py", { action: "dir" }, { key: null })).dir;
   } catch (err) {
     /* Nothing can be saved without it, but everything else on the page still
        works — so this is a notice, not a dead app. */
@@ -605,7 +610,7 @@ const isLocalModel = (id) => !!id && (id.includes("/") || /\.gguf$/i.test(id));
 
 /* The CLI is not a catalog — it has no list to ask, so these three aliases are
    the app's own. They are ALIASES, never pinned ids: the CLI resolves each to
-   whatever it currently points at, and `res.model` reports what actually ran.
+   whatever it currently points at, and `res.response.modelId` reports what actually ran.
    They exist so the app is useful on a machine with nothing downloaded yet. */
 const CLI_MODELS = [
   { id: "haiku", label: "Claude Haiku", note: "Fastest of the three, and enough for most summaries.", cli: true },
@@ -654,7 +659,7 @@ async function refreshRuntime() {
   }
   let list = null, catalog = null;
   /* Every dotted `fused.ai.*` call is gated on IS_LOCAL by hand: the exporter's
-     check only matches the literal `fused.ai(`, so these would export cleanly
+     check only matches the literal `fused.ai.text(`, so these would export cleanly
      and then fail at the reader. */
   try { list = await fused.ai.models.list(); } catch (err) { /* the strip says so below */ }
   try { catalog = await fused.ai.models.catalog(); } catch (err) { /* ditto */ }
@@ -837,8 +842,7 @@ function syncEnabled() {
   ["temp", "maxtok"].forEach((k) => { $(k).disabled = !local; });
   $("samplingNote").textContent = local
     ? "Sent to the local worker. A low temperature keeps a summary close to the text."
-    : "The Claude Code path takes no sampling controls — the bridge refuses them "
-      + "rather than dropping them quietly, so they are not sent.";
+    : "The Claude Code path takes no sampling controls, so they are not sent.";
 }
 
 async function generate(spec) {
@@ -849,8 +853,8 @@ async function generate(spec) {
   const opts = { model: id };
   if (spec.system) opts.systemPrompt = spec.system;
   if (local) {
-    /* Local only. On the CLI path the bridge answers 400 for each of these
-       rather than ignoring them, so they are branched, not defaulted. */
+    /* Local only. The CLI path drops them (with a `warnings[]` entry), so they
+       are branched, not sent for nothing. */
     opts.temperature = P.num("temp");
     opts.maxTokens = spec.maxTokens || P.int("maxtok");
   } else {
@@ -864,7 +868,7 @@ async function generate(spec) {
   let cold = false;
   let res;
   try {
-    res = await fused.ai(spec.prompt, opts);
+    res = await fused.ai.text({ prompt: spec.prompt, ...opts });
   } catch (err) {
     /* Text fails FAST on a cold local model, having already started the load,
        and hands back the job. Watch it, then retry exactly ONCE — a second
@@ -877,23 +881,20 @@ async function generate(spec) {
     await fused.watchJob(err.jobId).watch((job) => { if (spec.onLoading) spec.onLoading(job); });
     if (spec.onLoading) spec.onLoading(undefined);
     clock = performance.now();   // a download is not generation; keep it out of tok/s
-    res = await fused.ai(spec.prompt, opts);
+    res = await fused.ai.text({ prompt: spec.prompt, ...opts });
   } finally {
     if (cold) refreshRuntime();
   }
 
-  /* `usage` is not the same shape on the two paths. Measured against the
-     running server rather than read off a doc: the local relay returned
-     `{input_tokens, output_tokens, seconds}` and the CLI `{input_tokens,
-     output_tokens}` with no `seconds`. `output_tokens` is the one field both
-     have carried in every observation, so it is the only one read here — and
-     the page keeps its OWN clock regardless, because `seconds` is absent on a
-     cancelled run, which is exactly the run a reader is most likely to stop. */
+  /* `usage` is `{inputTokens, outputTokens, totalTokens}` or null (fused API
+     version 1). Only `outputTokens` is read here — and the page keeps its OWN
+     clock regardless, because the server's generation time is not part of the
+     frame on every path, least of all on a run the reader stopped. */
   const usage = res.usage || {};
   return {
     text: res.text || "",
-    model: res.model || id,
-    tokens: typeof usage.output_tokens === "number" ? usage.output_tokens : null,
+    model: (res.response && res.response.modelId) || id,
+    tokens: typeof usage.outputTokens === "number" ? usage.outputTokens : null,
     seconds: (performance.now() - clock) / 1000,
     cold: cold,
   };
@@ -1574,9 +1575,11 @@ function isoish() {
 /* The saved file is markdown first: a `---` header this app writes, then the
    summary itself. It opens and reads correctly in any markdown viewer with this
    app nowhere in the picture, which is the point — the summary outlives the app.
-   `:` in a value would break the header's own parser, so values are flattened. */
+   A newline in a value would end its header line, so values are flattened to one
+   line. A `:` is safe — saved.py splits each line on its FIRST colon only — and
+   must stay, or the `saved` time reads "23 -22 -18". */
 function headerValue(text) {
-  return String(text == null ? "" : text).replace(/[\r\n]+/g, " ").replace(/:/g, " -").trim();
+  return String(text == null ? "" : text).replace(/[\r\n]+/g, " ").trim();
 }
 
 function fileFor() {

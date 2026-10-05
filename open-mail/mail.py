@@ -1,9 +1,3 @@
-# /// script
-# dependencies = [
-#     "google-api-python-client",
-#     "google-auth-oauthlib",
-# ]
-# ///
 # NOTE: deliberately NO @fused.udf here. Where the fused SDK is importable in
 # the run venv, a decorated udf executes on the configured REMOTE Fused env
 # (no local filesystem, no subprocess) — useless for a mail client that owns

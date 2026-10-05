@@ -1,0 +1,9 @@
+[project]
+name = "disk-usage"
+version = "1.0.1"
+requires-python = ">=3.11"
+# duckdb comes from the bundled interpreter; pytest is only used by test_disk.py, not the app.
+dependencies = []
+
+[tool.uv]
+package = false

@@ -1,0 +1,9 @@
+[project]
+name = "open-relax"
+version = "1.0.0"
+requires-python = ">=3.11"
+# httpx comes from the bundled interpreter.
+dependencies = []
+
+[tool.uv]
+package = false

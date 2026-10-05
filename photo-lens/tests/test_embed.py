@@ -72,3 +72,25 @@ def test_a_loaded_embedder_reloads_nothing(monkeypatch):
     monkeypatch.setattr(e, "_load_now",
                         lambda: pytest.fail("reloaded an already-loaded model"))
     e.load()
+
+
+def test_api_embedder_reads_the_v1_result_frame(monkeypatch):
+    """fused API v1 answers `/api/ai/embed` with `embeddings` and
+    `providerMetadata.local.dim`; v0's top-level `vectors`/`dim` are gone. Reading
+    the old names made every batch look 0-dimensional, and the indexer flagged
+    every photo in the library as unreadable."""
+    from lens.embed import ApiEmbedder, EmbedApiError
+    e = ApiEmbedder("clip-b32", origin="http://127.0.0.1:1")
+    row = [0.0] * e.dim
+    row[0] = 3.0
+    frame = {"provider": "local", "embeddings": [row, row],
+             "providerMetadata": {"local": {"dim": e.dim}}}
+    monkeypatch.setattr(e, "_post", lambda payload: frame)
+    mat = e.embed_images([Image.new("RGB", (8, 8), "red")] * 2)
+    assert mat.shape == (2, e.dim) and mat.dtype == np.float16
+    assert float(mat[0, 0]) == pytest.approx(1.0)
+
+    old = {"vectors": [row], "dim": e.dim}
+    monkeypatch.setattr(e, "_post", lambda payload: old)
+    with pytest.raises(EmbedApiError):
+        e.embed_text("a photograph")

@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="fused-app" />
+<meta name="fused-api-version" content="1" />
 <title>How Fused Render works</title>
 <style>
   :root {
@@ -99,7 +100,7 @@
   details { border-top:1px solid var(--border); margin-top:14px; padding-top:12px; }
   .peek { margin-top:16px; }
   summary { cursor:pointer; font-size:12.5px; color:var(--dim); list-style:none;
-            display:flex; align-items:center; gap:8px; user-select:none; }
+            display:flex; align-items:center; gap:8px; -webkit-user-select:none; user-select:none; }
   summary::-webkit-details-marker { display:none; }
   summary .tw { transition:transform .15s; color:var(--mut); font-size:9px; }
   details[open] summary .tw { transform:rotate(90deg); }

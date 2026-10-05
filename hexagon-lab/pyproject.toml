@@ -1,0 +1,10 @@
+[project]
+name = "hexagon-lab"
+version = "1.0.0"
+requires-python = ">=3.11"
+# pandas, pyarrow and duckdb come from the bundled interpreter. The pure-python `h3`
+# package is optional: without it, H3 math runs through DuckDB's community h3 extension.
+dependencies = []
+
+[tool.uv]
+package = false

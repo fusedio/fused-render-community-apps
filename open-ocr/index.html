@@ -1329,7 +1329,8 @@
       event.preventDefault();
       const box = wrap.getBoundingClientRect();
       const anchor = { x: event.clientX - box.left - box.width / 2, y: event.clientY - box.top - box.height / 2 };
-      setZoom(state.zoom - event.deltaY * 0.0025, anchor);
+      const dy = event.deltaMode === 1 ? event.deltaY * 16 : event.deltaY; // Firefox reports lines, Chrome/Safari pixels
+      setZoom(state.zoom - dy * 0.0025, anchor);
     }, { passive: false });
     wrap.addEventListener("dragstart", (event) => event.preventDefault());
 

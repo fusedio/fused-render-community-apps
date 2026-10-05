@@ -1,0 +1,14 @@
+[project]
+name = "open-mail"
+version = "1.0.0"
+requires-python = ">=3.11"
+# Gmail accounts (OAuth) need the Google client libraries; IMAP accounts are stdlib only
+# (vendor_imaplib.py).
+dependencies = [
+    "google-api-python-client",
+    "google-auth",
+    "google-auth-oauthlib",
+]
+
+[tool.uv]
+package = false
