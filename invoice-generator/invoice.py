@@ -1,6 +1,3 @@
-# /// script
-# dependencies = []
-# ///
 """Backend for invoice_generator — a local invoice manager (clients, invoice
 documents, numbering, FX reference rates).
 

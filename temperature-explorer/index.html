@@ -1,4 +1,6 @@
 <meta charset="utf-8" />
+<meta name="fused-app" />
+<meta name="fused-api-version" content="1" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Temperature Explorer</title>
 
@@ -282,7 +284,7 @@
   .prov { margin-left: auto; font-size: 10.5px; color: var(--muted); white-space: nowrap; flex: none; padding-left: 12px; }
 
   .yr-chip {
-    display: inline-flex; align-items: center; gap: 6px; flex: none; cursor: pointer; user-select: none;
+    display: inline-flex; align-items: center; gap: 6px; flex: none; cursor: pointer; -webkit-user-select: none; user-select: none;
     font-size: 11px; font-weight: 500; color: var(--ink-2); border: 1px solid var(--hairline);
     border-radius: 7px; padding: 3px 8px 3px 5px; background: rgba(255,255,255,0.5);
     transition: opacity .14s, border-color .14s, background .14s;
@@ -307,7 +309,7 @@
   .plot .notice {
     position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
     max-width: min(92%, 560px); z-index: 5;
-    background: var(--glass-solid); backdrop-filter: var(--glass-blur);
+    background: var(--glass-solid); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
     border: 1px solid var(--hairline); border-left: 3px solid var(--warm);
     border-radius: 10px; box-shadow: var(--glass-shadow);
     padding: 9px 13px; font-size: 12px; line-height: 1.55; color: var(--ink-2);

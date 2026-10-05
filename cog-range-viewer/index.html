@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta name="fused-app">
+<meta name="fused-api-version" content="1" />
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>One photo, 316 MB, zero downloads</title>
@@ -116,7 +117,7 @@
   #advStats .kv { display:flex; justify-content:space-between; gap:10px; }
   #advStats .kv b { font-variant-numeric:tabular-nums; }
   #curl { background:#fbf8f0; border:1px solid var(--line); border-radius:8px; padding:8px 10px;
-          font-size:10.5px; color:var(--dim); word-break:break-all; user-select:all; margin-top:4px; }
+          font-size:10.5px; color:var(--dim); word-break:break-all; -webkit-user-select:all; user-select:all; margin-top:4px; }
   #byteStrip, #pyr { cursor:crosshair; }
   #anatomy { width:100%; height:72px; display:block; border:1px solid var(--line2);
              border-radius:8px; background:#fbf8f0; }
@@ -913,7 +914,7 @@ pyr.addEventListener("mouseleave", () => setHover(null));
 canvas.addEventListener("wheel", e => {
   e.preventDefault();
   const r = canvas.getBoundingClientRect();
-  zoomAt(e.clientX - r.left, e.clientY - r.top, Math.exp(-e.deltaY * 0.0016));
+  zoomAt(e.clientX - r.left, e.clientY - r.top, Math.exp(-(e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY) * 0.0016));
 }, { passive: false });
 $("zin").onclick = () => zoomAt(canvas._w / 2, canvas._h / 2, 1.7);
 $("zout").onclick = () => zoomAt(canvas._w / 2, canvas._h / 2, 1 / 1.7);

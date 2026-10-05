@@ -1,5 +1,6 @@
 def main(action: str = "list", meeting_id: str = "", title: str = "",
-         audio_b64: str = "", started_at: str = "", new_root: str = "", duration: str = ""):
+         audio_b64: str = "", started_at: str = "", new_root: str = "", duration: str = "",
+         ext: str = "webm"):
     import os, json, base64, shutil
 
     # Everything this app writes lives under one global per-app directory,
@@ -102,7 +103,8 @@ def main(action: str = "list", meeting_id: str = "", title: str = "",
             meta["files"] = sorted(
                 n for n in os.listdir(d) if not n.startswith(".")
             )
-            meta["has_audio"] = "audio.webm" in meta["files"]
+            meta["has_audio"] = any(
+                n in meta["files"] for n in ("audio.webm", "audio.mp4", "audio.ogg"))
             out.append(meta)
         return {"meetings": out, "root": root}
 
@@ -145,8 +147,10 @@ def main(action: str = "list", meeting_id: str = "", title: str = "",
         return {"ok": True}
 
     if action == "append_audio":
+        if ext not in ("webm", "mp4", "ogg"):
+            raise ValueError("invalid ext")
         os.makedirs(d, exist_ok=True)
-        with open(os.path.join(d, "audio.webm"), "ab") as f:
+        with open(os.path.join(d, "audio." + ext), "ab") as f:
             f.write(base64.b64decode(audio_b64))
         return {"ok": True}
 

@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
   <meta name="fused-app">
+  <meta name="fused-api-version" content="1" />
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>OpenNotion</title>
@@ -86,6 +87,7 @@
     margin-left: -8px;
     padding: 0 4px;
     cursor: pointer;
+    -webkit-user-select: none;
     user-select: none;
     background: none;
     border: none;
@@ -284,6 +286,7 @@
     overflow-x: auto;
     min-width: 0;
     scrollbar-width: thin;
+    scrollbar-color: var(--border-strong) transparent;
   }
   #viewTabs::-webkit-scrollbar { height: 4px; }
   #viewTabs::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 2px; }
@@ -559,6 +562,7 @@
     font-family: inherit;
     max-width: 100%;
     white-space: nowrap;
+    -webkit-user-select: none;
     user-select: none;
   }
   .pill::before {
@@ -946,6 +950,7 @@
     flex: none;
     color: var(--text);
     line-height: 1.65;
+    -webkit-user-select: none;
     user-select: none;
   }
   .nb-bullet .nb-marker {

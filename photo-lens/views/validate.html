@@ -53,6 +53,10 @@
   ::-webkit-scrollbar-thumb { background: #ffffff1f; border-radius: 99px;
     border: 3px solid var(--bg); }
   ::-webkit-scrollbar-thumb:hover { background: #ffffff33; }
+  /* Firefox has no ::-webkit-scrollbar: the standard twin, same colours. */
+  @supports not selector(::-webkit-scrollbar) {
+    * { scrollbar-width: thin; scrollbar-color: #ffffff1f transparent; }
+  }
   a { color: var(--text-dim); }
   /* screen-reader-only */
   .vh { position: absolute !important; width: 1px; height: 1px; padding: 0;
@@ -69,7 +73,7 @@
   /* ── header ─────────────────────────────────────────────────────────── */
   header {
     position: sticky; top: 0; z-index: 6;
-    background: var(--bg-header); backdrop-filter: blur(12px);
+    background: var(--bg-header); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
     border-bottom: 1px solid var(--line);
     padding: var(--s3) var(--s5);
     display: flex; gap: var(--s4); align-items: center; flex-wrap: wrap;
@@ -212,7 +216,7 @@
            flex-direction: column; gap: var(--s3); }
   .ccard > header { display: flex; align-items: center; gap: var(--s3);
                     padding: 0; background: none; border: 0; position: static;
-                    backdrop-filter: none; }
+                    -webkit-backdrop-filter: none; backdrop-filter: none; }
   .ccard h3 { flex: 1; min-width: 0; margin: 0; font-size: var(--fs-md);
               font-weight: 600; letter-spacing: -.01em; }
   .ccard .say { margin: 0; font-size: var(--fs-sm); color: var(--text-dim);
@@ -840,8 +844,8 @@
     if (VECS.has(text)) return VECS.get(text);
     const res = await withModel(() =>
       fused.ai.embed({ texts: [text], model: EMBED_MODEL }));
-    VECS.set(text, res.vectors[0]);
-    return res.vectors[0];
+    VECS.set(text, res.embeddings[0]);
+    return res.embeddings[0];
   }
 
   async function withModel(call) {

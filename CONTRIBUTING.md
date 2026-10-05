@@ -13,9 +13,10 @@
    - `metadata.json` — see the schema below.
 4. Fork this repo, copy your folder in at the repo root, open a PR.
 
-CI validates every PR; a maintainer reviews and merges. On merge, the catalog
-(`index.json`) regenerates and your app appears in everyone's marketplace on
-their next refresh.
+CI validates every PR; a maintainer reviews and merges. There is no generated
+catalog: the marketplace reads each app folder's own `metadata.json` from its
+clone of this repo, so once merged your app shows up for anyone who clones or
+updates the showcase.
 
 ## Slug rules
 
@@ -88,8 +89,10 @@ Example: [`local-chat/metadata.json`](local-chat/metadata.json) declares
 - `readme.md`, `preview.png`, `metadata.json` present and schema-valid
 - slug matches the pattern; no symlinks in the folder
 - folder ≤ 20 MB, no single file > 10 MB
-- no obvious absolute local paths in `.html`/`.py` (lint, not a security
-  boundary — human review is the gate)
+- an App Doctor floor check per app (`.github/app_check.py`): possible
+  secrets and absolute local paths are reported (lint, not a security
+  boundary — human review is the gate), and the app's own `test_*.py` run
+  when its `pyproject.toml` installs with pip
 
 ## Trust expectations
 

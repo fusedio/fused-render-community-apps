@@ -2,6 +2,7 @@
 <html data-fused-theme="shell">
 <head>
   <meta name="fused-app">
+  <meta name="fused-api-version" content="1" />
 <meta charset="utf-8" />
 <title>OpenMic</title>
 <style>
@@ -455,11 +456,14 @@ async function showDetail(hasMeetings) {
   applyTab(el, active);
   renderedMeeting = mid;
   // audio player
-  try {
-    const st = await fused.stat(dir + "audio.webm");
-    if (st) $("audioSlot").innerHTML =
-      `<audio controls src="${fused.rawUrl(dir + "audio.webm")}"></audio>`;
-  } catch (e) {}
+  for (const name of ["audio.webm", "audio.mp4", "audio.ogg"]) {
+    try {
+      if (!(await fused.stat(dir + name))) continue;
+      $("audioSlot").innerHTML =
+        `<audio controls src="${fused.rawUrl(dir + name)}"></audio>`;
+      break;
+    } catch (e) {}
+  }
 }
 
 // Meeting title: hover shows an Edit button; editing offers AI-suggested
@@ -521,11 +525,12 @@ function setupTitleEditor(el, mid, title, transcript) {
       ai.disabled = true; save.disabled = true;
       status.textContent = "Asking AI…";
       try {
-        const res = await fused.ai(
-          "Below is a meeting transcript. Your ONLY task is to produce a title for it.\n" +
-          "Respond with EXACTLY ONE LINE: a descriptive title of 4 to 10 words.\n" +
-          "No quotes, no numbering, no commentary.\n\n" + transcript.slice(0, 12000),
-          { effort: "low", maxTokens: 64 });
+        const res = await fused.ai.text({
+          prompt:
+            "Below is a meeting transcript. Your ONLY task is to produce a title for it.\n" +
+            "Respond with EXACTLY ONE LINE: a descriptive title of 4 to 10 words.\n" +
+            "No quotes, no numbering, no commentary.\n\n" + transcript.slice(0, 12000),
+          effort: "low", maxTokens: 64 });
         const t = res.text.trim().split("\n")[0]
           .replace(/^[\d.)\-*\s]+/, "").replace(/^["'“”]+|["'“”]+$/g, "").replace(/\.$/, "");
         const n = t.split(/\s+/).length;
@@ -661,16 +666,24 @@ async function start(withBrowserAudio) {
   timerIv = setInterval(() => { $("bigTimer").textContent = fmtClock(Date.now() - t0); }, 500);
 
   // Audio: MediaRecorder → base64 chunks appended to audio.webm every 10 s.
-  rec = new MediaRecorder(stream, { mimeType: "audio/webm" });
+  // Safari/WebKit before 18.4 cannot record webm and throws on the option, so
+  // fall back to the engine's own default container there, recorded as one
+  // blob at stop and saved under its own extension.
+  const webm = MediaRecorder.isTypeSupported("audio/webm");
+  const r = rec = webm
+    ? new MediaRecorder(stream, { mimeType: "audio/webm" })
+    : new MediaRecorder(stream);
   rec.ondataavailable = ev => {
     if (!ev.data.size) return;
+    const type = ev.data.type || r.mimeType || "";
+    const ext = webm || /webm/.test(type) ? "webm" : /ogg/.test(type) ? "ogg" : "mp4";
     pendingAudio = pendingAudio.then(async () => {
       const buf = new Uint8Array(await ev.data.arrayBuffer());
       let bin = ""; const CH = 0x8000;
       for (let i = 0; i < buf.length; i += CH)
         bin += String.fromCharCode.apply(null, buf.subarray(i, i + CH));
       await fused.runPython("./meetings.py",
-        { action: "append_audio", meeting_id: curId, audio_b64: btoa(bin) }, { key: null });
+        { action: "append_audio", meeting_id: curId, audio_b64: btoa(bin), ext }, { key: null });
     }).catch(e => console.error("audio save failed", e));
   };
   rec.onstop = () => {
@@ -679,7 +692,7 @@ async function start(withBrowserAudio) {
     if (displayStream) displayStream.getTracks().forEach(t => t.stop());
     if (mixCtx) { mixCtx.close().catch(() => {}); mixCtx = null; }
   };
-  rec.start(10000);
+  if (webm) rec.start(10000); else rec.start();
 
   // Live transcription: browser-native speech recognition.
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -779,7 +792,7 @@ async function stop() {
       "\n--- transcript end ---\n\nTitle (one line, 7-10 words):";
     let t = null;
     for (let i = 0; i < 2 && !t; i++) {
-      try { t = validTitle((await fused.ai(prompt, { effort: "low", maxTokens: 64 })).text); }
+      try { t = validTitle((await fused.ai.text({ prompt, effort: "low", maxTokens: 64 })).text); }
       catch (err) { console.error("title generation failed", err); break; }
     }
     if (t) title = t;
@@ -795,10 +808,10 @@ async function stop() {
   if (transcript) {
     setCardStatus(savedId, "Summarizing with AI…", "summarizing");
     try {
-      const res = await fused.ai(
-        "Meeting title: " + title + "\nDuration: " + dur +
-        "\n\nTranscript:\n" + transcript.slice(0, 24000),
-        { systemPrompt:
+      const res = await fused.ai.text({
+        prompt: "Meeting title: " + title + "\nDuration: " + dur +
+          "\n\nTranscript:\n" + transcript.slice(0, 24000),
+        systemPrompt:
             "You summarize meeting transcripts. Output markdown that starts DIRECTLY " +
             "with a 3-6 sentence summary paragraph — no title, no heading above it. " +
             "Then these sections: '## Key points' (bullets), " +

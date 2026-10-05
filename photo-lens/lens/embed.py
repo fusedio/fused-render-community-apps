@@ -348,9 +348,13 @@ class ApiEmbedder:
         return path
 
     def _vectors(self, result: dict, want: int) -> np.ndarray:
-        dim = int(result.get("dim") or 0)
+        # fused API v1 result frame: rows under `embeddings`, width under
+        # `providerMetadata.<provider>.dim` (v0 was top-level `vectors`/`dim`).
+        meta = (result.get("providerMetadata") or {}).get(
+            result.get("provider") or "local") or {}
+        dim = int(meta.get("dim") or 0)
         self._check_dim(dim)
-        rows = result.get("vectors") or []
+        rows = result.get("embeddings") or []
         if len(rows) != want:
             raise EmbedApiError(
                 f"asked {self.model_id} for {want} vectors and got {len(rows)}")

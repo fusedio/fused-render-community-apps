@@ -32,6 +32,12 @@ base64-encoded and appended to `audio.webm` by `meetings.py`
 memory than a short one, and a crash mid-meeting leaves a playable file of
 everything recorded up to that point.
 
+Browsers that cannot record WebM (Safari before 18.4) use their own default
+container instead, usually MP4. Its timed slices do not join into one
+playable file, so there the whole recording is written once, at stop, to
+`audio.mp4` (or `audio.ogg`). A crash mid-meeting on those browsers loses the
+audio.
+
 In tab mode the mic and tab audio tracks are mixed through a Web Audio
 `MediaStreamDestination` before they reach the recorder, so a single mixed
 track lands on disk. Live transcription always listens to the raw mic stream
@@ -42,7 +48,7 @@ Each meeting is a directory:
 ```
 <meeting-id>/
 ├── meta.json       # title, start time, duration
-├── audio.webm      # the recording
+├── audio.webm      # the recording (audio.mp4 / audio.ogg on Safari < 18.4)
 ├── transcript.md   # what was said
 ├── summary.md      # AI summary, key points, decisions, action items
 └── notes.md        # yours to edit, in the Notes tab
@@ -68,7 +74,7 @@ are migrated to the new directory name on first run.
   Safari and Firefox will record audio but produce no live transcript.
 - `requires_python: true` — `meetings.py` handles all file IO. No third-party
   Python packages.
-- A local model loaded in fused-render, used through `fused.ai(...)` for the
+- A local model loaded in fused-render, used through `fused.ai.text(...)` for the
   title and the summary. No API keys, no remote AI service.
 
 ## Limitations

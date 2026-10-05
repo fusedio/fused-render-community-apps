@@ -19,7 +19,12 @@ def main(action: str = "list", name: str = "", find: str = "", limit: int = 200)
         return _list(find, limit)
     if action == "delete":
         return _delete(name)
-    raise ValueError(f"unknown action {action!r} — expected 'list' or 'delete'")
+    if action == "dir":
+        # The one call that CREATES the folder: `fused.writeFile` does not make
+        # a missing parent, so a fresh install could neither Save nor autosave.
+        os.makedirs(CHATS_DIR, exist_ok=True)
+        return {"dir": os.path.abspath(CHATS_DIR)}
+    raise ValueError(f"unknown action {action!r} — expected 'list', 'delete' or 'dir'")
 
 
 def _list(find: str, limit: int):

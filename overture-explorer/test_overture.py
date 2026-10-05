@@ -29,11 +29,12 @@ SF_BBOX = (-122.435, 37.765, -122.395, 37.795)
 
 
 def test_dead_release_reproduces_404():
-    """The originally-pinned release is genuinely gone (404), which is what
-    broke the app. If Overture ever restores it this test can be dropped."""
+    """The originally-pinned release is genuinely gone (404, or 410 Gone as S3
+    now answers), which is what broke the app. If Overture ever restores it
+    this test can be dropped."""
     r = requests.head(overture._collections_url(DEAD_RELEASE), timeout=15,
                        allow_redirects=True)
-    assert r.status_code == 404
+    assert r.status_code in (404, 410)
 
 
 def test_available_releases_nonempty_and_reachable():

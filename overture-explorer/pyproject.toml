@@ -1,0 +1,12 @@
+[project]
+name = "overture-explorer"
+version = "1.0.1"
+requires-python = ">=3.11"
+dependencies = [
+    "duckdb",
+    "requests",
+    "shapely",
+]
+
+[tool.uv]
+package = false

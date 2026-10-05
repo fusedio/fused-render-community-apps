@@ -2,6 +2,7 @@
 <html>
 <head>
 <meta name="fused-app">
+<meta name="fused-api-version" content="1" />
 <meta charset="utf-8">
 <title>Learn — Fused Render</title>
 <style>
@@ -45,7 +46,7 @@
 
   /* ---------- search modal ---------- */
   .smodal { position:fixed; inset:0; z-index:60; display:none;
-       background:rgba(0,0,0,.55); backdrop-filter:blur(2px);
+       background:rgba(0,0,0,.55); -webkit-backdrop-filter:blur(2px); backdrop-filter:blur(2px);
        align-items:flex-start; justify-content:center; padding:12vh 20px 0; }
   .smodal.open { display:flex; }
   .smodal .sbox { width:100%; max-width:560px; background:var(--panel); border:1px solid var(--border);
@@ -694,7 +695,7 @@
       <tr><td><code>await fused.writeFile(path, text)</code></td><td>Write text atomically (optional mtime lock to avoid clobbering).</td></tr>
       <tr><td><code>await fused.stat(path)</code></td><td>Metadata <code>{size, mtime, is_dir, …}</code> — size-guard before reading big files.</td></tr>
       <tr><td><code>fused.rawUrl(path)</code></td><td>A URL for the raw bytes — use it as the <code>src</code> of an <code>&lt;img&gt;</code>, <code>&lt;video&gt;</code>, or a download link.</td></tr>
-      <tr><td><code>await fused.ai(prompt, opts)</code></td><td>Ask an AI model (via the local <code>claude</code> CLI); resolves with <code>{text, model, usage}</code>. <code>opts</code>: <code>systemPrompt</code>, <code>model</code>, <code>effort</code> (<code>"low"|"medium"|"high"</code>), <code>maxTokens</code>. If the CLI isn't installed the error's <code>.type</code> is <code>"ai_unavailable"</code> — show that state, don't crash.</td></tr>
+      <tr><td><code>await fused.ai.text({prompt, ...opts})</code></td><td>Ask an AI model (the local <code>claude</code> CLI by default, or a local model with <code>provider: "local"</code>) — one options object; resolves with <code>{text, provider, usage, response:{modelId}, …}</code> (<code>usage</code> is <code>inputTokens</code>/<code>outputTokens</code>). Other <code>opts</code>: <code>systemPrompt</code>, <code>model</code>, <code>effort</code> (<code>"low"|"medium"|"high"</code>), <code>maxTokens</code>; unknown options reject. <code>fused.ai</code> also has <code>image</code>, <code>transcribe</code>, <code>embed</code>, … with the same shape. If the CLI isn't installed the error's <code>.type</code> is <code>"ai_unavailable"</code> — show that state, don't crash.</td></tr>
     </table>
     <div class="callout"><span class="lab">Good to know</span>
       <p style="margin:6px 0 0">Each <code>runPython</code> call runs <code>main()</code> in a fresh subprocess that's killed at <b>30&nbsp;seconds</b>. For a genuinely long job, write the result to a file from a separate script and have the page read the finished file.</p></div>

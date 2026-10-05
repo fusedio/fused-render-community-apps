@@ -5,6 +5,7 @@
 <!-- Declares this page a fused app's entry — keep it near the top of <head>
      (detection reads only the first 4 KiB). -->
 <meta name="fused-app" />
+<meta name="fused-api-version" content="1" />
 <title>Local chat — text generation on this machine</title>
 <style>
   /* Two :root blocks, ONE token set, no colour literal anywhere else.
@@ -67,6 +68,8 @@
   }
   .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 
+  /* Standard twin of the ::-webkit-scrollbar rules below (Firefox reads only these). */
+  * { scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
   ::-webkit-scrollbar { width: 10px; height: 10px; }
   ::-webkit-scrollbar-thumb {
     background: var(--line); border-radius: 6px;
@@ -315,6 +318,7 @@
     display: inline-flex; align-items: center; justify-content: center;
     font-size: 15px; line-height: 1;
   }
+  .icon-btn[hidden] { display: none; }
   .composer .foot {
     text-align: center; font-size: 11px; color: var(--faint); margin-top: 8px;
   }
@@ -722,7 +726,7 @@ async function generate(spec) {
   try {
     let res;
     try {
-      res = await fused.ai(spec.prompt, opts);
+      res = await fused.ai.text({ prompt: spec.prompt, ...opts });
     } catch (err) {
       // Text fails FAST on a cold model, having started the load
       // (specs/assumptions.md §2). Watch it, then retry exactly once.
@@ -732,12 +736,12 @@ async function generate(spec) {
       await fused.watchJob(err.jobId).watch((job) => { if (spec.onLoading) spec.onLoading(job); });
       if (spec.onLoading) spec.onLoading(undefined);
       clock = performance.now();   // the download is not generation; keep it out of tok/s
-      res = await fused.ai(spec.prompt, opts);
+      res = await fused.ai.text({ prompt: spec.prompt, ...opts });
     }
     const seconds = (performance.now() - clock) / 1000;
     // Our own clock, because usage.seconds is absent on every stopped run
     // (specs/assumptions.md §3).
-    return { text: res.text || "", model: res.model, usage: res.usage || {}, seconds, cold };
+    return { text: res.text || "", model: res.response && res.response.modelId, usage: res.usage || {}, seconds, cold };
   } finally {
     setBusy(false);
     if (cold) refreshRuntime();
@@ -939,12 +943,11 @@ function renderAnswer(into, text, streaming) {
 }
 
 /* The turn's meta as an OBJECT — it is what goes on disk (specs/app-library.md
-   §2) and what a reopened transcript renders from. `output_tokens` is the only
-   token count on this path; `input_tokens` does not exist here
-   (specs/assumptions.md §1). */
+   §2) and what a reopened transcript renders from. Only `usage.outputTokens`
+   is read: it is the count tok/s is built on (specs/assumptions.md §1). */
 function metaOf(res, stopped, raw) {
-  const tokens = res.usage && typeof res.usage.output_tokens === "number"
-    ? res.usage.output_tokens : null;
+  const tokens = res.usage && typeof res.usage.outputTokens === "number"
+    ? res.usage.outputTokens : null;
   return {
     model: res.model, tokens: tokens, seconds: Number(res.seconds.toFixed(2)),
     stopped: !!stopped, cold: !!res.cold, raw: !!raw,
@@ -1179,10 +1182,23 @@ function record() {
   }, null, 2);
 }
 
+/* `fused.writeFile` does not create a missing parent, and `./chats/` does not
+   exist on a fresh install — so every write waits on chats.py's `dir` action,
+   asked once per page load (and again only after a failure). */
+let chatsDirReady = null;
+function chatsDir() {
+  if (!chatsDirReady) {
+    chatsDirReady = fused.runPython("./chats.py", { action: "dir" }, { key: null })
+      .catch((err) => { chatsDirReady = null; throw err; });
+  }
+  return chatsDirReady;
+}
+
 async function saveChat() {
   if (!convo.length) { chatNote("nothing to save yet"); return; }
   const json = record();
   try {
+    await chatsDir();
     if (loadedChat) {
       // Re-saving a conversation that came from disk: same name, optimistic lock.
       const fresh = await fused.writeFile(here("chats/" + loadedChat), json,
@@ -1231,7 +1247,7 @@ function saveSession() {
   // param, so it needs no session copy — and writing one would mean two files
   // claiming to be the same conversation.
   if (loadedChat) return;
-  fused.writeFile(here(SESSION), record()).catch((err) => {
+  chatsDir().then(() => fused.writeFile(here(SESSION), record())).catch((err) => {
     // Worth one notice and no more: the conversation on screen is unharmed,
     // only its safety net is missing.
     notice("The open conversation could not be autosaved — " + (err.message || String(err))

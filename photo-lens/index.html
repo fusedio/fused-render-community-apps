@@ -12,6 +12,7 @@
      marks *entry* pages, and those two are reached from the pills inside this
      one. Tagging them would list lens three times on the hub. -->
 <meta name="fused-app" />
+<meta name="fused-api-version" content="1" />
 <title>Lens — local photo search</title>
 <style>
   /* Card peek on the /apps hub: one still, nothing else — see IS_THUMBNAIL. */
@@ -71,11 +72,15 @@
   ::-webkit-scrollbar-thumb { background: #ffffff1f; border-radius: 99px;
     border: 3px solid var(--bg); }
   ::-webkit-scrollbar-thumb:hover { background: #ffffff33; }
+  /* Firefox has no ::-webkit-scrollbar: the standard twin, same colours. */
+  @supports not selector(::-webkit-scrollbar) {
+    * { scrollbar-width: thin; scrollbar-color: #ffffff1f transparent; }
+  }
 
   /* ── header ─────────────────────────────────────────────────────────── */
   header {
     position: sticky; top: 0; z-index: 6;
-    background: var(--bg-header); backdrop-filter: blur(12px);
+    background: var(--bg-header); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
     border-bottom: 1px solid var(--line);
     padding: var(--s3) var(--s5);
     /* wrap, not overflow: below ~700px the gear is the only route to the
@@ -352,14 +357,14 @@
              padding-left: 3px; border-radius: 50%; font-style: normal;
              font-size: 14px; color: #fff;
              background: #06070a99; border: 1px solid #ffffff2b;
-             backdrop-filter: blur(3px);
+             -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px);
              transition: transform .16s var(--ease), background .16s var(--ease); }
   .card:hover .vplay i { transform: scale(1.09); background: #06070ad9; }
   .card:active .vplay i { transform: scale(1.02); }
   .vdur { position: absolute; right: 6px; bottom: 6px; z-index: 1;
           padding: 1px 7px; border-radius: 999px;
           background: #06070ab8; border: 1px solid #ffffff1f;
-          backdrop-filter: blur(3px);
+          -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px);
           font-size: var(--fs-xs); font-variant-numeric: tabular-nums;
           letter-spacing: .01em; color: #f0f0f0; }
   /* the weak tail's cells are 150px: a 42px disc over one is most of the frame */
@@ -589,7 +594,7 @@
        half under the panel */
     padding: var(--s5);
     padding-right: calc(var(--s5) + var(--inforoom, 0px));
-    background: #06070ae6; backdrop-filter: blur(6px);
+    background: #06070ae6; -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
     opacity: 0; visibility: hidden; pointer-events: none;
   }
   #lightbox.open { opacity: 1; visibility: visible; pointer-events: auto; }
@@ -765,7 +770,7 @@
   .modal {
     position: fixed; inset: 0; z-index: 30;
     display: grid; place-items: center; padding: var(--s5);
-    background: #06070ae6; backdrop-filter: blur(6px);
+    background: #06070ae6; -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
     opacity: 0; visibility: hidden; pointer-events: none;
     transition: opacity .22s var(--ease), visibility .22s;
   }
@@ -3519,8 +3524,8 @@
       const batch = texts.slice(i, i + 64);
       const res = await withModel(() =>
         fused.ai.embed({ texts: batch, model: EMBED_MODEL }));
-      out.push(...res.vectors);
-      batch.forEach((t, n) => VECS.set(t, res.vectors[n]));
+      out.push(...res.embeddings);
+      batch.forEach((t, n) => VECS.set(t, res.embeddings[n]));
     }
     return out;
   }
