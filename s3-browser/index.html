@@ -441,7 +441,7 @@ const STORAGE_CLASSES = ["STANDARD", "STANDARD_IA", "ONEZONE_IA", "INTELLIGENT_T
 function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
 function fmtSize(n) { if (n == null) return ""; const u = ["B","KB","MB","GB","TB","PB"]; let i = 0, v = n; while (v >= 1024 && i < u.length-1) { v /= 1024; i++; } return (i === 0 ? v : v.toFixed(v < 10 ? 2 : 1)) + " " + u[i]; }
-function fmtDate(iso) { if (!iso) return ""; return new Date(iso).toLocaleString(undefined, { year:"2-digit", month:"short", day:"2-digit", hour:"2-digit", minute:"2-digit" }); }
+function fmtDate(iso) { if (!iso) return ""; return new Date(iso).toLocaleString(undefined, { year:"numeric", month:"short", day:"2-digit", hour:"2-digit", minute:"2-digit" }); }
 function toast(msg, isErr) { const t = $("toast"); t.textContent = msg; t.className = "toast" + (isErr ? " err" : ""); t.style.display = "block"; clearTimeout(toast._t); toast._t = setTimeout(() => t.style.display = "none", isErr ? 6000 : 2600); }
 const selFiles = () => [...SEL.values()].filter((x) => x.type === "file");
 const selFolders = () => [...SEL.values()].filter((x) => x.type === "folder");
