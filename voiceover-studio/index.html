@@ -531,11 +531,8 @@ select.asrsel { height: 30px; font-size: 12.5px; max-width: 230px; min-width: 0;
             <div class="cbar">
               <div class="cset">
                 <button class="fpick voice" id="cVoiceBtn" title="Voice"></button>
-                <input type="hidden" id="cStyle" />
                 <button class="fpick squeeze hidden" id="cStyleBtn" title="Speaking style"></button>
-                <select id="cLang" class="hidden" title="Language"></select>
                 <button class="fpick squeeze" id="cLangBtn" title="Language"></button>
-                <select id="cEng" class="hidden" title="Engine"><option value="17">1.7B</option><option value="06">0.6B</option></select>
                 <button class="fpick squeeze" id="cEngBtn" title="Speech model"></button>
               </div>
               <div class="cgo">
@@ -1068,9 +1065,7 @@ function engineStatus(st) {
   return { text: "not downloaded", cls: "" };
 }
 function renderEngineSelect() {
-  const info = currentVoice();
-  const eng = $("#cEng").value || info.engine || "17";
-  const id = modelFor(info, eng);
+  const id = composerModel();
   const st = modelState(id);
   const meta = modelMeta(id);
   const es = engineStatus(st);
@@ -1102,7 +1097,7 @@ function closeEngineMenu() { $("#eMenu").classList.add("hidden"); }
 
 function renderEngineMenu() {
   const info = currentVoice();
-  const cur = $("#cEng").value || info.engine || "17";
+  const cur = info.engine;
   const mode = FAMILY_MODE[info.family];
   const why = info.family === "base" ? "Cloned and designed voices use the Qwen3-TTS Base models." : "Preset speakers use the Qwen3-TTS CustomVoice models.";
   const rows = ttsModels(mode).map((m) => {
@@ -1725,38 +1720,24 @@ async function onGenerate() {
 async function startTake(take) {
   state.busyGen = true;
   $("#cGen").disabled = true;
+  const ui = studioUi();
   try {
-    await runTake(take, studioUi());
+    await downloadModels(take.segments.map((s) => s.model_id), ui);
+    await runTake(take, ui);
   } catch (e) { fail(e); }
-  finally { state.busyGen = false; $("#cGen").disabled = false; }
-}
-
-async function confirmDownload() {
-  const pending = state.pendingSpec;
-  state.pendingSpec = null;
-  renderDownloadButton();
-  if (pending) { await startTake(pending); return; }
-  await downloadModelUi(composerModel());
+  finally { state.busyGen = false; $("#cGen").disabled = false; renderDownloadButton(); }
 }
 
 async function downloadModelUi(id) {
   const ui = studioUi();
-  const meta = modelMeta(id);
-  const tm = setInterval(() => {
-    const st = modelState(id);
-    const pct = st.total && st.done ? Math.min(99, Math.round(st.done / st.total * 100)) : null;
-    ui.status("Downloading " + meta.fam + meta.name + (pct == null ? "…" : " · " + pct + "% · " + fmtBytes(st.done) + " of " + fmtBytes(st.total)), pct == null ? 0 : pct / 100);
-  }, 500);
   try {
-    ui.status("The download starts…", 0);
-    await ensureModel(id);
-    toast(meta.name + " is ready.");
+    await downloadModels([id], ui);
+    toast(modelMeta(id).name + " is ready.");
   } catch (e) { fail(e); }
-  finally { clearInterval(tm); ui.status(null); }
+  finally { ui.status(null); }
 }
 
 async function regenerateTake(id) {
-  let owned = false;
   try {
     const man = await getManifest(id, true);
     if (man.mode === "srt") {
@@ -1781,11 +1762,10 @@ const CHEV = '<svg class="chev" width="12" height="12" viewBox="0 0 16 16"><path
 const PLAY_SM = '<svg width="10" height="10" viewBox="0 0 16 16"><path d="M4 2.5v11l9-5.5z" fill="currentColor"/></svg>';
 
 function selectVoice(key) {
-  state.pendingSpec = null;
   studioUi().status(null);
   P.set("voice", key);
   const v = voiceByKey(key);
-  if (v) $("#cLang").value = v.family === "base" ? (v.lang || "auto") : "auto";
+  state.lang = v && v.family === "base" ? v.lang : "auto";
   renderComposerBar();
 }
 
@@ -1793,12 +1773,9 @@ function renderComposerBar() {
   const info = currentVoice();
   $("#cVoiceBtn").innerHTML = avatar(info.name, info.key, "sm") + '<span class="fv">' + esc(info.name) + "</span>" + CHEV;
   $("#cVoiceBtn").title = "Voice: " + info.name + (info.desc ? " — " + info.desc : "");
-  $("#cEng").value = info.engine || "17";
-  const lang = $("#cLang").value || "auto";
-  $("#cLangBtn").innerHTML = ICON_LANG + '<span class="fv">' + esc(langLabel(lang)) + "</span>" + CHEV;
-  $("#cLangBtn").title = "Language: " + langLabel(lang);
+  $("#cLangBtn").innerHTML = ICON_LANG + '<span class="fv">' + esc(langLabel(state.lang)) + "</span>" + CHEV;
+  $("#cLangBtn").title = "Language: " + langLabel(state.lang);
   const st = currentStyle();
-  $("#cStyle").value = st.instruct;
   $("#cStyleBtn").classList.toggle("hidden", info.family !== "custom");
   $("#cStyleBtn").innerHTML = ICON_STYLE + '<span class="fv">' + esc(st.name) + "</span>" + CHEV;
   $("#cStyleBtn").title = "Speaking style: " + st.name;
@@ -3083,19 +3060,6 @@ function wire() {
   $("#cGen").addEventListener("click", onGenerate);
   $("#cText").addEventListener("input", () => { updateCount(); saveDraftText(); });
   $("#cText").addEventListener("keydown", (e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); onGenerate(); } });
-  $("#cLang").innerHTML = langOptions("auto");
-  $("#cEng").addEventListener("change", async () => {
-    const info = currentVoice();
-    const eng = $("#cEng").value;
-    state.pendingSpec = null;
-    studioUi().status(null);
-    renderDownloadButton();
-    try {
-      if (info.family === "base") { const r = await run("update_voice", { voice_id: info.profile.id, fields_json: JSON.stringify({ engine: eng }) }); state.voices = r.voices; }
-      else { const r = await run("set_prefs", { prefs_json: JSON.stringify({ preset_engine: eng }) }); state.prefs = r.prefs; }
-      renderAllVoices();
-    } catch (e) { fail(e); }
-  });
   $$("[data-demo]").forEach((b) => b.addEventListener("click", () => { $("#cText").value = DEMOS[b.dataset.demo]; updateCount(); saveDraftText(); }));
   $("#cUpload").addEventListener("click", () => $("#cFile").click());
   $("#cFile").addEventListener("change", async (e) => {
@@ -3120,8 +3084,8 @@ function wire() {
     openPickMenu($("#cLangBtn"), {
       title: "Language of the script", width: 280,
       items: LANGS.map((l) => ({ value: l, label: langLabel(l), desc: LANG_NATIVE[l] === langLabel(l) ? "" : LANG_NATIVE[l] })),
-      selected: $("#cLang").value || "auto",
-      onPick: (v) => { $("#cLang").value = v; renderComposerBar(); },
+      selected: state.lang,
+      onPick: (v) => { state.lang = v; renderComposerBar(); },
     });
   });
   $("#cStyleBtn").addEventListener("click", (e) => {
@@ -3207,7 +3171,8 @@ async function boot() {
     renderExport();
     render();
     if (!state.tts || !state.tts.available) toast((state.tts && state.tts.reason) || "Text to speech is not available on this Mac.", "err");
-    if (!P.get("voice", "")) { const v = currentVoice(); $("#cLang").value = v.family === "base" ? v.lang : "auto"; }
+    const v = currentVoice();
+    state.lang = v.family === "base" ? v.lang : "auto";
     renderComposerBar();
     asrOptions().catch(() => {});
     const sel = P.get("sel", "");

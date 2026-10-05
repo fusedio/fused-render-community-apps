@@ -16,16 +16,24 @@ import wave
 import numpy as np
 
 
+def _read_json(path, default):
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return default
+
+
+def _server_json():
+    home = os.environ.get("FUSED_RENDER_HOME_DIR") or os.path.expanduser("~/.fused-render")
+    return _read_json(os.path.join(home, "server.json"), {})
+
+
 def _fused_ai():
     try:
         import fused_ai
     except ImportError:
-        home = os.environ.get("FUSED_RENDER_HOME_DIR") or os.path.expanduser("~/.fused-render")
-        try:
-            with open(os.path.join(home, "server.json"), encoding="utf-8") as f:
-                shared = json.load(f).get("shared")
-        except (OSError, ValueError):
-            shared = None
+        shared = _server_json().get("shared")
         if not shared:
             raise ImportError("FusedRender is not running: fused_ai is not available") from None
         sys.path.insert(0, shared)
@@ -130,14 +138,6 @@ def _speak(model_id, text, out, voice=None, instruct=None, ref_audio=None, ref_t
 def _ensure_dirs():
     for d in (DATA_DIR, VOICES_DIR, DESIGNS_DIR, HISTORY_DIR, SAMPLES_DIR):
         os.makedirs(d, exist_ok=True)
-
-
-def _read_json(path, default):
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return default
 
 
 def _write_json(path, obj):
@@ -1133,10 +1133,6 @@ def _pretty_path(path):
 def _export_info():
     d = _export_dir()
     return {"dir": d, "display": _pretty_path(d), "exists": os.path.isdir(d)}
-
-
-def a_export_info(**_):
-    return _export_info()
 
 
 def a_export_audio(path="", name="", **_):
