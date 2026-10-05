@@ -893,31 +893,12 @@ const P = {
 };
 
 const state = {
-  voices: [], history: [], tts: null, asr: null, downloads: {}, runs: {}, prefs: {}, pendingSpec: null, following: {},
-  manifests: {}, dub: null, busyGen: false, busyDub: false, busyRow: {},
+  voices: [], history: [], tts: null, asr: null, downloads: {}, runs: {}, prefs: {}, confirmModel: "", following: {},
+  manifests: {}, dub: null, busyGen: false, busyDub: false, busyRow: {}, lang: "auto",
   clone: { phase: "idle" }, design: { phase: "idle" }, popOpen: false,
 };
 
-const STALE_RUNTIME = /bad local file header|zipimport|Bad magic number/i;
-let healing = null;
-async function run(action, params) {
-  const body = Object.assign({ action: action }, params || {});
-  try {
-    return await fused.daemon.run(body);
-  } catch (e) {
-    if (!STALE_RUNTIME.test((e && e.message) || "")) throw e;
-    if (!healing) {
-      healing = (async () => {
-        toast("FusedRender has an update. The voice engine restarts now.");
-        await fused.daemon.stop();
-        await fused.daemon.start();
-      })().finally(() => { healing = null; });
-    }
-    await healing;
-    return await fused.daemon.run(body);
-  }
-}
-function jobId(s) { return String(s).replace(/[^A-Za-z0-9._:-]/g, "_").slice(0, 120); }
+function run(action, params) { return fused.daemon.run(Object.assign({ action: action }, params || {})); }
 
 function toast(msg, kind, action) {
   const el = document.createElement("div");
@@ -1021,8 +1002,6 @@ async function refreshCatalog() {
 
 const preparing = {};
 function ensureModel(modelId) {
-  if (!modelId) return Promise.reject(new Error("A line has no voice. Select a voice for each line."));
-  if (modelState(modelId).downloaded) return Promise.resolve();
   if (preparing[modelId]) return preparing[modelId];
   const meta = modelMeta(modelId);
   const p = (async () => {
@@ -1041,7 +1020,20 @@ function ensureModel(modelId) {
   p.then(settle, settle);
   return p;
 }
-async function ensureModels(ids) { for (const id of Array.from(new Set(ids))) await ensureModel(id); }
+async function downloadModels(ids, ui) {
+  for (const id of new Set(ids)) {
+    if (modelState(id).downloaded) continue;
+    const meta = modelMeta(id);
+    const tm = ui && setInterval(() => {
+      const st = modelState(id);
+      const pct = st.total && st.done ? Math.min(99, Math.round(st.done / st.total * 100)) : null;
+      ui.status("Downloading " + meta.fam + meta.name + (pct == null ? "…" : " · " + pct + "% · " + fmtBytes(st.done) + " of " + fmtBytes(st.total)), pct == null ? 0 : pct / 100);
+    }, 500);
+    if (ui) ui.status("The download starts…", 0);
+    try { await ensureModel(id); }
+    finally { if (tm) clearInterval(tm); }
+  }
+}
 
 function renderEngines() {
   const ms = ttsModels().concat(asrModels()).map((m) => ({ m: modelMeta(m.id), st: modelState(m.id) }));
@@ -1140,33 +1132,31 @@ function renderEngineMenu() {
   $$("#eMenu .erow").forEach((r) => r.addEventListener("click", (ev) => {
     if (ev.target.closest("[data-edl]")) return;
     closeEngineMenu();
-    const sel = $("#cEng");
-    if (sel.value !== r.dataset.eng) { sel.value = r.dataset.eng; sel.dispatchEvent(new Event("change")); }
+    setEngine(r.dataset.eng).catch(fail);
   }));
   $$("#eMenu [data-edl]").forEach((b) => b.addEventListener("click", (ev) => {
     ev.stopPropagation();
-    const id = b.dataset.edl;
-    const eng = b.closest(".erow").dataset.eng;
-    const sel = $("#cEng");
-    if (sel.value !== eng) { sel.value = eng; sel.dispatchEvent(new Event("change")); }
     closeEngineMenu();
-    downloadModelUi(id).catch(fail);
+    setEngine(b.closest(".erow").dataset.eng).then(() => downloadModelUi(b.dataset.edl)).catch(fail);
   }));
 }
 
-function composerModel() {
+async function setEngine(eng) {
   const info = currentVoice();
-  return modelFor(info, $("#cEng").value || info.engine || "17");
+  studioUi().status(null);
+  if (info.family === "base") { const r = await run("update_voice", { voice_id: info.profile.id, fields_json: JSON.stringify({ engine: eng }) }); state.voices = r.voices; }
+  else { const r = await run("set_prefs", { prefs_json: JSON.stringify({ preset_engine: eng }) }); state.prefs = r.prefs; }
+  renderAllVoices();
 }
+
+function composerModel() { return modelFor(currentVoice()); }
 function renderDownloadButton() {
   const btn = $("#cGen");
   const id = composerModel();
   const st = modelState(id);
   const meta = modelMeta(id);
-  const busy = !!st.phase;
-  const need = !!state.tts && !!id && !(st.downloaded || st.loaded || busy);
-  if (!need && !busy && state.pendingSpec) state.pendingSpec = null;
-  const ask = need && !!state.pendingSpec;
+  const need = !!state.tts && !!id && !st.downloaded && !st.phase;
+  const ask = need && state.confirmModel === id;
   btn.classList.toggle("primary", !ask);
   btn.classList.toggle("dl", ask);
   if (!ask) btn.classList.remove("ask");
@@ -1608,7 +1598,7 @@ async function playVoiceSample(info) {
     const mid = modelFor(info);
     const lang = info.lang;
     toast("The app makes a sample for " + info.name + "…");
-    await ensureModel(mid);
+    await downloadModels([mid]);
     const r = await run("preset_sample", { speaker: info.preset.speaker, model_id: mid, language: lang });
     await playItem({ url: fused.rawUrl(r.path), path: r.path, title: info.name + " — sample", sub: "Preset · " + cap(lang), filename: info.name + "_sample" }, true);
   } catch (e) { fail(e); }
@@ -1719,21 +1709,17 @@ async function onGenerate() {
   if (info.family === "base" && !(info.profile.ref_text || "").trim()) {
     toast("“" + info.name + "” has no reference transcript. Add the transcript on the Voices page.", "err"); return;
   }
-  const engine = $("#cEng").value;
-  const lang = $("#cLang").value;
-  const spec = specFor(info, lang, $("#cStyle").value);
-  const model = modelFor(info, engine);
-  const title = text.replace(/\s+/g, " ").split(" ").slice(0, 7).join(" ");
+  const model = modelFor(info);
+  if (!model) { toast((state.tts && state.tts.reason) || "No speech model is available on this Mac.", "err"); return; }
+  const spec = specFor(info, state.lang, currentStyle().instruct);
   const take = {
-    title: title, mode: "text", source_text: text,
+    title: text.replace(/\s+/g, " ").split(" ").slice(0, 7).join(" "), mode: "text", source_text: text,
     segments: chunkText(text).map((t) => ({ text: t, voice: spec, model_id: model, voice_label: info.name })),
   };
-  if (!model) { toast((state.tts && state.tts.reason) || "No speech model is available on this Mac.", "err"); return; }
   const st = modelState(model);
-  if (!st.downloaded && !st.loaded && !st.phase) {
+  if (!st.downloaded && !st.phase && state.confirmModel !== model) {
     const meta = modelMeta(model);
-    if (state.pendingSpec) { state.pendingSpec = take; await confirmDownload(); return; }
-    state.pendingSpec = take;
+    state.confirmModel = model;
     renderDownloadButton();
     const btn = $("#cGen");
     btn.classList.remove("ask"); void btn.offsetWidth; btn.classList.add("ask");
@@ -1787,15 +1773,11 @@ async function regenerateTake(id) {
       return;
     }
     if (state.busyGen) return;
-    state.busyGen = true;
-    owned = true;
-    $("#cGen").disabled = true;
-    await runTake({
+    await startTake({
       title: man.title, mode: "text", source_text: man.source_text, root_id: man.root_id || man.id,
       segments: man.segments.map((s) => ({ text: s.text, voice: s.voice || man.voice, model_id: s.model_id || man.model_id, voice_label: s.voice_label || man.voice_label })),
-    }, studioUi());
+    });
   } catch (e) { fail(e); }
-  finally { if (owned) { state.busyGen = false; $("#cGen").disabled = false; } }
 }
 
 /* ---------------- studio render ---------------- */
@@ -2368,7 +2350,7 @@ async function dubLine(sid, force) {
     if (state.busyRow[sid]) return;
     state.busyRow[sid] = "rendering…"; renderDubStatus();
     try {
-      await ensureModel(s.model_id || man.model_id);
+      await downloadModels([s.model_id || man.model_id]);
       const r = await run("generate_segment", { gen_id: man.id, idx: i, force: force ? "true" : "false" });
       setDub(r.manifest);
     } finally { delete state.busyRow[sid]; renderDubStatus(); }
@@ -2393,7 +2375,7 @@ async function dubGenerateAll() {
     hb = setInterval(() => job.update({}), 10000);
     const prog = $("#dProg");
     if (prog) prog.classList.remove("hidden");
-    await ensureModels(man.segments.map((s) => s.model_id || man.model_id));
+    await downloadModels(man.segments.map((s) => s.model_id || man.model_id));
     const tries = {};
     let k = 0;
     for (;;) {
@@ -2404,7 +2386,7 @@ async function dubGenerateAll() {
       const sid = left[0].sid;
       const i = cur.segments.findIndex((s) => s.sid === sid);
       tries[sid] = (tries[sid] || 0) + 1;
-      await ensureModel(cur.segments[i].model_id || cur.model_id);
+      await downloadModels([cur.segments[i].model_id || cur.model_id]);
       state.busyRow[sid] = "rendering…"; renderDubStatus();
       const total = k + left.length + 1;
       job.update({ done: k, total: total, detail: "Line " + (i + 1) + ": " + cur.segments[i].text.slice(0, 50) });
@@ -3036,7 +3018,7 @@ async function designPreview() {
   if (!d.desc) { toast("Describe the voice first.", "err"); return; }
   const seq = ++designSeq;
   d.phase = "busy"; renderDesign();
-  await ensureModel(designModel());
+  await downloadModels([designModel()]);
   const r = await run("design_preview", { description: d.desc, text: d.text, language: d.lang, model_id: designModel() });
   if (seq !== designSeq || state.design !== d) return;
   d.preview = r;
@@ -3049,7 +3031,7 @@ async function designPreview() {
 
 async function saveDesign() {
   const d = state.design;
-  const r = await run("save_design", { design_id: d.preview.design_id, name: (d.name || "Designed voice").trim(), description: d.desc, language: d.lang, text: d.preview.text, engine: "17" });
+  const r = await run("save_design", { design_id: d.preview.design_id, name: (d.name || "Designed voice").trim(), description: d.desc, language: d.lang, text: d.preview.text });
   state.voices = r.voices;
   state.design = { phase: "idle" };
   P.set("vpanel", "");
