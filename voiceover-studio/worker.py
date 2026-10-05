@@ -50,12 +50,6 @@ DRAFT_JSON = os.path.join(DATA_DIR, "draft.json")
 SR = 24000
 MAX_REF_SECONDS = 30.0
 
-DEMO_VOICES = [
-    ("Narrator Sam", "en_man", "Neutral American male, conversational", "english"),
-    ("Clara", "en_woman", "Clear American female, friendly and even", "english"),
-]
-DEMO_BASE = "https://raw.githubusercontent.com/Blaizzy/mlx-audio/main/examples/voice_prompts/"
-
 SAMPLE_LINES = {
     "chinese": "你好，很高兴认识你。这是我的声音样本。",
     "japanese": "こんにちは。これは私の声のサンプルです。",
@@ -68,25 +62,8 @@ RUNS = {}
 DATA_LOCK = threading.RLock()
 
 
-def _urlopen(url):
-    import ssl
-
-    req = urllib.request.Request(url, headers={"User-Agent": "voiceover-studio"})
-    try:
-        import certifi
-
-        ctx = ssl.create_default_context(cafile=certifi.where())
-    except Exception:
-        ctx = ssl.create_default_context()
-    return urllib.request.urlopen(req, timeout=60, context=ctx)
-
-
 def _server_origin():
-    origin = os.environ.get("FUSED_RENDER_ORIGIN")
-    if origin:
-        return origin.rstrip("/")
-    home = os.environ.get("FUSED_RENDER_HOME_DIR") or os.path.expanduser("~/.fused-render")
-    return (_read_json(os.path.join(home, "server.json"), {}).get("origin") or "").rstrip("/")
+    return (os.environ.get("FUSED_RENDER_ORIGIN") or _server_json().get("origin") or "").rstrip("/")
 
 
 def _job_id(s):
@@ -489,8 +466,7 @@ def a_bootstrap(**_):
         vs = _voices(True)
         keep = []
         for v in vs:
-            retired_demo = v.get("kind") == "demo" and v.get("slug") not in DEMO_META
-            if (v.get("draft") and _old_draft(v)) or retired_demo:
+            if v.get("draft") and _old_draft(v):
                 try:
                     os.remove(os.path.join(APP_DIR, v["path"]))
                 except OSError:
@@ -631,43 +607,6 @@ def a_set_prefs(prefs_json="", **_):
     return {"prefs": p}
 
 
-def a_fetch_demo_voices(**_):
-    have = {v.get("slug") for v in _voices(True)}
-    added = []
-    for name, slug, desc, lang in DEMO_VOICES:
-        if slug in have:
-            continue
-        with _urlopen(DEMO_BASE + slug + ".wav") as r:
-            raw = r.read()
-        pcm = _decode_any(raw=raw)
-        _write_wav(os.path.join(VOICES_DIR, slug + ".wav"), pcm)
-        with _urlopen(DEMO_BASE + slug + ".txt") as r:
-            ref_text = r.read().decode("utf-8").strip()
-        added.append(
-            _voice_defaults(
-                {
-                    "id": "v" + uuid.uuid4().hex[:10],
-                    "slug": slug,
-                    "kind": "demo",
-                    "name": name,
-                    "description": desc,
-                    "language": lang,
-                    "path": ".fused/data/voices/" + slug + ".wav",
-                    "ref_text": ref_text,
-                    "duration": round(len(pcm) / SR, 2),
-                    "created_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-                    "quality": _analyze(pcm),
-                }
-            )
-        )
-    with DATA_LOCK:
-        voices = _voices(True)
-        have = {v.get("slug") for v in voices}
-        voices.extend(v for v in added if v["slug"] not in have)
-        _save_voices(voices)
-    return {"voices": _listed(voices)}
-
-
 def a_import_voice(path="", audio_b64="", filename="", name="", **_):
     if audio_b64:
         pcm = _decode_any(raw=base64.b64decode(audio_b64))
@@ -692,7 +631,6 @@ def a_import_voice(path="", audio_b64="", filename="", name="", **_):
     entry = _voice_defaults(
         {
             "id": vid,
-            "slug": None,
             "kind": "clone",
             "name": name or os.path.splitext(os.path.basename(filename or ""))[0] or "My voice",
             "path": ".fused/data/voices/" + fname,
@@ -774,7 +712,6 @@ def a_save_design(design_id="", name="", description="", language="auto", text="
     entry = _voice_defaults(
         {
             "id": vid,
-            "slug": None,
             "kind": "designed",
             "name": name or "Designed voice",
             "description": description,
@@ -1255,7 +1192,6 @@ ACTIONS = {
     "status": a_status,
     "set_prefs": a_set_prefs,
     "save_draft": a_save_draft,
-    "fetch_demo_voices": a_fetch_demo_voices,
     "import_voice": a_import_voice,
     "update_voice": a_update_voice,
     "delete_voice": a_delete_voice,
@@ -1276,14 +1212,13 @@ ACTIONS = {
     "rename_generation": a_rename_generation,
     "delete_generation": a_delete_generation,
     "save_eval": a_save_eval,
-    "export_info": a_export_info,
     "export_audio": a_export_audio,
     "reveal": a_reveal,
     "pick_export_dir": a_pick_export_dir,
 }
 
 
-UNLOCKED = {"bootstrap", "status", "fetch_demo_voices", "import_voice", "design_preview", "save_design", "preset_sample", "generate_segment", "run_generation", "assemble", "export_info", "export_audio", "reveal", "pick_export_dir"}
+UNLOCKED = {"bootstrap", "status", "import_voice", "design_preview", "save_design", "preset_sample", "generate_segment", "run_generation", "assemble", "export_audio", "reveal", "pick_export_dir"}
 
 
 def main(action="status", **params):

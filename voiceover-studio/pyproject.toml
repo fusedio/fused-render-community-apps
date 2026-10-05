@@ -5,7 +5,6 @@ requires-python = ">=3.10"
 dependencies = [
     "numpy>=1.26",
     "miniaudio>=1.61",
-    "certifi",
 ]
 
 [tool.uv]

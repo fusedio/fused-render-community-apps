@@ -768,7 +768,6 @@ const MASCOT_FIXED = {
   "p:ryan": ["bot", "slate"], "p:aiden": ["chick", "ochre"], "p:vivian": ["cat", "rose"], "p:serena": ["bunny", "plum"],
   "p:uncle_fu": ["bear", "clay"], "p:dylan": ["frog", "sage"], "p:eric": ["ghost", "indigo"], "p:ono_anna": ["sprout", "teal"], "p:sohee": ["pebble", "terracotta"],
 };
-const DEMO_FIXED = { en_man: ["bear", "slate"], en_woman: ["cat", "terracotta"] };
 let mascotSeq = 0;
 
 function mascotFor(key) {
@@ -776,7 +775,6 @@ function mascotFor(key) {
   if (MASCOT_FIXED[key]) return MASCOT_FIXED[key];
   if (key && key.indexOf("c:") === 0) {
     const v = state.voices.find((x) => "c:" + x.id === key);
-    if (v && v.slug && DEMO_FIXED[v.slug]) return DEMO_FIXED[v.slug];
     if (v && v.kind === "clone") return [["mic", "gumdrop", "cat", "bunny", "bear", "chick", "frog", "sprout", "pebble"][hash(key) % 9], hueFor(key)];
     if (v && v.kind === "designed") return [["sprout", "ghost", "bot", "pebble", "gumdrop"][hash(key) % 5], hueFor(key)];
   }
@@ -924,18 +922,13 @@ function presetInfo(p) {
   return { key: "p:" + p.speaker, kind: "preset", family: "custom", name: p.name, desc: p.desc, lang: p.lang, engine: state.prefs.preset_engine || autoEngine("preset"), preset: p };
 }
 function voiceGroups() {
-  return {
-    mine: state.voices.filter((v) => v.kind !== "demo").map(profileInfo),
-    demo: state.voices.filter((v) => v.kind === "demo").map(profileInfo),
-    presets: PRESETS.map(presetInfo),
-  };
+  return { mine: state.voices.map(profileInfo), presets: PRESETS.map(presetInfo) };
 }
-function allVoices() { const g = voiceGroups(); return g.mine.concat(g.demo, g.presets); }
+function allVoices() { const g = voiceGroups(); return g.mine.concat(g.presets); }
 function voiceByKey(k) { return allVoices().find((v) => v.key === k) || null; }
-function modelFor(info, engine) {
+function modelFor(info) {
   const list = ttsModels(FAMILY_MODE[info.family]);
-  const want = engine || info.engine;
-  const m = list.find((x) => engineOf(x) === want) || list[0];
+  const m = list.find((x) => engineOf(x) === info.engine) || list[0];
   return m ? m.id : "";
 }
 function specFor(info, lang, instruct) {
@@ -946,18 +939,18 @@ function voiceKeyFromSpec(spec) {
   if (!spec) return "";
   return spec.type === "clone" ? "c:" + spec.voice_id : "p:" + spec.speaker;
 }
-function kindLabel(info) { return { clone: "Cloned", designed: "Designed", demo: "Demo", preset: "Preset" }[info.kind] || info.kind; }
+function kindLabel(info) { return { clone: "Cloned", designed: "Designed", preset: "Preset" }[info.kind] || "Cloned"; }
 function currentVoice() {
   const k = P.get("voice", "");
   const ok = (v) => !(v.profile && v.profile.quality && v.profile.quality.peak === 0);
-  return voiceByKey(k) || voiceGroups().mine.filter(ok)[0] || voiceGroups().demo[0] || presetInfo(PRESETS[0]);
+  return voiceByKey(k) || voiceGroups().mine.filter(ok)[0] || presetInfo(PRESETS[0]);
 }
 
 function voiceOptionsHtml(selKey) {
   const g = voiceGroups();
   const grp = (label, list) => list.length ? '<optgroup label="' + esc(label) + '">' + list.map((v) =>
     '<option value="' + esc(v.key) + '"' + (v.key === selKey ? " selected" : "") + ">" + esc(v.name) + "</option>").join("") + "</optgroup>" : "";
-  return grp("My voices", g.mine) + grp("Demo voices", g.demo) + grp("Presets", g.presets);
+  return grp("My voices", g.mine) + grp("Presets", g.presets);
 }
 
 /* ---------------- engines ---------------- */
@@ -1870,7 +1863,7 @@ function renderVoiceMenuList(q) {
       '<div class="vt"><div class="vn">' + esc(v.name) + '</div><div class="vs">' + esc(cap(v.lang)) + " · " + esc(v.desc || kindLabel(v)) + "</div></div>" +
       '<button class="iconbtn ring" data-sample="' + esc(v.key) + '" title="Play sample">' + PLAY_SM + "</button></div>").join("");
   };
-  let html = sec("Your voices", g.mine) + sec("Demo voices", g.demo) + sec("Presets", g.presets);
+  let html = sec("Your voices", g.mine) + sec("Presets", g.presets);
   if (!html) html = '<div class="empty">No voices match “' + esc(q) + "”.</div>";
   $("#vmList").innerHTML = html;
   $$("#vmList .vrow").forEach((r) => r.addEventListener("click", (ev) => {
@@ -2084,7 +2077,7 @@ async function runEval(id) {
 function defaultPool() {
   const g = voiceGroups();
   const first = currentVoice();
-  return [first].concat(g.mine, g.demo, g.presets).filter((v, i, arr) => arr.findIndex((x) => x.key === v.key) === i);
+  return [first].concat(g.mine, g.presets).filter((v, i, arr) => arr.findIndex((x) => x.key === v.key) === i);
 }
 
 async function createDub(title, cues) {
@@ -2448,12 +2441,10 @@ function vcardHtml(v) {
 
 function renderLibrary() {
   const g = voiceGroups();
-  const own = g.mine.concat(g.demo);
   const prevOpen = $("#vLibrary details.presets");
   const presetsOpen = prevOpen ? prevOpen.open : false;
-  let html = '<div class="sechead"><h2>Your voices</h2><span class="hint">' + own.length + "</span><span class=\"spacer\"></span>" +
-    (g.demo.length < 2 ? '<button class="btn sm" id="vDemoBtn">Add demo voices</button>' : "") + "</div>";
-  html += '<div class="vgrid">' + own.map(vcardHtml).join("") +
+  let html = '<div class="sechead"><h2>Your voices</h2><span class="hint">' + g.mine.length + "</span></div>";
+  html += '<div class="vgrid">' + g.mine.map(vcardHtml).join("") +
     '<button class="vcard add" data-panel="clone"><svg width="22" height="22" viewBox="0 0 16 16"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>' +
     '<div><div style="font-weight:600;color:var(--text)">New voice</div><div class="hint">Record or upload 10–30 s</div></div></button></div>';
   html += '<details class="presets"' + (presetsOpen ? " open" : "") + '><summary>Preset speakers<span class="hint">' + g.presets.length + " built-in voices · 10 languages · style instructions</span></summary>" +
@@ -2475,11 +2466,6 @@ function renderLibrary() {
     }));
   });
   $$("#vLibrary [data-panel]").forEach((b) => b.addEventListener("click", () => P.set("vpanel", b.dataset.panel)));
-  const db = $("#vDemoBtn");
-  if (db) db.addEventListener("click", async () => {
-    db.disabled = true; db.textContent = "Fetching…";
-    try { const r = await run("fetch_demo_voices"); state.voices = r.voices; renderAllVoices(); } catch (e) { fail(e); db.disabled = false; db.textContent = "Add demo voices"; }
-  });
 }
 
 async function deleteVoice(id) {
