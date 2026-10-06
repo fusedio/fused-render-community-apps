@@ -23,8 +23,9 @@ _APP_DIR = os.path.dirname(os.path.abspath(__file__))
 if _APP_DIR not in sys.path:
     sys.path.insert(0, _APP_DIR)
 
-import download  # noqa: E402
-import preview  # noqa: E402
+# Aliased: tool functions below (download, ...) would otherwise shadow them.
+import download as _download  # noqa: E402
+import preview as _preview  # noqa: E402
 import s3  # noqa: E402
 import s3lib  # noqa: E402
 
@@ -147,7 +148,7 @@ def read_object(bucket: str, key: str, max_bytes: int = 52428800, account: str =
     """Fetch an object to a local cache file and return its path. Text objects
     up to 256 KB also come back inline as `text`. Larger than max_bytes is refused."""
     c = _conn(account, profile, region, anonymous, endpoint_url)
-    out = preview.main(bucket=bucket, key=key, max_bytes=max_bytes, **c)
+    out = _preview.main(bucket=bucket, key=key, max_bytes=max_bytes, **c)
     path = out.get("local_path") if isinstance(out, dict) else None
     if path and out.get("size", 0) <= TEXT_LIMIT:
         try:
@@ -209,13 +210,13 @@ def download(bucket: str, dest_dir: str = "~/Downloads", keys: list[str] | None 
     """Download objects (`keys`) and whole folders (`prefixes`, recursive) into
     dest_dir on this machine, keeping the key paths. Returns totals and errors."""
     c = _conn(account, profile, region, anonymous, endpoint_url)
-    plan = download.main(action="plan", bucket=bucket, keys=json.dumps(keys or []),
+    plan = _download.main(action="plan", bucket=bucket, keys=json.dumps(keys or []),
                          prefixes=json.dumps(prefixes or []), dest_dir=os.path.expanduser(dest_dir), **c)
     if "error" in plan:
         return plan
     st = {"status": "ready"}
     while st.get("status") not in ("done",) and "error" not in st:
-        st = download.main(action="step", job=plan["job"], **c)
+        st = _download.main(action="step", job=plan["job"], **c)
     return st
 
 
