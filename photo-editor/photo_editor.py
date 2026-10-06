@@ -48,6 +48,9 @@ def main(action: str = "status", session_id: str = "", image_data: str = "",
         return _documents(action, doc_id=doc_id, name=name, snap_json=snap_json, label=label,
                           base_rev=base_rev, rev=rev, thumb=thumb, path=path, prev_doc=prev_doc)
 
+    if action in ("fonts_ensure", "signature_layer"):
+        return _signatures(action, values_json)
+
     if action == "new_session":
         session_id = session_id or imaging.new_session_id()
         result = imaging.save_source(session_id, image_data, name=name)
@@ -120,6 +123,18 @@ def main(action: str = "status", session_id: str = "", image_data: str = "",
                                                    fmt=fmt, quality=int(quality),
                                                    background=background, dpi=float(dpi))}
 
+    if action == "export_pages":
+        # Every page of a multi-page document, each composed by the page as a
+        # frame (save_frame), into one PDF in the save folder.
+        import json
+
+        frames = (json.loads(values_json or "{}").get("sources") or [])
+        if fmt != "pdf":
+            raise ValueError("Only PDF holds several pages; export other formats one page at a time")
+        output = docstore.save_path(file_name or name, "pdf")
+        return {"ok": True, **imaging.export_pdf_pages([_resolve(session_id, f) for f in frames], output,
+                                                       background=background, dpi=float(dpi))}
+
     if action == "save_frame":
         # The page hands back a canvas it composed itself (crop, flip, rotate),
         # which then becomes the new working image for every later server op.
@@ -129,6 +144,41 @@ def main(action: str = "status", session_id: str = "", image_data: str = "",
         return {"ok": True, "path": output}
 
     raise ValueError(f"Unknown action: {action!r}")
+
+
+def _signatures(action: str, values_json: str) -> dict:
+    """The Sign panel's two calls, answered by the same code as the MCP tools
+    (agent/tools.py), so the panel and Claude place identical layers.
+    fonts_ensure installs any Google families in `families` that are missing
+    and returns the font index the page builds @font-face rules from;
+    signature_layer returns the text layer for `name` in `style`, sized and
+    placed for the page's snapshot and, when `line` names a line layer, on it."""
+    import json
+    import sys
+
+    agent_dir = os.path.join(APP_DIR, "agent")
+    if agent_dir not in sys.path:
+        sys.path.insert(0, agent_dir)
+    import fonts
+    import tools
+
+    payload = json.loads(values_json or "{}")
+    if action == "fonts_ensure":
+        families, errors = {}, {}
+        for family in payload.get("families") or []:
+            try:
+                families[family] = tools._ensure_font(family)
+            except Exception as error:  # one missing font must not hide the rest
+                errors[family] = str(error)
+        return {"ok": True, "families": families, "errors": errors, "index": fonts.write_index()}
+    snap = payload.get("snap") or {}
+    if isinstance(snap, str):
+        snap = json.loads(snap)
+    line = next((l for l in snap.get("layers") or [] if l.get("id") == payload.get("line") and l.get("type") == "line"), None)
+    layer, info = tools.signature_layer(snap, payload.get("name") or "", payload.get("style") or "elegant", line,
+                                        color=payload.get("color") or tools.SIGNATURE_INK,
+                                        rotation=float(payload.get("rotation", -3)))
+    return {"ok": True, "layer": layer, "signature": info}
 
 
 def _documents(action: str, doc_id: str, name: str, snap_json: str, label: str,

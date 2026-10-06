@@ -27,10 +27,12 @@ the panel that needs them.
 | **Upscale & restore** | 2x, 3x or "short edge 2160" with a 0-50 % denoise slider. SeedVR2 3B on MLX in the warm worker, started and then polled. The layer keeps its on-canvas size; only the pixel count grows. Refuses outputs over 8192 px on the long edge or 48 megapixels. |
 | **Background Remover** | One click. `VNGenerateForegroundInstanceMaskRequest` on the Neural Engine — class-agnostic, sub-second, no model download. |
 | **Page sizes** | New document dialog with Paper (A3-A6, B4/B5, Letter, Legal, Tabloid), Photo prints, Cards & flyers, Posters, Screen & social and Custom sizes, plus resolution (DPI), bleed and safe margin. Opened photos keep their pixels and show the size they print at. Page setup in Properties changes any of it later. |
+| **Pages** | A document can hold several pages, each with its own size, print setup, guides and layers: one certificate per course, the front and back of a card. The **Pages** list at the top of the Layers tab adds a blank page (same setup as the one in view), duplicates, deletes, renames (double-click) and reorders (drag) them; click a row, use the pager on the canvas, or press Page Up / Page Down to change pages. Undo follows the step back to the page it changed. ⌘C / ⌘X and ⌘V copy layers between pages at exactly the same place and size, and **Copy to page** on the float bar sends the selection to another page, every other page or a new one. |
 | **Rulers, grid & guides** | View menu: rulers in mm / cm / in / px, a measurement grid, bleed / trim / safe-area overlay with crop marks, guides dragged out of the rulers, and snapping to page edges, margins and guides. |
-| **Export** | Print: original size or any paper size (fit / fill), 150-600 DPI, bleed, crop marks with a page-info slug, optionally centred on an A4 / Letter / A3 sheet, as PDF, PNG, JPEG or TIFF with DPI written into the file. Digital: original, 2x, 1/2x, custom width or a screen preset as PNG, JPEG or WebP. Warns about photos under 150 ppi and missing bleed. Files go to the save folder (below), not ~/Downloads. |
+| **Export** | Print: original size or any paper size (fit / fill), 150-600 DPI, bleed, crop marks with a page-info slug, optionally centred on an A4 / Letter / A3 sheet, as PDF, PNG, JPEG or TIFF with DPI written into the file. Digital: original, 2x, 1/2x, custom width or a screen preset as PNG, JPEG or WebP. Warns about photos under 150 ppi and missing bleed. With several pages, export all of them or only the one in view: a PDF holds every page (each at its own size), other formats write one file per page ("name – page 2.png"); the preview pages through them. Files go to the save folder (below), not ~/Downloads. |
 | **Autosave & documents** | Every step is saved as you go, so starting a new document never loses the last one, and a reload reopens the document you had open. A step made just before a reload, including a new document's first step, is kept in the tab until the disk has it, then saved. The start screen lists recent documents; the **Files** tab lists all of them. **⌘S** (or the "Saved" label next to the name) writes a full-size PNG copy to the save folder, `~/Pictures/Photo Editor`. |
 | **History** | The **History** tab lists every step, yours and Claude's, with a thumbnail. Click one to go back to it. Going back is recorded as a new step, so the later steps are still there. |
+| **Sign** | The signature button in the tool rail opens the Sign view in the left panel: type a name (prefilled from the selected text layer), pick an ink, and click one of eight signature styles, each previewed live in its Google handwriting font (fetched on first use into `.fused/data/fonts/`). With a line layer selected the signature is sized to about half the line and set on it, baseline just through the stroke; otherwise it is centred. It is an ordinary editable text layer and an ordinary undoable step, placed by the same code as the `add_signature` MCP tool. |
 | **Agent tools (MCP)** | Claude can drive the editor: open photos, add text, shapes, arrows and images, move and restyle layers, adjust, filter, crop, cut out, render to look at the result, and save. An open editor follows along within a second. See [Driving it from Claude](#driving-it-from-claude). |
 
 Undo/redo, zoom, View (rulers, grid, guides) and Export are in the top bar.
@@ -63,22 +65,30 @@ on the left and save it as a JPEG"*. The tools:
 
 | Tool | What it does |
 |---|---|
-| `list_documents`, `new_document`, `open_image`, `open_document`, `get_document`, `rename_document`, `set_page` | Documents. `new_document` takes the same presets as the dialog (`a4`, `letter`, `ig-post`, `story` ...) or a pixel size. `get_document` returns every layer's id, bounds and style. |
+| `list_documents`, `new_document`, `open_image`, `open_document`, `get_document`, `rename_document`, `set_page` | Documents. `new_document` takes the same presets as the dialog (`a4`, `letter`, `ig-post`, `story` ...) or a pixel size. `get_document` lists the pages and returns every layer's id, bounds and style on one page. |
+| `go_to_page`, `add_page`, `duplicate_page`, `delete_page`, `move_page`, `rename_page`, `copy_layers` | Pages. `copy_layers` puts layers (or `"all"`) on another page exactly where they are, or moves them with `move=true`. Every other tool acts on the page the editor shows; `go_to_page` switches it (the editor follows), and a new or duplicated page is shown straight away. Pages are named by number (from 1), id or name. |
 | `add_text`, `add_shape`, `add_line`, `add_image` | New layers. `position` (`center`, `top`, `bottom-right` ...) places them inside the safe margin; `x`/`y` place them exactly. `add_text(background_color=...)` makes a label or badge. |
 | `update_layer`, `delete_layer`, `arrange_layer` | Move, resize, recolour, rename, hide, reorder. |
+| `search_fonts`, `install_font`, `list_fonts` | Any Google Fonts family for text, not only the twelve built in. `search_fonts` reads the catalogue (by name and category), `install_font` downloads a family's TTFs into `.fused/data/fonts/<Family>/`; `add_text` and `update_layer` install a Google family on first use. The Pillow render reads those files and the editor loads the same files as `@font-face`, so both draw the real font. |
+| `preview_signatures`, `add_signature` | Signatures as editable text layers in handwriting fonts: `preview_signatures(name)` draws every style (elegant, flowing, airy, bold-scrawl, handwritten, neat, formal, ornate) on one contact sheet; `add_signature(name, style, above_line=<line layer>)` sizes the signature to about half the line and sets it on the line with the baseline just through the stroke. |
 | `adjust_image`, `apply_filter`, `crop_image`, `remove_background` | Pixel edits, done with the same Pillow and Vision code the panels use. |
+| `pan_image_content` | Move or zoom the picture inside an image layer while its box stays put (page pixels, rotation and scale accounted for). What leaves the box is clipped, the uncovered part is transparent. Baked from the layer's untouched source every time, so panning back brings the pixels back; `reset` restores it. |
 | `screenshot_editor` | What the open editor shows, as a PNG Claude can look at: `mode="page"` is the page drawn by the editor itself (real fonts, blend modes), `mode="editor"` is the canvas as it is on screen with grid, guides, rulers and the selection. Falls back to the Python render when no editor is open. |
-| `render_document`, `save_document` | A PNG to look at, and the finished file in the save folder. |
+| `render_document`, `save_document` | A PNG of a page to look at, and the finished file in the save folder: a PDF holds every page, other formats the page in view unless `pages="all"` (one file per page). |
 | `get_view`, `set_view`, `add_guide`, `clear_guides` | The editor's View settings (grid and its spacing, snap, rulers, guides, bleed/trim overlay) and ruler guides. With Snap on, every placement snaps to the page and trim edges, centre, safe margin and guides, and, when the grid is showing, onto the grid. |
 | `align_layers`, `distribute_layers` | Align left / centre / right / top / middle / bottom, to the page, to the group, or to one layer; spread layers evenly or at a fixed gap. |
 | `list_history`, `restore_version`, `undo` | Step history, shared with the editor's History tab. |
 
 How it works: documents live in `.fused/data/documents/<id>/` as `doc.json`
+(its `snap` is `{localSession, page, pages: [...]}`, one entry per page with
+its size, setup, guides and layers; documents from before pages read as one
+page)
 plus one `history/NNNNNN.json` snapshot and one thumbnail per step
 (`docstore.py`). The page and the tools both save by committing a new
 revision, and `current.json` records which document is open and its latest
-revision. `view.json` carries the View settings both ways, so the tools snap to
-the grid you see. `request.json` plus `screens/` is how `screenshot_editor` asks
+revision. `view.json` carries the View settings and the page in view both
+ways, so the tools snap to the grid you see and edit the page you are looking
+at. `request.json` plus `screens/` is how `screenshot_editor` asks
 the open page for a picture and gets it back. The page reads that file once a second and loads any newer revision.
 When Claude opens or creates a document, the editor switches to it. The page
 switches only for documents Claude opens, so two open tabs never pull each
@@ -90,7 +100,11 @@ The tools render with Pillow (`render.py`), so they work while the editor is
 closed. Positions and shapes match the editor exactly. Text uses the macOS
 system copy of each font (Source Sans 3 falls back to Helvetica Neue unless it
 is installed), so text widths in a render or a tool-saved file can differ
-slightly from the editor.
+slightly from the editor. Google families installed by the tools are the
+exception: `fonts.py` keeps their TTFs in `.fused/data/fonts/<Family>/` and
+an `installed.json` index, `render.py` reads the folder, and the page loads
+the same files through `fused.rawUrl` as `@font-face` rules (re-laying out
+every text layer once they arrive), so the two match.
 
 `agent/` has its own `pyproject.toml` (Pillow, numpy, PyObjC Vision) because
 `fused app serve` installs dependencies with `uv pip install`, which ignores

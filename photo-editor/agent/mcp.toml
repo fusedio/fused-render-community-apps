@@ -28,7 +28,7 @@ entrypoint = "open_document"
 
 [[tool]]
 name = "get_document"
-description = "Describe a document: page size, trim box, background, and every layer bottom-to-top with id, name, type, bounds (page pixels) and style. Omit `document` for the one open in the editor."
+description = "Describe a document: its pages (number, id, name, size), and for one page (`page` = number from 1, id or name; default the page the editor shows) the size, trim box, background and every layer bottom-to-top with id, name, type, bounds (page pixels) and style. Omit `document` for the one open in the editor. Every other tool acts on the page the editor shows; go_to_page switches it."
 file = "tools.py"
 entrypoint = "get_document"
 
@@ -40,7 +40,7 @@ entrypoint = "rename_document"
 
 [[tool]]
 name = "set_page"
-description = "Change the page background colour, or make it transparent."
+description = "Change the background colour of the page in view, or make it transparent."
 file = "tools.py"
 entrypoint = "set_page"
 
@@ -52,7 +52,7 @@ entrypoint = "add_image"
 
 [[tool]]
 name = "add_text"
-description = "Add a text layer. position (center, top, bottom, left, right, top-left, ...) places it inside the safe margin and sets the alignment; x/y give the top-left corner instead. color, font (Source Sans 3, Source Serif 4, Helvetica Neue, Arial, Georgia, Times New Roman, Futura, Avenir Next, Gill Sans, Impact, Courier New, Menlo), weight (400, 500, 600, 700), italic, font_size in page pixels, outline_color/outline_width. background_color adds a rounded label box behind the text (a marker/badge)."
+description = "Add a text layer. position (center, top, bottom, left, right, top-left, ...) places it inside the safe margin and sets the alignment; x/y give the top-left corner instead. color, font, weight (400, 500, 600, 700), italic, font_size in page pixels, outline_color/outline_width. font is a built-in (Source Sans 3, Source Serif 4, Helvetica Neue, Arial, Georgia, Times New Roman, Futura, Avenir Next, Gill Sans, Impact, Courier New, Menlo) or ANY Google Fonts family (e.g. Playfair Display, Lora, Montserrat, Great Vibes): it is installed on first use; search_fonts finds one, list_fonts shows what is installed. background_color adds a rounded label box behind the text (a marker/badge)."
 file = "tools.py"
 entrypoint = "add_text"
 
@@ -70,7 +70,7 @@ entrypoint = "add_line"
 
 [[tool]]
 name = "update_layer"
-description = "Change a layer (id or name; omit for the selected one). `changes` is an object with any of: name, visible, locked, opacity, blend, x, y (top-left of its box), position, width, height, rotation, text, color/fill, stroke, stroke_width, font, weight, font_size, align, corner_radius, line_height, letter_spacing."
+description = "Change a layer (id or name; omit for the selected one). `changes` is an object with any of: name, visible, locked, opacity, blend, x, y (top-left of its box), position, width, height, rotation, text, color/fill, stroke, stroke_width, font (a built-in or any Google Fonts family, installed on first use; see search_fonts / list_fonts), weight, font_size, align, corner_radius, line_height, letter_spacing."
 file = "tools.py"
 entrypoint = "update_layer"
 
@@ -111,14 +111,20 @@ file = "tools.py"
 entrypoint = "crop_image"
 
 [[tool]]
+name = "pan_image_content"
+description = "Move the picture inside an image layer without moving the layer's box: dx/dy in page pixels (positive = picture moves right/down, whatever the layer's rotation or scale). zoom scales the picture about anchor (center, top, bottom, left, right, top-left, bottom-left, ...). What leaves the box is clipped; the uncovered part is transparent. Pans add up and are re-baked from the layer's untouched source, so panning back restores clipped pixels; reset=true puts the picture back. get_document shows the current offset under the layer's `content`."
+file = "tools.py"
+entrypoint = "pan_image_content"
+
+[[tool]]
 name = "render_document"
-description = "Render a document (or an earlier step with rev) to a PNG and return its path, to look at what it contains."
+description = "Render a page (default: the one in view; `page` = number from 1, id or name) of a document, or of an earlier step with rev, to a PNG and return its path, to look at what it contains."
 file = "tools.py"
 entrypoint = "render_document"
 
 [[tool]]
 name = "save_document"
-description = "Save the finished image as png, jpeg, webp, pdf or tiff into the save folder (~/Pictures/Photo Editor unless folder is given). scale multiplies the pixel size. Returns the file path."
+description = "Save the finished file as png, jpeg, webp, pdf or tiff into the save folder (~/Pictures/Photo Editor unless folder is given). scale multiplies the pixel size. pages: \"all\", \"current\" (the page in view) or one page (number, id or name); by default a PDF holds every page (one multi-page file) and other formats the page in view, and \"all\" in another format writes one file per page. Returns the file path(s)."
 file = "tools.py"
 entrypoint = "save_document"
 
@@ -177,7 +183,78 @@ entrypoint = "distribute_layers"
 
 [[tool]]
 name = "screenshot_editor"
-description = "Screenshot the open editor to check placement, and return the PNG path (open it to look). mode 'page' = the page drawn by the editor itself (real fonts); mode 'editor' = the canvas as it is on screen with grid, guides, rulers and selection. Falls back to the Python render if no editor is open. Use after edits to verify layout."
+description = "Screenshot the open editor to check placement, and return the PNG path (open it to look). mode 'page' = the page drawn by the editor itself (real fonts); mode 'editor' = the canvas as it is on screen with grid, guides, rulers and selection. `page` (number from 1, id or name) switches the editor to that page first. Falls back to the Python render if no editor is open. Use after edits to verify layout."
 file = "tools.py"
 entrypoint = "screenshot_editor"
 
+[[tool]]
+name = "search_fonts"
+description = "Search the Google Fonts catalogue (all open-licensed) by name words and/or category (sans-serif, serif, display, handwriting, monospace), most popular first: family, category, weights, italic weights, and whether it is installed here. Any result can be used straight away as add_text's font (it installs on first use) or fetched with install_font."
+file = "tools.py"
+entrypoint = "search_fonts"
+
+[[tool]]
+name = "install_font"
+description = "Download a Google Fonts family's TTF files into the app's font folder (.fused/data/fonts/<Family>/) so renders, saves and the editor draw it. Idempotent. add_text and update_layer do this on their own for a Google family they have not seen; call it to fetch a font ahead of time."
+file = "tools.py"
+entrypoint = "install_font"
+
+[[tool]]
+name = "list_fonts"
+description = "The fonts available for text: the built-in ones, every installed Google family with its weights, and the signature styles with their fonts."
+file = "tools.py"
+entrypoint = "list_fonts"
+
+[[tool]]
+name = "preview_signatures"
+description = "Render a name as a signature in every style (elegant, flowing, airy, bold-scrawl, handwritten, neat, formal, ornate; or a comma-separated subset) on one labelled contact sheet, each sitting on a signature line, and return the PNG path (open it to compare) plus the style list. Pick one, then add_signature."
+file = "tools.py"
+entrypoint = "preview_signatures"
+
+[[tool]]
+name = "add_signature"
+description = "Sign a name on the page as an editable text layer in a handwriting font (style: elegant, flowing, airy, bold-scrawl, handwritten, neat, formal, ornate; the font installs on first use), in ink colour, slightly tilted (rotation, default -3). above_line = a line layer's id or name: the signature is sized to `fit` (default 0.52) of the line's length, centred on it, with its baseline just through the stroke like a real signature. Otherwise width or font_size set the size and position / x / y place it like add_text. Use preview_signatures first to choose a style."
+file = "tools.py"
+entrypoint = "add_signature"
+
+[[tool]]
+name = "go_to_page"
+description = "Show a page of the document in the editor: page = number from 1, id or name. Tools that take no page then act on it."
+file = "tools.py"
+entrypoint = "go_to_page"
+
+[[tool]]
+name = "add_page"
+description = "Add a blank page after the page in view (or after `after`) and show it. It copies that page's size and print setup (DPI, bleed, safe margin) unless preset (same ids as new_document) with landscape, or width and height in pixels, are given. name and background are optional."
+file = "tools.py"
+entrypoint = "add_page"
+
+[[tool]]
+name = "duplicate_page"
+description = "Copy a page (default: the one in view) with all its layers, insert the copy right after it and show it. The copy's layers get new ids. Use it to make a variant of a design, e.g. the same certificate for another course."
+file = "tools.py"
+entrypoint = "duplicate_page"
+
+[[tool]]
+name = "delete_page"
+description = "Delete a page (number from 1, id or name) and its layers. A document keeps at least one page; undo or restore_version brings it back."
+file = "tools.py"
+entrypoint = "delete_page"
+
+[[tool]]
+name = "move_page"
+description = "Move a page (number, id or name) to position `to` (1 = first)."
+file = "tools.py"
+entrypoint = "move_page"
+
+[[tool]]
+name = "rename_page"
+description = "Rename a page (default: the one in view)."
+file = "tools.py"
+entrypoint = "rename_page"
+
+[[tool]]
+name = "copy_layers"
+description = "Copy layers onto another page exactly as they are (position, size, rotation, style, stacking order), on top of that page's layers, with new ids. to_page: number from 1, id or name. layers: ids or names (list or comma-separated), \"all\", or empty for the selected layer; a text label's box comes along. from_page defaults to the page in view. move=true takes them off the source page. The target page is shown."
+file = "tools.py"
+entrypoint = "copy_layers"

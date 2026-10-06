@@ -694,3 +694,26 @@ def export_image(source_path: str, output_path: str, fmt: str = "png",
     os.replace(temporary, output_path)
     return {"path": output_path, "format": fmt, "bytes": os.path.getsize(output_path),
             "width": image.width, "height": image.height, "dpi": dpi}
+
+
+def export_pdf_pages(source_paths: list[str], output_path: str, background: str = "#ffffff",
+                     dpi: float = 0) -> dict:
+    """One PDF with a page per image, in order. Pages may differ in size; each
+    is pixels / dpi inches, like export_image's single-page PDF."""
+    from PIL import Image
+
+    if not source_paths:
+        raise ValueError("No pages to export")
+    pages = []
+    for path in source_paths:
+        with Image.open(path) as handle:
+            image = handle.convert("RGBA")
+        base = Image.new("RGB", image.size, background)
+        base.paste(image, mask=image.split()[3])
+        pages.append(base)
+    dpi = float(dpi or 0)
+    temporary = output_path + ".tmp"
+    pages[0].save(temporary, "PDF", resolution=dpi if dpi > 0 else 72.0, save_all=True, append_images=pages[1:])
+    os.replace(temporary, output_path)
+    return {"path": output_path, "format": "pdf", "bytes": os.path.getsize(output_path),
+            "pages": len(pages), "width": pages[0].width, "height": pages[0].height, "dpi": dpi}

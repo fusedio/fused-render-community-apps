@@ -182,10 +182,76 @@
   .panel-tabs button.active::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 1px; background: var(--surface); }
   .panel-tabs .fill { flex: 1; background: var(--bg); }
 
+  /* Blend and opacity of the selected layer: two columns whose labels and
+     controls share one baseline and one 24px control row. */
   .layer-controls {
-    padding: 8px 10px; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 1fr 1fr; gap: 6px; align-items: center;
+    padding: 8px 10px 10px; border-bottom: 1px solid var(--line); display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; align-items: end;
   }
-  .layer-controls label { font-size: 11px; color: var(--muted); display: flex; flex-direction: column; gap: 3px; }
+  .layer-controls .lc { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+  .layer-controls .lc-head {
+    display: flex; justify-content: space-between; align-items: baseline; height: 13px; line-height: 13px;
+    font-size: 10.5px; font-weight: 600; letter-spacing: 0.3px; text-transform: uppercase; color: var(--faint);
+  }
+  .layer-controls .lc-head b { font-size: 11px; font-weight: 600; letter-spacing: 0; color: var(--ink); font-variant-numeric: tabular-nums; text-transform: none; }
+  .layer-controls .lc-slider { height: 24px; display: flex; align-items: center; }
+  .layer-controls .lc-slider input[type="range"] { margin: 0; }
+  .layer-controls select.compact { text-transform: capitalize; }
+
+  /* Pages: one row per page above the layers; click a row to show that page. */
+  .pages { flex: 0 0 auto; border-bottom: 1px solid var(--line); }
+  .pages[hidden] { display: none; }
+  .pages-head { display: flex; align-items: center; gap: 2px; height: 30px; padding: 0 4px 0 4px; }
+  .pages-head .pages-toggle {
+    display: flex; align-items: center; gap: 4px; height: 24px; padding: 0 6px 0 2px; border-radius: 4px;
+    font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--faint);
+  }
+  .pages-head .pages-toggle:hover { color: var(--ink); }
+  .pages-head .pages-toggle svg { width: 12px; height: 12px; transition: transform 0.12s; }
+  .pages.collapsed .pages-toggle svg { transform: rotate(-90deg); }
+  .pages-head .count { font-weight: 600; color: var(--muted); letter-spacing: 0; }
+  .pages-head .spacer { flex: 1; }
+  .pages-head .icon-btn { width: 24px; height: 24px; }
+  .pages-head .icon-btn svg { width: 14px; height: 14px; }
+  .page-list { max-height: 172px; overflow-y: auto; padding: 0 6px 6px; display: flex; flex-direction: column; gap: 2px; }
+  .pages.collapsed .page-list { display: none; }
+  .page-row {
+    display: grid; grid-template-columns: 14px 46px minmax(0, 1fr) auto; gap: 6px; align-items: center;
+    padding: 3px 4px 3px 2px; border-radius: 5px; cursor: pointer; color: var(--ink); min-height: 40px;
+  }
+  .page-row:hover { background: var(--surface-2); }
+  .page-row.active { background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
+  .page-row.dragging { opacity: 0.4; }
+  .page-row.drag-over-top { box-shadow: inset 0 2px 0 var(--accent); }
+  .page-row.drag-over-bottom { box-shadow: inset 0 -2px 0 var(--accent); }
+  .page-row .num { font-size: 10.5px; color: var(--faint); text-align: right; font-variant-numeric: tabular-nums; }
+  .page-row.active .num { color: var(--accent); font-weight: 700; }
+  .page-row .pthumb {
+    width: 46px; height: 34px; border-radius: 3px; border: 1px solid var(--line-soft); overflow: hidden;
+    background: var(--surface-3); display: grid; place-items: center;
+  }
+  .page-row .pthumb img { max-width: 100%; max-height: 100%; display: block; }
+  .page-row .pthumb img:not([src]) { display: none; }
+  .page-row .pname { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+  .page-row .pname .label { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .page-row .pname .sub { font-size: 10.5px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .page-row .pname input { width: 100%; height: 22px; border: 1px solid var(--accent); background: var(--bg); border-radius: 3px; padding: 0 5px; font-size: 12px; color: var(--ink); }
+  .page-row .pact { display: flex; opacity: 0; }
+  .page-row:hover .pact, .page-row:focus-within .pact { opacity: 1; }
+  .page-row .pact button { width: 22px; height: 22px; border-radius: 4px; color: var(--faint); display: grid; place-items: center; }
+  .page-row .pact button:hover { color: var(--ink-strong); background: var(--surface-3); }
+  .page-row .pact button.del:hover { color: var(--danger); background: var(--danger-soft); }
+  .page-row .pact button:disabled { opacity: 0.35; pointer-events: none; }
+  .page-row .pact svg { width: 13px; height: 13px; }
+
+  /* Left-panel views opened from the tool rail (Sign) carry their own title bar. */
+  .pane-head {
+    flex: 0 0 32px; display: flex; align-items: center; gap: 6px; padding: 0 4px 0 10px;
+    border-bottom: 1px solid var(--line); font-size: 12px; font-weight: 600; color: var(--ink-strong);
+  }
+  .pane-head .spacer { flex: 1; }
+  .pane-head .icon-btn { width: 24px; height: 24px; }
+  .pane-head .icon-btn svg { width: 14px; height: 14px; }
   select.compact, input.compact {
     height: 24px; padding: 0 6px; font-size: 12px; border-radius: 4px; border: 1px solid var(--line);
     background: var(--surface-2); color: var(--ink); width: 100%;
@@ -216,6 +282,9 @@
     display: grid; place-items: center;
   }
   .layer-thumb img { max-width: 100%; max-height: 100%; display: block; }
+  .layer-thumb img:not([src]) { display: none; }
+  .layer-thumb.glyph { background: var(--surface-2); color: var(--muted); }
+  .layer-thumb.glyph svg { width: 15px; height: 15px; }
   .layer-name { font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .layer-name .kind { display: block; font-size: 10.5px; color: var(--faint); font-weight: 500; }
   .layer-name input { width: 100%; height: 22px; border: 1px solid var(--accent); background: var(--bg); border-radius: 3px; padding: 0 5px; font-size: 12px; color: var(--ink); }
@@ -257,6 +326,30 @@
   .side-row .del:hover { color: var(--danger); background: var(--danger-soft); }
   .side-row .del svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.8; }
 
+  /* Sign tab: name, ink, and one live preview per signature style. */
+  .sign-pane .sign-body { flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 10px; }
+  .sign-pane #signName { text-transform: none; letter-spacing: 0; }
+  .sign-inks { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
+  .sign-ink { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--line); cursor: pointer; padding: 0; flex: 0 0 auto; }
+  .sign-ink:hover { border-color: var(--ink-strong); }
+  .sign-ink[aria-checked="true"] { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+  .sign-ink.custom { position: relative; overflow: hidden; background: conic-gradient(#e34850, #f5d90a, #33ab84, #378ef0, #9256d9, #e34850); }
+  .sign-ink.custom input { position: absolute; inset: -8px; width: 40px; height: 40px; opacity: 0; cursor: pointer; }
+  .sign-target { font-size: 11px; color: var(--muted); line-height: 1.45; }
+  .sign-target b { color: var(--ink); }
+  .sign-styles { display: flex; flex-direction: column; gap: 6px; }
+  .sign-styles.loading::before { content: "Loading fonts…"; font-size: 11px; color: var(--muted); }
+  .sign-styles.loading .preview { opacity: 0.5; }
+  .sign-styles.busy { pointer-events: none; opacity: 0.7; }
+  .sign-style { display: flex; flex-direction: column; gap: 4px; text-align: left; padding: 6px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-2); color: var(--ink); cursor: pointer; }
+  .sign-style:hover { border-color: var(--accent); }
+  .sign-style:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .sign-style .preview { display: block; height: 44px; line-height: 44px; padding: 0 8px; border-radius: 4px; background: #fbf9f4; font-size: 26px; white-space: nowrap; overflow: hidden; }
+  .sign-style .preview.placeholder { opacity: 0.45; }
+  .sign-style .label { display: flex; justify-content: space-between; gap: 6px; font-size: 10.5px; color: var(--faint); min-width: 0; }
+  .sign-style .label b { color: var(--ink); font-weight: 600; text-transform: capitalize; flex: 0 0 auto; }
+  .sign-style .label span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
   .save-state {
     font-size: 11.5px; color: var(--faint); padding: 3px 7px; border-radius: 4px; border: 1px solid transparent; white-space: nowrap;
   }
@@ -291,6 +384,7 @@
   .add-menu button:hover, .pos-menu button:hover { background: var(--accent-strong); color: var(--accent-ink); }
   .add-menu svg, .pos-menu svg { width: 15px; height: 15px; flex: none; }
   .add-menu .sep, .pos-menu .sep { height: 1px; background: var(--line); margin: 3px 2px; }
+  .pos-menu .menu-note { padding: 4px 8px 5px; font-size: 11px; color: var(--muted); max-width: 240px; }
 
   /* ---------- Stage ---------- */
   .stage-wrap { flex: 1; min-width: 0; position: relative; background: var(--stage-bg); overflow: hidden; }
@@ -345,6 +439,29 @@
     user-select: text; color: inherit;
   }
   .text-editor.show { display: block; }
+
+  /* Page pager on the canvas: shown once a document has more than one page. */
+  .page-pager {
+    position: absolute; left: 50%; bottom: 32px; transform: translateX(-50%); z-index: 5;
+    display: none; align-items: center; gap: 2px; padding: 3px; border-radius: 8px;
+    background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow);
+    font-size: 12px; color: var(--ink); font-variant-numeric: tabular-nums;
+  }
+  .page-pager.show { display: flex; }
+  .stage-wrap.paged .toast { bottom: 74px; }
+  .page-pager .icon-btn { width: 26px; height: 26px; }
+  .page-pager .icon-btn svg { width: 15px; height: 15px; }
+  .page-pager .icon-btn:disabled { opacity: 0.35; }
+  .page-pager .label { padding: 0 8px; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .page-pager .label b { font-weight: 600; }
+  .page-pager .sep { width: 1px; height: 18px; background: var(--line); margin: 0 2px; }
+  .ex-pager { display: inline-flex; align-items: center; gap: 2px; padding-right: 10px; margin-right: 2px; border-right: 1px solid var(--line); }
+  .ex-pager .ex-page { padding: 0 4px; font-size: 12px; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .ex-pager .ex-page b { color: var(--ink); font-weight: 600; }
+  .ex-pager button { width: 22px; height: 22px; border-radius: 4px; display: grid; place-items: center; color: var(--muted); }
+  .ex-pager button:hover { background: var(--surface-3); color: var(--ink-strong); }
+  .ex-pager button:disabled { opacity: 0.35; pointer-events: none; }
+  .ex-pager svg { width: 14px; height: 14px; }
 
   .status-bar {
     position: absolute; left: 0; right: 0; bottom: 0; height: 22px; z-index: 4;
@@ -655,12 +772,30 @@
   <div class="body">
     <nav class="toolbar" id="toolbar"></nav>
 
-    <button class="panel-strip left" id="leftStrip" title="Show Layers, History and Files (Tab shows all panels)"><svg viewBox="0 0 24 24"><path d="M13 17l5-5-5-5"/><path d="M6 17l5-5-5-5"/></svg><span class="vlabel">Layers</span></button>
+    <button class="panel-strip left" id="leftStrip" title="Show Layers, History, Files and Sign (Tab shows all panels)"><svg viewBox="0 0 24 24"><path d="M13 17l5-5-5-5"/><path d="M6 17l5-5-5-5"/></svg><span class="vlabel">Layers</span></button>
     <aside class="layers" id="leftPanel">
       <div class="panel-tabs" id="leftTabs"><button class="active" data-ltab="layers">Layers</button><button data-ltab="history">History</button><button data-ltab="files">Files</button><span class="fill"></span><button class="panel-collapse" data-collapse="left" title="Collapse panel (Tab hides all panels)"><svg viewBox="0 0 24 24"><path d="M11 17l-5-5 5-5"/><path d="M18 17l-5-5 5-5"/></svg></button></div>
       <div class="left-pane" id="paneHistory" hidden><div class="side-list" id="historyList"></div></div>
       <div class="left-pane" id="paneFiles" hidden><div class="side-list" id="filesList"></div><div class="side-foot" id="filesFoot"></div></div>
+      <div class="left-pane sign-pane" id="paneSign" hidden>
+        <div class="pane-head">Signature<span class="spacer"></span><button class="icon-btn" id="signClose" title="Back to Layers"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+        <div class="sign-body">
+          <label class="mini">Name<input id="signName" type="text" placeholder="Who is signing" autocomplete="off" spellcheck="false" /></label>
+          <div class="mini">Ink<div class="sign-inks" id="signInks" role="radiogroup" aria-label="Ink colour"></div></div>
+          <div class="sign-target" id="signTarget" aria-live="polite"></div>
+          <div class="sign-styles" id="signStyles" aria-label="Signature styles"></div>
+        </div>
+        <div class="side-foot" id="signFoot" aria-live="polite"></div>
+      </div>
       <div class="left-pane" id="paneLayers">
+      <div class="pages" id="pagesBox" hidden>
+        <div class="pages-head">
+          <button class="pages-toggle" id="pagesToggle" title="Show or hide the page list"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>Pages <span class="count" id="pageCount"></span></button>
+          <span class="spacer"></span>
+          <button class="icon-btn" id="addPageBtn" title="Add a blank page after this one"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+        </div>
+        <div class="page-list" id="pageList"></div>
+      </div>
       <div class="layer-controls" id="layerControls"></div>
       <div class="layer-list" id="layerList"></div>
       <div class="layer-foot">
@@ -695,6 +830,7 @@
         </div>
       </div>
 
+      <div class="page-pager" id="pagePager"></div>
       <div class="float-bar" id="floatBar"></div>
       <div class="pos-menu" id="posMenu"></div>
       <textarea class="text-editor" id="textEditor" spellcheck="false"></textarea>
@@ -819,6 +955,10 @@
     alignR: ["M4 6h16M10 12h10M6 18h14"],
     smart: ["M4 20l9-9", "M13 11l2 2", "M17.5 3l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9z", "M5 6l.5 1.2 1.2.5-1.2.5L5 9.4l-.5-1.2-1.2-.5 1.2-.5z", "M20 13l.5 1.2 1.2.5-1.2.5-.5 1.2-.5-1.2-1.2-.5 1.2-.5z"],
     upscale: ["M4 20h6", "M4 20v-6", "M4 20l7-7", "M20 4h-6", "M20 4v6", "M20 4l-7 7"],
+    sign: ["M3 16c2.4 0 3.4-9 5.4-9 1.6 0 .1 7.5 2 7.5 1.4 0 2-3.6 3.6-3.6 1.2 0 .9 2.6 2.4 2.6 1 0 1.6-1 2.6-1", "M3 20h18"],
+    prev: ["M15 18l-6-6 6-6"],
+    next: ["M9 18l6-6-6-6"],
+    copyTo: ["M4 8h11v12H4z", "M8 4h12v12", "M7 14h5", "M10 11.5l2.5 2.5-2.5 2.5"],
   };
 
   const TOOLS = [
@@ -829,6 +969,7 @@
     { id: "ellipse", label: "Ellipse (O) — hold Shift for a circle", key: "O" },
     { id: "line", label: "Line / Arrow (L)", key: "L" },
     { id: "text", label: "Text (T)", key: "T" },
+    { id: "sign", label: "Sign — a handwritten signature in a script font", key: "", panel: "sign" },
     null,
     { id: "brush", label: "Select for AI (B) — paint what should change", key: "B" },
     { id: "eraser", label: "Eraser (E) — erase pixels from an image layer", key: "E" },
@@ -837,7 +978,85 @@
 
   const BLENDS = ["normal", "multiply", "screen", "overlay", "darken", "lighten", "color-dodge", "color-burn", "hard-light", "soft-light", "difference", "exclusion", "hue", "saturation", "color", "luminosity"];
   const FONTS = ["Source Sans 3", "Source Serif 4", "Helvetica Neue", "Arial", "Georgia", "Times New Roman", "Futura", "Avenir Next", "Gill Sans", "Impact", "Courier New", "Menlo"];
-  const SWATCHES = ["#ffffff", "#000000", "#378ef0", "#e34850", "#f29423", "#f5d90a", "#33ab84", "#9256d9", "#ff5cad", "#0fb5ae", "#6e6e6e", "#c9c9c9", "#001e36", "#31a8ff", "#fbbf24", "#f97316"];
+
+  // ---------------------------------------------------------------- web fonts
+  //
+  // Text may use any Google family, not only FONTS. The agent's install_font
+  // (agent/tools.py, fonts.py) puts a family's TTFs in .fused/data/fonts/<Family>/
+  // and lists every face in installed.json; this page turns those files into
+  // @font-face rules through fused.rawUrl, so Konva draws the very same file
+  // Pillow renders. A family typed by hand that is not installed is fetched
+  // from Google's css2 API instead. Konva measured the text with a fallback
+  // font until the real one arrived, so every text layer is laid out again
+  // once it loads.
+  const FONT_INDEX_FILE = ".fused/data/fonts/installed.json";
+  const webFonts = { installed: [], index: {}, loading: {}, loaded: {}, readAt: 0 };
+  async function readFontIndex(force) {
+    if (!force && Date.now() - webFonts.readAt < 5000) return;
+    webFonts.readAt = Date.now();
+    let data;
+    try { data = JSON.parse(await fused.readFile(FONT_INDEX_FILE)); } catch (e) { return; }
+    webFonts.index = {};
+    ((data && data.families) || []).forEach((f) => { if (f && f.family) webFonts.index[f.family] = f; });
+    webFonts.installed = Object.keys(webFonts.index).sort();
+  }
+  function fontChoices(current) {
+    const out = FONTS.concat(webFonts.installed.filter((f) => !FONTS.includes(f)));
+    if (current && !out.includes(current)) out.push(current);
+    return out;
+  }
+  function relayoutText() {
+    doc.layers.forEach((l) => {
+      if (l.type !== "text" || !l.node) return;
+      if (typeof l.node._setTextData === "function") l.node._setTextData();
+      l.konva.batchDraw();
+      refreshThumb(l);
+    });
+  }
+  function loadWebFont(family) {
+    if (!family || FONTS.includes(family) || webFonts.loaded[family]) return Promise.resolve();
+    if (webFonts.loading[family]) return webFonts.loading[family];
+    const job = (async () => {
+      await readFontIndex(false);
+      let entry = webFonts.index[family];
+      if (!entry) { await readFontIndex(true); entry = webFonts.index[family]; }
+      if (entry && entry.faces && entry.faces.length) {
+        await Promise.all(entry.faces.map((face) => {
+          const ff = new FontFace(family, "url(" + fused.rawUrl(face.path) + ")",
+            { weight: String(face.weight || 400), style: face.italic ? "italic" : "normal" });
+          document.fonts.add(ff);
+          return ff.load();
+        }));
+      } else {
+        if (!document.querySelector('link[data-webfont="' + family + '"]')) {
+          const link = document.createElement("link");
+          link.rel = "stylesheet"; link.dataset.webfont = family;
+          link.href = "https://fonts.googleapis.com/css2?family=" + encodeURIComponent(family).replace(/%20/g, "+") + "&display=swap";
+          document.head.appendChild(link);
+        }
+        await document.fonts.load('16px "' + family + '"');
+      }
+      webFonts.loaded[family] = true;
+    })().catch((error) => console.warn("[photo_editor] could not load font " + family, error))
+      .finally(() => { delete webFonts.loading[family]; relayoutText(); });
+    webFonts.loading[family] = job;
+    return job;
+  }
+  // Every family the open document uses that is not built in.
+  function ensureDocFonts() {
+    const families = new Set();
+    doc.layers.forEach((l) => { if (l.type === "text" && l.node) families.add(l.node.fontFamily()); });
+    doc.pages.forEach((p, i) => { if (i !== doc.page) (p.layers || []).forEach((l) => { if (l.type === "text" && l.attrs && l.attrs.fontFamily) families.add(l.attrs.fontFamily); }); });
+    families.forEach((f) => { loadWebFont(f); });
+  }
+  // Resolves once every requested font is in and the text is laid out with it.
+  async function fontsSettled() {
+    await Promise.all(Object.values(webFonts.loading));
+    if (document.fonts && document.fonts.ready) await document.fonts.ready;
+    relayoutText();
+  }
+
+  const SWATCHES =["#ffffff", "#000000", "#378ef0", "#e34850", "#f29423", "#f5d90a", "#33ab84", "#9256d9", "#ff5cad", "#0fb5ae", "#6e6e6e", "#c9c9c9", "#001e36", "#31a8ff", "#fbbf24", "#f97316"];
 
   const FILTERS = {
     none: "",
@@ -964,9 +1183,13 @@
     cursor: null,
   };
 
+  // The page in view lives in these fields (and its layers on the stage);
+  // `pages` holds every page of the document as saved, `page` says which one
+  // is in view. See "pages" below.
   const doc = {
     width: 0, height: 0, background: "#ffffff", transparent: false, layers: [], activeId: null, ready: false,
     dpi: 300, bleed: 0, safe: 0, sizing: "pixels", presetId: "", guides: [], localSession: "",
+    pages: [], page: 0,
   };
 
   const saveView = () => { try { localStorage.setItem("photo_editor.view", JSON.stringify(state.view)); } catch (e) { } };
@@ -1106,6 +1329,7 @@
     uiLayer.add(transformer);
     transformer.on("transformend", () => { clearSnapLines(); commitHistory("transform"); });
     transformer.on("transform", () => { positionFloatBar(); renderPropsSoft(); });
+    wireCornerRotate();
     applyThemeToCanvas();
 
     new MutationObserver(applyThemeToCanvas).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
@@ -1206,6 +1430,10 @@
       layer.adjust = spec.adjust ? Object.assign(blankAdjust(), spec.adjust) : blankAdjust();
       layer.filter = spec.filter || "none";
       layer.filterStrength = spec.filterStrength == null ? 100 : spec.filterStrength;
+      // pan_image_content's record (source file, offset, zoom, baked file); kept
+      // as-is so the agent can re-bake from the untouched source. Stale once a
+      // pixel edit changes workingPath; the tools check that themselves.
+      layer.content = spec.content || null;
     }
     layer.node = buildNode(layer, spec.attrs || {});
     layer.konva.add(layer.node);
@@ -1281,7 +1509,18 @@
     node.on("dragend", () => { clearSnapLines(); commitHistory("move"); });
     node.on("transform", () => {
       if (layer.type === "text") {
-        node.setAttrs({ width: Math.max(20, node.width() * node.scaleX()), scaleX: 1, scaleY: 1 });
+        // Corners scale the text (font size, box, spacing, outline); the side
+        // handles only change the wrap width.
+        const k = node.scaleX();
+        if (/^(top|bottom)-(left|right)$/.test(transformer.getActiveAnchor() || "")) {
+          node.setAttrs({
+            fontSize: Math.max(4, Math.round(node.fontSize() * k * 10) / 10), width: Math.max(20, node.width() * k),
+            letterSpacing: node.letterSpacing() * k, strokeWidth: (node.strokeWidth() || 0) * k,
+            scaleX: 1, scaleY: 1,
+          });
+        } else {
+          node.setAttrs({ width: Math.max(20, node.width() * k), scaleX: 1, scaleY: 1 });
+        }
       }
       if (maskOwner === layer) ensureMaskNode();
     });
@@ -1362,6 +1601,98 @@
     toast("Duplicated " + layer.name);
   }
 
+  // ------------- copy & paste, also between pages
+  //
+  // ⌘C / ⌘X take the selected layer (or the layers picked in the Layers
+  // list); ⌘V puts them on the page in view at exactly the same place and
+  // size, so that is how layers go from one page to another. Pasted where the
+  // originals still are, they land a little offset, like Duplicate. "Copy to
+  // page" on the float bar does it in one step.
+  const clip = { layers: null };
+  const freshLayerId = () => "L" + (++layerSeq) + "-" + Date.now().toString(36);
+
+  function selectedLayers() {
+    const picked = doc.layers.filter((l) => alignSet.has(l.id));
+    if (picked.length) return picked;
+    const a = activeLayer();
+    return a ? [a] : [];
+  }
+  const layersWord = (list) => list.length === 1 ? (list[0].name || "1 layer") : list.length + " layers";
+
+  function copyLayers(cut) {
+    const list = selectedLayers();
+    if (!doc.ready || !list.length) return false;
+    closeTextEditor(false);
+    clip.layers = list.map(serializeLayer);
+    if (cut) {
+      list.forEach((l) => removeLayer(l, true));
+      alignSet.clear();
+      afterDocChange();
+      commitHistory("cut " + layersWord(list));
+    }
+    toast((cut ? "Cut " : "Copied ") + layersWord(list) + (doc.pages.length > 1 ? " — ⌘V pastes it in the same place on any page" : " — ⌘V to paste"));
+    return true;
+  }
+
+  function pasteLayers() {
+    if (!doc.ready || !clip.layers || !clip.layers.length) return false;
+    closeTextEditor(false);
+    flushHistorySoon();
+    const offset = clip.layers.some((s) => doc.layers.some((l) => l.id === s.id)) ? 24 : 0;
+    const copies = clip.layers.map((s) => {
+      const spec = JSON.parse(JSON.stringify(s));
+      spec.id = freshLayerId();
+      spec.attrs.x += offset; spec.attrs.y += offset;
+      return insertLayer(createLayer(spec));
+    });
+    ensureDocFonts();
+    if (state.tool !== "move") setTool("move");
+    alignSet.clear();
+    if (copies.length > 1) copies.forEach((l) => alignSet.add(l.id));
+    selectLayer(copies[copies.length - 1].id);
+    copies.forEach(refreshThumb);
+    commitHistory("paste " + layersWord(copies));
+    toast("Pasted " + layersWord(copies) + (offset ? "" : " in the same place"));
+    return true;
+  }
+
+  // The selected layers onto other pages, exactly where they are. One target
+  // page is then shown with the copies selected; with several you stay put.
+  function copyLayersToPages(targets) {
+    const list = selectedLayers();
+    targets = targets.filter((j) => j !== doc.page && doc.pages[j]);
+    if (!list.length || !targets.length) return;
+    closeTextEditor(false);
+    flushHistorySoon();
+    const specs = list.map(serializeLayer);
+    const fresh = () => specs.map((sp) => Object.assign(JSON.parse(JSON.stringify(sp)), { id: freshLayerId() }));
+    targets.forEach((j) => {
+      const p = doc.pages[j], copies = fresh();
+      doc.pages[j] = Object.assign({}, p, { layers: (p.layers || []).concat(copies), activeId: copies[copies.length - 1].id });
+    });
+    if (targets.length === 1) {
+      switchPage(targets[0]);
+      commitHistory("copy to page " + (targets[0] + 1));
+      toast("Copied " + layersWord(list) + " to " + pageLabel(curPage(), doc.page));
+    } else {
+      renderPages();
+      commitHistory("copy to " + targets.length + " pages");
+      toast("Copied " + layersWord(list) + " to " + targets.length + " pages");
+    }
+  }
+
+  // ... or onto a new blank page (this page's size and setup) after this one.
+  function copyLayersToNewPage() {
+    const list = selectedLayers();
+    if (!list.length) return;
+    const layers = list.map((l) => Object.assign(serializeLayer(l), { id: freshLayerId() }));
+    insertPage({
+      id: newPageId(), name: "Page " + (doc.pages.length + 1), width: doc.width, height: doc.height, background: doc.background, transparent: doc.transparent,
+      activeId: layers[layers.length - 1].id, layers, dpi: doc.dpi, bleed: doc.bleed, safe: doc.safe, sizing: doc.sizing, presetId: doc.presetId, guides: [],
+    }, doc.page + 1, "copy to new page");
+    toast("Copied " + layersWord(list) + " to a new page " + (doc.page + 1));
+  }
+
   function selectLayer(id, opts) {
     doc.activeId = id;
     const layer = activeLayer();
@@ -1374,9 +1705,9 @@
     const layer = activeLayer();
     const selectable = layer && !layer.locked && layer.visible && state.tool === "move";
     transformer.nodes(selectable ? [layer.node] : []);
-    transformer.keepRatio(!layer || layer.type !== "rect" && layer.type !== "ellipse" && layer.type !== "text");
+    transformer.keepRatio(!layer || layer.type !== "rect" && layer.type !== "ellipse");
     transformer.enabledAnchors(layer && layer.type === "text"
-      ? ["middle-left", "middle-right"]
+      ? ["top-left", "top-right", "bottom-left", "bottom-right", "middle-left", "middle-right"]
       : ["top-left", "top-right", "bottom-left", "bottom-right", "middle-left", "middle-right", "top-center", "bottom-center"]);
     uiLayer.batchDraw();
     doc.layers.forEach(applyLayerStyle);
@@ -1386,6 +1717,7 @@
     syncModeToTool();
     $("exportBtn").disabled = !doc.ready;
     renderStatus();
+    if (store.leftTab === "sign") renderSignTab();
   }
 
   // ---------------------------------------------------------------- history
@@ -1401,29 +1733,70 @@
     if (layer.type === "image") Object.assign(out, {
       sessionId: layer.sessionId, workingPath: layer.workingPath, src: layer.src, naturalWidth: layer.naturalWidth, naturalHeight: layer.naturalHeight,
       adjust: Object.assign({}, layer.adjust), filter: layer.filter, filterStrength: layer.filterStrength,
+      content: layer.content || null,
     });
     return out;
   }
 
-  function snapshot() {
+  // ---------------------------------------------------------------- pages
+  //
+  // A document is one or more pages, each with its own size, print setup,
+  // guides and layers. Only the page in view is live (doc.width, doc.layers
+  // on the stage ...); the others wait in doc.pages as saved page snapshots,
+  // and switchPage() trades places. Those saved entries are never changed in
+  // place (a change replaces the entry), so history snapshots can share them.
+  // snapshot() writes { localSession, page, pages: [...] }, the shape
+  // docstore.py and the MCP tools read.
+
+  const PAGE_FIELDS = ["width", "height", "background", "transparent", "activeId", "layers", "dpi", "bleed", "safe", "sizing", "presetId", "guides"];
+  const curPage = () => doc.pages[doc.page] || { id: "p1", name: "Page 1" };
+  const pageLabel = (p, i) => (p && p.name) || "Page " + (i + 1);
+
+  function newPageId() {
+    const b = new Uint8Array(3); crypto.getRandomValues(b);
+    return "P" + Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("") + "-" + Date.now().toString(36);
+  }
+
+  // A snapshot from before documents had pages is one page, "p1"
+  // (docstore.as_pages reads it the same way).
+  function asPages(snap) {
+    if (Array.isArray(snap.pages) && snap.pages.length) return snap;
+    const page = { id: "p1", name: "Page 1" };
+    PAGE_FIELDS.forEach((k) => { if (k in snap) page[k] = snap[k]; });
+    return { localSession: snap.localSession || "", page: 0, pages: [page] };
+  }
+
+  // The page in view, serialised.
+  function pageSnap() {
+    const p = curPage();
     return {
-      width: doc.width, height: doc.height, background: doc.background, transparent: doc.transparent, activeId: doc.activeId, layers: doc.layers.map(serializeLayer),
-      dpi: doc.dpi, bleed: doc.bleed, safe: doc.safe, sizing: doc.sizing, presetId: doc.presetId, guides: doc.guides.map((g) => ({ axis: g.axis, pos: g.pos })), localSession: doc.localSession,
+      id: p.id, name: p.name, width: doc.width, height: doc.height, background: doc.background, transparent: doc.transparent, activeId: doc.activeId,
+      layers: doc.layers.map(serializeLayer), dpi: doc.dpi, bleed: doc.bleed, safe: doc.safe, sizing: doc.sizing, presetId: doc.presetId,
+      guides: doc.guides.map((g) => ({ axis: g.axis, pos: g.pos })),
     };
   }
 
-  function restore(snap) {
+  function snapshot() {
+    if (!doc.pages.length) doc.pages = [{ id: newPageId(), name: "Page 1" }];
+    return { localSession: doc.localSession, page: doc.page, pages: doc.pages.map((p, i) => i === doc.page ? pageSnap() : p) };
+  }
+
+  // Put page `p` on the stage: its setup into doc, its layers as Konva layers.
+  function loadPage(p) {
     closeTextEditor(true);
     doc.layers.slice().forEach((l) => { l.konva.destroy(); });
     doc.layers = [];
     maskOwner = null;
-    doc.width = snap.width; doc.height = snap.height; doc.background = snap.background; doc.transparent = snap.transparent;
-    doc.dpi = snap.dpi || 300; doc.bleed = snap.bleed || 0; doc.safe = snap.safe || 0; doc.sizing = snap.sizing || "pixels";
-    doc.presetId = snap.presetId || ""; doc.guides = (snap.guides || []).map((g) => ({ axis: g.axis, pos: g.pos })); doc.localSession = snap.localSession || "";
+    if (maskNode) maskNode.visible(false);
+    alignSet.clear();
+    doc.width = p.width; doc.height = p.height; doc.background = p.background || "#ffffff"; doc.transparent = !!p.transparent;
+    doc.dpi = p.dpi || 300; doc.bleed = p.bleed || 0; doc.safe = p.safe || 0; doc.sizing = p.sizing || "pixels";
+    doc.presetId = p.presetId || ""; doc.guides = (p.guides || []).map((g) => ({ axis: g.axis, pos: g.pos }));
     doc.ready = true;
     syncGuideNodes();
-    snap.layers.forEach((s) => insertLayer(createLayer(s)));
-    doc.activeId = snap.activeId && doc.layers.some((l) => l.id === snap.activeId) ? snap.activeId : (doc.layers.length ? doc.layers[doc.layers.length - 1].id : null);
+    JSON.parse(JSON.stringify(p.layers || [])).forEach((s) => insertLayer(createLayer(s)));
+    ensureDocFonts();
+    doc.activeId = p.activeId && doc.layers.some((l) => l.id === p.activeId) ? p.activeId : (doc.layers.length ? doc.layers[doc.layers.length - 1].id : null);
     const layer = activeLayer();
     if (layer && layer.type === "image") { maskOwner = layer; resetMaskCanvas(); }
     renderArtboard();
@@ -1431,9 +1804,298 @@
     doc.layers.forEach(refreshThumb);
   }
 
-  let historyTimer = null;
+  // A whole document snapshot. `pageId` picks the page to show (else the
+  // one that was in view when it was taken).
+  function restore(snap, pageId) {
+    snap = asPages(snap);
+    doc.localSession = snap.localSession || "";
+    doc.pages = snap.pages.slice();
+    let i = pageId ? doc.pages.findIndex((p) => p.id === pageId) : -1;
+    if (i < 0) i = clamp(Number(snap.page) || 0, 0, doc.pages.length - 1);
+    doc.page = i;
+    loadPage(doc.pages[i]);
+    renderPages();
+    publishView();
+  }
+
+  // Show page `i`. The page leaving the stage is serialised into doc.pages
+  // first. Switching is not a step of its own; the next step saves which
+  // page is in view, and view.json tells the agent tools right away.
+  function switchPage(i, opts) {
+    if (!doc.ready || i === doc.page || i < 0 || i >= doc.pages.length) return false;
+    // A running AI edit, upscale or cutout swaps its pixels into a layer of
+    // this page when it finishes.
+    if (state.generating || state.upscaling || state.bgBusy) { toast("Wait for the running edit to finish before changing pages", true); return false; }
+    closeTextEditor(false);
+    flushHistorySoon();
+    clearSmartPrompts();
+    if (state.tool === "crop") setTool("move");
+    capturePageThumb();
+    const w = doc.width, h = doc.height;
+    doc.pages[doc.page] = pageSnap();
+    doc.page = i;
+    loadPage(doc.pages[i]);
+    if (doc.width !== w || doc.height !== h) fitToScreen();
+    renderPages();
+    publishView();
+    return true;
+  }
+
+  function insertPage(page, index, label) {
+    closeTextEditor(false);
+    flushHistorySoon();
+    doc.pages.splice(index, 0, page);
+    if (index <= doc.page) doc.page++;
+    switchPage(index);
+    commitHistory(label);
+  }
+
+  // A blank page with the same size, print setup and background as this one.
+  function addPage() {
+    if (!doc.ready) return;
+    insertPage({
+      id: newPageId(), name: "Page " + (doc.pages.length + 1), width: doc.width, height: doc.height, background: doc.background, transparent: doc.transparent,
+      activeId: null, layers: [], dpi: doc.dpi, bleed: doc.bleed, safe: doc.safe, sizing: doc.sizing, presetId: doc.presetId, guides: [],
+    }, doc.page + 1, "add page");
+    toast("Added " + curPage().name + " · " + (doc.page + 1) + " of " + doc.pages.length);
+  }
+
+  function duplicatePage(i) {
+    const from = i === doc.page ? pageSnap() : doc.pages[i];
+    const copy = JSON.parse(JSON.stringify(from)), ids = {};
+    copy.layers = (copy.layers || []).map((l) => { const id = "L" + (++layerSeq) + "-" + Date.now().toString(36); ids[l.id] = id; return Object.assign(l, { id }); });
+    copy.activeId = ids[copy.activeId] || null;
+    copy.id = newPageId();
+    copy.name = /^Page \d+$/.test(from.name || "") ? "Page " + (doc.pages.length + 1) : pageLabel(from, i) + " copy";
+    const thumb = pageThumbs.get(from.id);
+    if (thumb) pageThumbs.set(copy.id, { key: pageKey(copy), url: thumb.url });
+    insertPage(copy, i + 1, "duplicate page");
+    toast("Duplicated " + pageLabel(from, i) + " as page " + (doc.page + 1));
+  }
+
+  function deletePage(i) {
+    if (doc.pages.length < 2 || i < 0 || i >= doc.pages.length) return;
+    closeTextEditor(false);
+    flushHistorySoon();
+    const gone = doc.pages[i];
+    if (i === doc.page) switchPage(i > 0 ? i - 1 : 1);
+    doc.pages.splice(i, 1);
+    if (i < doc.page) doc.page--;
+    pageThumbs.delete(gone.id);
+    renderPages();
+    renderStatus();
+    commitHistory("delete page");
+    toast("Deleted " + pageLabel(gone, i), false, { label: "Undo", run: () => stepHistory(-1) });
+  }
+
+  function movePage(from, to) {
+    to = clamp(to, 0, doc.pages.length - 1);
+    if (from === to) return;
+    const shown = curPage().id;
+    const [p] = doc.pages.splice(from, 1);
+    doc.pages.splice(to, 0, p);
+    doc.page = doc.pages.findIndex((x) => x.id === shown);
+    renderPages();
+    renderStatus();
+    commitHistory("reorder pages");
+  }
+
+  function renamePage(i, name) {
+    const p = doc.pages[i];
+    name = (name || "").trim();
+    if (!p || !name || name === p.name) return;
+    doc.pages[i] = Object.assign({}, p, { name });
+    renderPages();
+    commitHistory("rename page");
+  }
+
+  // ------------- page thumbnails
+  //
+  // Kept per page id with a key of what they show, so an entry goes stale on
+  // its own when the page changes. The page in view is drawn from the stage
+  // (pageCanvas) after each step; the others are drawn off-stage.
+
+  const PAGE_THUMB = 120;
+  const pageThumbs = new Map();
+  const pageThumbBusy = new Set();
+  function pageKey(p) {
+    return JSON.stringify([p.width, p.height, p.background, p.transparent, (p.layers || []).map((l) => { const c = Object.assign({}, l); delete c.src; return c; })]);
+  }
+  function setPageThumbImg(id, url) {
+    document.querySelectorAll('[data-page-thumb="' + id + '"]').forEach((img) => { img.src = url; });
+  }
+  function capturePageThumb() {
+    if (!doc.ready || !doc.pages.length) return;
+    try {
+      const p = curPage(), url = pageCanvas(PAGE_THUMB).toDataURL("image/png");
+      pageThumbs.set(p.id, { key: pageKey(pageSnap()), url });
+      setPageThumbImg(p.id, url);
+    } catch (e) { }
+  }
+  let pageThumbTimer = null;
+  function schedulePageThumb() {
+    clearTimeout(pageThumbTimer);
+    pageThumbTimer = setTimeout(async () => {
+      const id = curPage().id;
+      await imagesReady(4000);
+      await fontsSettled();
+      if (doc.ready && curPage().id === id) capturePageThumb();
+    }, 400);
+  }
+  async function ensurePageThumb(p) {
+    const key = pageKey(p), have = pageThumbs.get(p.id);
+    if ((have && have.key === key) || pageThumbBusy.has(p.id)) return;
+    pageThumbBusy.add(p.id);
+    try {
+      await fontsSettled();
+      const url = (await offscreenPageCanvas(p, PAGE_THUMB)).toDataURL("image/png");
+      pageThumbs.set(p.id, { key, url });
+      setPageThumbImg(p.id, url);
+    } catch (e) { console.warn("[photo_editor] page thumbnail failed", e); }
+    finally { pageThumbBusy.delete(p.id); }
+  }
+
+  // A page that is not on the stage, drawn the way pageCanvas() draws the
+  // live one: each layer on its own Konva layer, composited with its blend
+  // mode and live adjustments.
+  async function offscreenPageCanvas(p, maxSide) {
+    const k = Math.min(1, maxSide / Math.max(p.width || 1, p.height || 1));
+    const W = Math.max(1, Math.round(p.width * k)), H = Math.max(1, Math.round(p.height * k));
+    const out = document.createElement("canvas");
+    out.width = W; out.height = H;
+    const ctx = out.getContext("2d");
+    if (!p.transparent) { ctx.fillStyle = p.background || "#ffffff"; ctx.fillRect(0, 0, W, H); }
+    const off = new Konva.Stage({ container: document.createElement("div"), width: W, height: H, scaleX: k, scaleY: k });
+    try {
+      for (const s of p.layers || []) {
+        if (s.visible === false) continue;
+        let node;
+        if (s.type === "image") {
+          const src = s.src || (s.workingPath ? fused.rawUrl(s.workingPath) : "");
+          const img = src ? await loadImageElement(src).catch(() => null) : null;
+          if (!img) continue;
+          const nw = s.naturalWidth || img.naturalWidth, nh = s.naturalHeight || img.naturalHeight;
+          node = new Konva.Image(Object.assign({}, s.attrs, { image: img, width: nw, height: nh, offsetX: nw / 2, offsetY: nh / 2 }));
+        } else node = buildNode({ type: s.type }, s.attrs || {});
+        node.opacity(s.opacity == null ? 1 : s.opacity);
+        const kl = new Konva.Layer({ listening: false });
+        kl.add(node);
+        off.add(kl);
+        const canvas = kl.toCanvas({ x: 0, y: 0, width: W, height: H, pixelRatio: 1 });
+        ctx.save();
+        ctx.globalCompositeOperation = !s.blend || s.blend === "normal" ? "source-over" : s.blend;
+        if (s.type === "image") {
+          const f = previewFilter({ adjust: Object.assign(blankAdjust(), s.adjust || {}), filter: s.filter || "none", filterStrength: s.filterStrength == null ? 100 : s.filterStrength });
+          if (f && "filter" in ctx) ctx.filter = f;
+        }
+        ctx.drawImage(canvas, 0, 0, W, H);
+        ctx.restore();
+      }
+    } finally { off.destroy(); }
+    return out;
+  }
+
+  // ------------- Pages list (Layers tab) and the pager on the canvas
+
+  const pagesUi = (() => { try { return Object.assign({ collapsed: false }, JSON.parse(localStorage.getItem("photo_editor.pages") || "{}")); } catch (e) { return { collapsed: false }; } })();
+  let pageDrag = null;
+
+  function pageDims(p) {
+    const b = Math.round(mmToPx(p.bleed || 0, p.dpi || 300));
+    const tw = (p.width || 0) - 2 * b, th = (p.height || 0) - 2 * b;
+    if (p.sizing === "pixels") return tw + " × " + th + " px";
+    const unit = state.view.unit === "px" ? "mm" : state.view.unit;
+    return fmtSize(pxToMm(tw, p.dpi), pxToMm(th, p.dpi), unit);
+  }
+
+  function renderPages() {
+    const box = $("pagesBox");
+    box.hidden = !doc.ready;
+    renderPager();
+    if (!doc.ready) return;
+    box.classList.toggle("collapsed", !!pagesUi.collapsed);
+    $("pageCount").textContent = doc.pages.length;
+    const list = $("pageList");
+    list.innerHTML = doc.pages.map((p, i) => {
+      const live = i === doc.page;
+      const view = live ? { width: doc.width, height: doc.height, bleed: doc.bleed, dpi: doc.dpi, sizing: doc.sizing } : p;
+      const t = pageThumbs.get(p.id);
+      return '<div class="page-row' + (live ? " active" : "") + '" data-page="' + i + '" draggable="true" title="' + esc(pageLabel(p, i)) + (live ? "" : " — click to show") + '">' +
+        '<span class="num">' + (i + 1) + "</span>" +
+        '<span class="pthumb"><img data-page-thumb="' + esc(p.id) + '"' + (t ? ' src="' + t.url + '"' : "") + ' alt="" /></span>' +
+        '<span class="pname"><span class="label" title="Double-click to rename">' + esc(pageLabel(p, i)) + '</span><span class="sub">' + esc(pageDims(view)) + "</span></span>" +
+        '<span class="pact"><button data-page-dup title="Duplicate page">' + icon(I.dup) + "</button>" +
+        '<button class="del" data-page-del title="Delete page"' + (doc.pages.length < 2 ? " disabled" : "") + ">" + icon(I.trash) + "</button></span></div>";
+    }).join("");
+    list.querySelectorAll(".page-row").forEach(wirePageRow);
+    doc.pages.forEach((p, i) => { if (i !== doc.page) ensurePageThumb(p); });
+    if (!pageThumbs.has(curPage().id)) schedulePageThumb();
+    const active = list.querySelector(".page-row.active");
+    if (active && active.scrollIntoView) active.scrollIntoView({ block: "nearest" });
+  }
+
+  function wirePageRow(row) {
+    const i = Number(row.dataset.page);
+    row.onclick = (e) => { if (!e.target.closest("button, input")) switchPage(i); };
+    row.querySelector("[data-page-dup]").onclick = () => duplicatePage(i);
+    row.querySelector("[data-page-del]").onclick = () => deletePage(i);
+    row.querySelector(".pname .label").ondblclick = (e) => {
+      e.stopPropagation();
+      const holder = row.querySelector(".pname .label");
+      holder.innerHTML = '<input value="' + esc(pageLabel(doc.pages[i], i)) + '" />';
+      const input = holder.querySelector("input");
+      input.focus(); input.select();
+      let finished = false;
+      const done = (save) => {
+        if (finished) return;
+        finished = true;
+        if (save) renamePage(i, input.value);
+        renderPages();
+      };
+      input.onblur = () => done(true);
+      input.onkeydown = (ev) => { ev.stopPropagation(); if (ev.key === "Enter") input.blur(); if (ev.key === "Escape") { input.onblur = null; done(false); } };
+    };
+    row.ondragstart = (e) => { pageDrag = i; row.classList.add("dragging"); e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", "page " + i); };
+    row.ondragend = () => { pageDrag = null; row.classList.remove("dragging"); clearPageDropMarks(); };
+    row.ondragover = (e) => {
+      if (pageDrag == null || pageDrag === i) return;
+      e.preventDefault();
+      const r = row.getBoundingClientRect();
+      clearPageDropMarks();
+      row.classList.add(e.clientY < r.top + r.height / 2 ? "drag-over-top" : "drag-over-bottom");
+    };
+    row.ondrop = (e) => {
+      e.preventDefault();
+      const from = pageDrag;
+      pageDrag = null; clearPageDropMarks();
+      if (from == null || from === i) return;
+      const r = row.getBoundingClientRect();
+      const before = e.clientY < r.top + r.height / 2;
+      let to = before ? i : i + 1;
+      if (from < to) to -= 1;
+      movePage(from, to);
+    };
+  }
+  function clearPageDropMarks() { document.querySelectorAll(".page-row").forEach((r) => r.classList.remove("drag-over-top", "drag-over-bottom")); }
+
+  function renderPager() {
+    const pager = $("pagePager");
+    const show = doc.ready && doc.pages.length > 1;
+    pager.classList.toggle("show", show);
+    $("stageWrap").classList.toggle("paged", show);
+    if (!show) { pager.innerHTML = ""; return; }
+    const p = curPage();
+    pager.innerHTML =
+      '<button class="icon-btn" data-pg="-1" title="Previous page (Page Up)"' + (doc.page <= 0 ? " disabled" : "") + ">" + icon(I.prev) + "</button>" +
+      '<span class="label" title="' + esc(pageLabel(p, doc.page)) + '">Page <b>' + (doc.page + 1) + "</b> of " + doc.pages.length + " · " + esc(pageLabel(p, doc.page)) + "</span>" +
+      '<button class="icon-btn" data-pg="1" title="Next page (Page Down)"' + (doc.page >= doc.pages.length - 1 ? " disabled" : "") + ">" + icon(I.next) + "</button>" +
+      '<span class="sep"></span><button class="icon-btn" data-pg="add" title="Add a blank page after this one">' + icon(I.plus) + "</button>";
+    pager.querySelectorAll("[data-pg]").forEach((b) => { b.onclick = () => b.dataset.pg === "add" ? addPage() : switchPage(doc.page + Number(b.dataset.pg)); });
+  }
+
+  let historyTimer = null, historySoonLabel = "";
   function commitHistory(label, opts) {
-    clearTimeout(historyTimer);
+    clearTimeout(historyTimer); historyTimer = null;
     if (!(opts && opts.local)) scheduleSave(label);
     state.history = state.history.slice(0, state.historyIndex + 1);
     state.history.push({ label, snap: snapshot() });
@@ -1441,11 +2103,16 @@
     state.historyIndex = state.history.length - 1;
     renderHistoryButtons();
     doc.layers.forEach((l) => { if (l.id === doc.activeId) refreshThumb(l); });
+    schedulePageThumb();
   }
   function commitHistorySoon(label) {
     clearTimeout(historyTimer);
+    historySoonLabel = label;
     historyTimer = setTimeout(() => commitHistory(label), 500);
   }
+  // A step still waiting in commitHistorySoon, committed now (before the page
+  // it belongs to leaves the stage).
+  function flushHistorySoon() { if (historyTimer) commitHistory(historySoonLabel); }
   function renderHistoryButtons() {
     $("undoBtn").disabled = state.historyIndex <= 0;
     $("redoBtn").disabled = state.historyIndex >= state.history.length - 1;
@@ -1453,8 +2120,13 @@
   function stepHistory(delta) {
     const next = state.historyIndex + delta;
     if (next < 0 || next >= state.history.length) return;
+    // Show the page the undone (or redone) step changed.
+    const changed = state.history[delta < 0 ? next + 1 : next].snap;
+    const at = changed.pages ? changed.pages[changed.page] : null;
+    const w = doc.width, h = doc.height;
     state.historyIndex = next;
-    restore(JSON.parse(JSON.stringify(state.history[next].snap)));
+    restore(JSON.parse(JSON.stringify(state.history[next].snap)), at && at.id);
+    if (doc.width !== w || doc.height !== h) fitToScreen();
     renderHistoryButtons();
     const label = state.history[delta < 0 ? next + 1 : next].label;
     toast((delta < 0 ? "Undo " : "Redo ") + label);
@@ -1497,10 +2169,15 @@
     if (!store.id && !store.newId) store.newId = newDocId();
     try { tabSet(STASH_KEY, JSON.stringify({ id: store.id || store.newId, label: store.pending || "edit", name: state.fileName, snap: snapshot() })); } catch (e) { }
   }
-  // Two snapshots show the same page (image URLs aside, which the disk never keeps).
-  function snapKey(snap) {
-    return JSON.stringify(Object.assign({}, snap, { layers: (snap.layers || []).map((l) => { const c = Object.assign({}, l); delete c.src; return c; }) }));
+  // Two snapshots show the same pages (image URLs aside, which the disk never
+  // keeps). Keys are sorted: the page, Python and old snapshots order them
+  // differently.
+  function canon(v) {
+    if (Array.isArray(v)) return v.map(canon);
+    if (v && typeof v === "object") { const o = {}; Object.keys(v).sort().forEach((k) => { if (k !== "src") o[k] = canon(v[k]); }); return o; }
+    return v;
   }
+  function snapKey(snap) { return JSON.stringify(canon(asPages(snap))); }
   const sameSnap = (a, b) => !!a && !!b && snapKey(a) === snapKey(b);
   function readStash() { try { return JSON.parse(tabGet(STASH_KEY) || "null"); } catch (e) { return null; } }
 
@@ -1534,7 +2211,9 @@
   }
 
   function hydrate(snap) {
-    (snap.layers || []).forEach((l) => { if (l.type === "image" && !l.src && l.workingPath) l.src = fused.rawUrl(l.workingPath); });
+    const each = (layers) => (layers || []).forEach((l) => { if (l.type === "image" && !l.src && l.workingPath) l.src = fused.rawUrl(l.workingPath); });
+    each(snap.layers);
+    (snap.pages || []).forEach((p) => each(p.layers));
     return snap;
   }
 
@@ -1673,15 +2352,24 @@
   // Swap in a revision from disk. `why` is "open" (user picked it), "switch"
   // (Claude opened it), or "update" (a newer revision of this document).
   function applyRecord(record, why) {
-    const snap = hydrate(JSON.parse(JSON.stringify(record.snap)));
-    const resize = !doc.ready || why !== "update" || snap.width !== doc.width || snap.height !== doc.height;
+    const snap = asPages(hydrate(JSON.parse(JSON.stringify(record.snap))));
+    // Which page to show: yours stays put for your own updates (another
+    // window, History); Claude's revisions show the page it worked on, and a
+    // document Claude switched to opens on the page it asked for.
+    const mine = doc.ready && why === "update" && record.source !== "agent";
+    let index = mine ? snap.pages.findIndex((p) => p.id === curPage().id) : -1;
+    const want = shared.wantPage;
+    if (index < 0 && why === "switch" && want && want.doc === record.id) index = snap.pages.findIndex((p) => p.id === want.id);
+    if (index < 0) index = clamp(Number(snap.page) || 0, 0, snap.pages.length - 1);
+    const shown = snap.pages[index] = Object.assign({}, snap.pages[index]);
+    const resize = !doc.ready || why !== "update" || shown.width !== doc.width || shown.height !== doc.height;
     const keep = doc.activeId;
-    if (why !== "update") { state.history = []; state.historyIndex = -1; store.gen++; }
+    if (why !== "update") { state.history = []; state.historyIndex = -1; store.gen++; pageThumbs.clear(); }
     store.id = record.id; store.rev = record.rev; store.revOf[record.id] = record.rev; store.pending = null; clearTimeout(store.timer);
     state.fileName = record.name || "Untitled"; $("fileName").value = state.fileName;
-    if (why === "update" && keep && snap.layers.some((l) => l.id === keep) && record.source !== "agent") snap.activeId = keep;
+    if (mine && keep && (shown.layers || []).some((l) => l.id === keep)) shown.activeId = keep;
     if (why !== "update") { closeCropOverlay(); if (state.tool !== "move") setTool("move"); }
-    restore(snap);
+    restore(snap, shown.id);
     $("dropVeil").classList.add("hidden");
     setDropCard();
     if (resize) fitToScreen();
@@ -1716,7 +2404,7 @@
     // A running AI edit / upscale / cutout swaps pixels into a layer when it
     // finishes, so it must not be rebuilt underneath it either.
     if (store.inflight || store.pending || editingLayer || shaping.active || state.tool === "crop" ||
-        state.generating || state.upscaling || state.bgBusy) return;
+        state.generating || state.upscaling || state.bgBusy || state.exporting) return;
     store.seq = cur.seq;
     try {
       if (cur.id === store.id) {
@@ -1752,8 +2440,10 @@
       if (!doc.localSession) doc.localSession = newSessionId();
       const session = (doc.layers.find((l) => l.type === "image") || {}).sessionId || doc.localSession;
       const frame = await py({ action: "save_frame", session_id: session, image_data: dataUrl });
-      const result = await py({ action: "export", session_id: session, source: frame.path, fmt: "png", background: doc.background, dpi: String(doc.dpi), save: "true", file_name: state.fileName || "design" });
-      toast("Saved " + baseName(result.path) + " to " + (store.saveDir || "~/Pictures/Photo Editor").replace(/^.*\/(Pictures\/)/, "$1"), false,
+      const multi = doc.pages.length > 1;
+      const result = await py({ action: "export", session_id: session, source: frame.path, fmt: "png", background: doc.background, dpi: String(doc.dpi), save: "true",
+        file_name: (state.fileName || "design") + (multi ? " – page " + (doc.page + 1) : "") });
+      toast("Saved " + (multi ? "page " + (doc.page + 1) + " as " : "") + baseName(result.path) + " to " + (store.saveDir || "~/Pictures/Photo Editor").replace(/^.*\/(Pictures\/)/, "$1"), false,
         { label: "Show in Finder", run: () => reveal(result.path) });
     } catch (error) { toast(error.message || String(error), true); }
   }
@@ -1816,7 +2506,7 @@
     shared.viewTimer = setTimeout(async () => {
       const view = {};
       VIEW_SHARED.forEach((k) => { view[k] = state.view[k]; });
-      if (doc.ready) { view.grid_step = Math.round(gridStepPx() * 1000) / 1000; view.grid_doc = store.id || ""; }
+      if (doc.ready) { view.grid_step = Math.round(gridStepPx() * 1000) / 1000; view.grid_doc = store.id || ""; view.page_doc = store.id || ""; view.page_id = curPage().id; }
       const text = JSON.stringify(view);
       if (text === shared.published) return;
       try {
@@ -1829,6 +2519,7 @@
 
   function applySharedView(view) {
     shared.viewSeq = view.seq || "";
+    if (view.source === "agent" && view.page_doc && view.page_id) { shared.wantPage = { doc: view.page_doc, id: view.page_id, at: Date.now() }; followAgentPage(); }
     const changed = VIEW_SHARED.filter((k) => k in view && view[k] !== state.view[k]);
     if (!changed.length) return;
     changed.forEach((k) => { state.view[k] = view[k]; });
@@ -1838,6 +2529,21 @@
       const item = VIEW_TOGGLES.find((t) => t[0] === k);
       return typeof view[k] === "boolean" ? (item ? item[1] : k) + (view[k] ? " on" : " off") : k + " " + view[k];
     }).join(", "));
+  }
+
+  // go_to_page / add_page ...: Claude asked for a page. Show it once this
+  // document has it and nothing is mid-gesture; it may only arrive with the
+  // next revision.
+  function followAgentPage() {
+    const want = shared.wantPage;
+    if (!want) return;
+    if (Date.now() - want.at > 15000) { shared.wantPage = null; return; }
+    if (!doc.ready || want.doc !== store.id) return;
+    if (editingLayer || shaping.active || state.generating || state.upscaling || state.bgBusy || state.exporting || $("exportVeil").classList.contains("show")) return;
+    const i = doc.pages.findIndex((p) => p.id === want.id);
+    if (i < 0) return;
+    shared.wantPage = null;
+    if (i !== doc.page && switchPage(i)) toast("Claude · " + pageLabel(doc.pages[i], i) + " (page " + (i + 1) + ")");
   }
 
   async function pollView() {
@@ -1905,6 +2611,11 @@
     // Not ours yet: the agent's pointer switches this page to the document,
     // then the revision arrives; answer once both are here.
     if (req.doc !== store.id || store.rev < req.rev || store.inflight || store.pending) return;
+    if (req.page_id && req.page_id !== curPage().id) {
+      const i = doc.pages.findIndex((p) => p.id === req.page_id);
+      if (i < 0 || editingLayer || shaping.active) return;
+      switchPage(i);
+    }
     shared.reqSeen = req.id; shared.capturing = true;
     try {
       if (!(await imagesReady(4000))) {
@@ -1914,10 +2625,11 @@
         return;
       }
       if (document.fonts && document.fonts.ready) await document.fonts.ready;
+      await fontsSettled();
       stage.draw();
       const max = Math.max(200, Math.min(4096, Number(req.max_size) || 1600));
       const canvas = req.mode === "editor" ? editorCanvas(max) : pageCanvas(max);
-      const meta = { width: canvas.width, height: canvas.height, mode: req.mode, rev: store.rev, doc: store.id,
+      const meta = { width: canvas.width, height: canvas.height, mode: req.mode, rev: store.rev, doc: store.id, page: doc.page + 1, page_id: curPage().id,
         zoom: Math.round(state.zoom * 1000) / 1000, scale: req.mode === "editor" ? null : Math.round(canvas.width / doc.width * 10000) / 10000 };
       await docPy({ action: "screenshot_save", request_id: req.id, image_data: canvas.toDataURL("image/png"), values_json: JSON.stringify(meta) });
     } catch (error) { console.warn("[photo_editor] screenshot for Claude failed", error); }
@@ -2009,7 +2721,18 @@
     $("paneLayers").hidden = tab !== "layers";
     $("paneHistory").hidden = tab !== "history";
     $("paneFiles").hidden = tab !== "files";
+    $("paneSign").hidden = tab !== "sign";
+    renderToolbar();
     refreshSide();
+  }
+
+  // The Sign button in the tool rail: opens the Sign view in the left panel
+  // (unfolding it if needed), or goes back to Layers when it is already open.
+  function toggleSignPane() {
+    if (store.leftTab === "sign" && panels.left) { setLeftTab("layers"); return; }
+    if (!panels.left) setPanels(true, panels.right);
+    setLeftTab("sign");
+    setTimeout(() => $("signName").focus(), 0);
   }
 
   const WHEN = (t) => {
@@ -2025,6 +2748,7 @@
     sideTimer = setTimeout(() => {
       if (store.leftTab === "history") renderHistoryTab();
       else if (store.leftTab === "files") renderFilesTab();
+      else if (store.leftTab === "sign") renderSignTab();
       if (!doc.ready) renderRecent();
     }, 60);
   }
@@ -2040,7 +2764,7 @@
     list.innerHTML = steps.slice().reverse().map((st) =>
       '<button class="side-row' + (st.rev === store.rev ? " current" : "") + '" data-rev="' + st.rev + '" title="Go back to this step">' +
       (st.thumb ? '<img class="thumb" src="' + thumbSrc(st.thumb, st.rev) + '" />' : '<span class="thumb"></span>') +
-      '<span class="text"><span class="title">' + st.rev + ". " + esc(st.label || "edit") + '</span><span class="sub">' + esc(WHEN(st.time)) + " · " + st.layers + " layer" + (st.layers === 1 ? "" : "s") + "</span></span>" +
+      '<span class="text"><span class="title">' + st.rev + ". " + esc(st.label || "edit") + '</span><span class="sub">' + esc(WHEN(st.time)) + " · " + (st.pages > 1 ? st.pages + " pages · " : "") + st.layers + " layer" + (st.layers === 1 ? "" : "s") + "</span></span>" +
       '<span class="who' + (st.source === "agent" ? " agent" : "") + '">' + (st.source === "agent" ? "Claude" : "You") + "</span></button>").join("") ||
       '<div class="empty-layers">No steps yet.</div>';
     list.querySelectorAll("[data-rev]").forEach((row) => row.onclick = async () => {
@@ -2082,13 +2806,141 @@
     list.innerHTML = docs.map((d) =>
       '<div class="side-row' + (d.id === store.id ? " current" : "") + '" data-open="' + esc(d.id) + '" title="Open">' +
       (d.thumb ? '<img class="thumb" src="' + thumbSrc(d.thumb, d.rev) + '" />' : '<span class="thumb"></span>') +
-      '<span class="text"><span class="title">' + esc(d.name) + '</span><span class="sub">' + esc(WHEN(d.updated_at)) + " · " + (d.width || "?") + " × " + (d.height || "?") + "</span></span>" +
+      '<span class="text"><span class="title">' + esc(d.name) + '</span><span class="sub">' + esc(WHEN(d.updated_at)) + " · " + (d.width || "?") + " × " + (d.height || "?") + (d.pages > 1 ? " · " + d.pages + " pages" : "") + "</span></span>" +
       '<button class="del" data-del="' + esc(d.id) + '" data-name="' + esc(d.name) + '" title="Delete document">' + DEL_ICON + "</button></div>").join("") ||
       '<div class="empty-layers">No documents yet. They are saved automatically as you edit.</div>';
     list.querySelectorAll("[data-open]").forEach((row) => row.onclick = (e) => { if (!e.target.closest("[data-del]")) openDoc(row.dataset.open); });
     list.querySelectorAll("[data-del]").forEach((b) => b.onclick = () => deleteDoc(b.dataset.del, b.dataset.name));
     $("filesFoot").innerHTML = "Documents autosave with every step. Save (⌘S) and Export write to <b>" + esc((store.saveDir || "~/Pictures/Photo Editor").replace(/^\/Users\/[^/]+/, "~")) + '</b> · <button id="revealSaveDir">Show folder</button>';
     $("revealSaveDir").onclick = () => reveal("");
+  }
+
+  // ---------------------------------------------------------------- Sign tab
+  //
+  // Signatures from the panel: a name, an ink, and the eight styles the MCP
+  // add_signature tool offers, each previewed live in its handwriting font.
+  // The fonts are fetched through photo_editor.py (`fonts_ensure`, the same
+  // install path as the MCP tools) and loaded with loadWebFont. Clicking a
+  // style asks photo_editor.py (`signature_layer`, the very code the MCP tool
+  // runs) for the text layer -- set on the selected line layer, or centred
+  // on the page -- and adds it as an ordinary step.
+  const SIGN_STYLES = [
+    ["elegant", "Great Vibes", "400", "classic calligraphic script"],
+    ["flowing", "Allura", "400", "smooth, connected script"],
+    ["airy", "Sacramento", "400", "thin monoline script"],
+    ["bold-scrawl", "Mr Dafoe", "400", "fast brush-pen scrawl"],
+    ["handwritten", "Homemade Apple", "400", "a real pen on paper"],
+    ["neat", "Dancing Script", "600", "tidy, legible cursive"],
+    ["formal", "Herr Von Muellerhoff", "400", "slanted copperplate"],
+    ["ornate", "Monsieur La Doulaise", "400", "flourished capitals"],
+  ];
+  const SIGN_INKS = [["#1d2a44", "Navy"], ["#000000", "Black"], ["#1c4fd6", "Blue"], ["#5b3a1e", "Sepia"]];
+  const sign = { name: "", dirty: false, color: SIGN_INKS[0][0], fonts: "idle", error: "", built: false, busy: false };
+
+  function buildSignTab() {
+    if (sign.built) return;
+    sign.built = true;
+    $("signInks").innerHTML = SIGN_INKS.map(([c, label]) =>
+      '<button class="sign-ink" data-ink="' + c + '" role="radio" aria-checked="false" aria-label="' + label + ' ink" title="' + label + '" style="background:' + c + '"></button>').join("") +
+      '<label class="sign-ink custom" title="Custom ink"><input type="color" id="signInkCustom" aria-label="Custom ink colour" value="' + sign.color + '" /></label>';
+    $("signStyles").innerHTML = SIGN_STYLES.map(([key, family, weight, look]) =>
+      '<button class="sign-style" data-style="' + key + '" aria-label="Add signature in the ' + key + ' style (' + esc(family) + ')">' +
+      '<span class="preview" style="font-family:\'' + esc(family) + '\', cursive; font-weight:' + weight + '"></span>' +
+      '<span class="label"><b>' + key + '</b><span>' + esc(family) + " · " + look + "</span></span></button>").join("");
+    const input = $("signName");
+    input.oninput = () => { sign.name = input.value; sign.dirty = !!input.value.trim(); updateSignPreviews(); };
+    input.onkeydown = (e) => {
+      if (e.key !== "Enter") return;
+      e.preventDefault();
+      const first = $("signStyles").querySelector(".sign-style");
+      if (first) first.focus();
+    };
+    $("signInks").onclick = (e) => { const b = e.target.closest("[data-ink]"); if (b) setSignInk(b.dataset.ink); };
+    $("signInkCustom").oninput = (e) => setSignInk(e.target.value);
+    $("signStyles").onclick = (e) => { const b = e.target.closest("[data-style]"); if (b) addSignatureFromPanel(b.dataset.style); };
+  }
+
+  function setSignInk(color) { sign.color = color; updateSignPreviews(); }
+
+  function updateSignPreviews() {
+    const shown = sign.name.trim();
+    document.querySelectorAll("#signInks [data-ink]").forEach((b) => b.setAttribute("aria-checked", b.dataset.ink.toLowerCase() === sign.color.toLowerCase() ? "true" : "false"));
+    document.querySelectorAll("#signStyles .preview").forEach((p) => {
+      p.textContent = shown || "Your name";
+      p.classList.toggle("placeholder", !shown);
+      p.style.color = sign.color;
+      p.style.fontSize = "";
+      // A long name shrinks until it fits on the one line.
+      let size = 26;
+      while (p.clientWidth && p.scrollWidth > p.clientWidth && size > 13) { size -= 1; p.style.fontSize = size + "px"; }
+    });
+  }
+
+  function renderSignTab() {
+    buildSignTab();
+    const active = activeLayer();
+    const input = $("signName");
+    if (!sign.dirty && active && active.type === "text" && !/^Signature – /.test(active.name || "")) {
+      // Prefill from the selected text layer -- the printed name under a line,
+      // say. Selecting the line afterwards keeps it; only typing replaces it.
+      const text = active.node.text().split("\n")[0];
+      if (text && text !== sign.name) { sign.name = text; input.value = text; }
+    }
+    const line = active && active.type === "line" ? active : null;
+    $("signTarget").innerHTML = line
+      ? "Signs on <b>" + esc(line.name) + "</b>: about half its length, centred, with the baseline just through the stroke."
+      : "Select a line layer to sign on it. Otherwise the signature goes to the centre of the page.";
+    const foot = $("signFoot");
+    if (sign.fonts === "loading") foot.textContent = "Fetching the handwriting fonts from Google Fonts (open licence)…";
+    else if (sign.fonts === "error") {
+      foot.innerHTML = "Some fonts could not be fetched (" + esc(sign.error) + "). Previews use a fallback until then. <button id=\"signRetry\">Retry</button>";
+      $("signRetry").onclick = () => { sign.fonts = "idle"; renderSignTab(); };
+    } else foot.textContent = "Click a style to add it as a text layer in that font. It stays editable: move it, recolour it, change the text.";
+    $("signStyles").classList.toggle("loading", sign.fonts === "loading");
+    $("signStyles").setAttribute("aria-busy", sign.fonts === "loading" ? "true" : "false");
+    updateSignPreviews();
+    ensureSignFonts();
+  }
+
+  async function ensureSignFonts() {
+    if (sign.fonts !== "idle") return;
+    sign.fonts = "loading";
+    renderSignTab();
+    try {
+      const r = await py({ action: "fonts_ensure", values_json: JSON.stringify({ families: SIGN_STYLES.map((s) => s[1]) }) });
+      webFonts.readAt = 0;
+      await Promise.all(SIGN_STYLES.map((s) => loadWebFont(s[1])));
+      const failed = Object.keys(r.errors || {});
+      sign.error = failed.join(", ");
+      sign.fonts = failed.length ? "error" : "ready";
+    } catch (error) {
+      sign.error = error.message || String(error);
+      sign.fonts = "error";
+    }
+    if (store.leftTab === "sign") renderSignTab();
+  }
+
+  async function addSignatureFromPanel(style) {
+    if (!doc.ready || sign.busy) return;
+    const name = sign.name.trim();
+    if (!name) { toast("Type the name to sign first", true); $("signName").focus(); return; }
+    sign.busy = true;
+    $("signStyles").classList.add("busy");
+    try {
+      const active = activeLayer();
+      const line = active && active.type === "line" ? active : null;
+      const r = await py({ action: "signature_layer", values_json: JSON.stringify({
+        snap: pageSnap(), name, style, line: line ? line.id : "", color: sign.color, rotation: -3 }) });
+      const layer = createLayer(r.layer);
+      insertLayer(layer);
+      setTool("move");
+      selectLayer(layer.id);
+      commitHistory("add signature (" + style + ")");
+      refreshThumb(layer);
+      loadWebFont(r.layer.attrs.fontFamily).then(() => refreshThumb(layer));
+      toast(line ? "Signed on " + line.name : "Signature added");
+    } catch (error) { toast(error.message || String(error), true); }
+    finally { sign.busy = false; $("signStyles").classList.remove("busy"); }
   }
 
   async function renderRecent() {
@@ -2118,7 +2970,7 @@
     }
     recoverStash(stash, loaded);
     renderRecent();
-    setInterval(() => { pollDisk(); pollView(); pollRequests(); }, 1000);
+    setInterval(() => { pollDisk(); pollView(); pollRequests(); followAgentPage(); }, 1000);
     publishView();
     window.addEventListener("pagehide", flushSaveNow);
     document.addEventListener("visibilitychange", () => { if (document.hidden) flushSaveNow(); });
@@ -2164,7 +3016,7 @@
     const layer = activeLayer();
     const parts = [];
     if (doc.ready) {
-      parts.push("<span>Page <b>" + esc(docSummaryParts().slice(0, 2).join(" · ")) + "</b></span>");
+      parts.push("<span>Page " + (doc.pages.length > 1 ? (doc.page + 1) + " of " + doc.pages.length + " " : "") + "<b>" + esc(docSummaryParts().slice(0, 2).join(" · ")) + "</b></span>");
       parts.push("<span>" + doc.width + " × " + doc.height + " px @ " + doc.dpi + " DPI</span>");
     }
     parts.push("<span>Layers <b>" + doc.layers.length + "</b></span>");
@@ -2665,6 +3517,7 @@
     fitToScreen();
     afterDocChange();
     doc.layers.forEach(refreshThumb);
+    renderPages();
     commitHistory(label || "page size");
   }
 
@@ -2775,7 +3628,7 @@
       html += b("position", "Position", I.position) + b("flip", "Flip", I.flip);
     }
     html += '<span class="sep"></span>' + b("forward", "Forward", I.up) + b("backward", "Backward", I.down) +
-      b("duplicate", "Duplicate", I.dup) + b("delete", "Delete", I.trash, "danger");
+      b("duplicate", "Duplicate", I.dup) + (doc.pages.length > 1 ? b("copyto", "Copy to page", I.copyTo) : "") + b("delete", "Delete", I.trash, "danger");
     bar.innerHTML = html;
     bar.querySelectorAll("[data-act]").forEach((btn) => { btn.onclick = () => floatAction(btn.dataset.act); });
     bar.classList.add("show");
@@ -2797,7 +3650,12 @@
     const half = bar.offsetWidth / 2;
     const left = inset + 6 + half, right = wrap.clientWidth - half - 6;
     bar.style.left = (right < left ? (inset + wrap.clientWidth) / 2 : clamp(box.x + box.width / 2, left, right)) + "px";
-    bar.style.top = clamp(box.y - 12, inset + bar.offsetHeight + 6, wrap.clientHeight - 30) + "px";
+    // Sit above the rotate handle (which is drawn above the selection), or
+    // below the selection when there is no room up there.
+    const tr = transformer.nodes().length ? transformer.getClientRect() : box;
+    const above = Math.min(box.y, tr.y) - 10;
+    const top = above >= inset + bar.offsetHeight + 6 ? above : Math.max(box.y + box.height, tr.y + tr.height) + 10 + bar.offsetHeight;
+    bar.style.top = clamp(top, inset + bar.offsetHeight + 6, wrap.clientHeight - 30) + "px";
     if ($("posMenu").classList.contains("show")) placePosMenu();
   }
 
@@ -2812,12 +3670,95 @@
       case "insert": state.aiMode = "insert"; setTool("brush"); state.propsTab = "generative"; renderProps(); break;
       case "edit": openTextEditor(layer); break;
       case "position": togglePosMenu(); break;
+      case "copyto": toggleCopyMenu(); break;
       case "flip": n.scaleX(-n.scaleX()); afterNodeTransform(layer); commitHistory("flip"); break;
       case "forward": moveLayer(layer, 1); break;
       case "backward": moveLayer(layer, -1); break;
       case "duplicate": duplicateLayer(layer); break;
       case "delete": removeLayer(layer); toast("Deleted " + layer.name); break;
     }
+  }
+
+  // Rotate from the corners: just outside a corner handle the cursor turns into
+  // a rotate arrow and dragging spins the layer about its centre (Shift snaps
+  // to 15°). Works when the handle above the selection is out of reach.
+  const ROTATE_CURSOR = "url(\"data:image/svg+xml," + encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke-linecap="round" stroke-linejoin="round">' +
+    '<path d="M20 12a8 8 0 1 1-2.34-5.66" stroke="#fff" stroke-width="4"/><path d="M20 4v4.5h-4.5" stroke="#fff" stroke-width="4"/>' +
+    '<path d="M20 12a8 8 0 1 1-2.34-5.66" stroke="#111" stroke-width="2"/><path d="M20 4v4.5h-4.5" stroke="#111" stroke-width="2"/></svg>') +
+    "\") 12 12, alias";
+  const CORNERS = ["top-left", "top-right", "bottom-left", "bottom-right"];
+
+  function cornerRotateHit(evt) {
+    if (state.tool !== "move" || state.spaceDown || transformer.nodes().length !== 1 || !transformer.rotateEnabled()) return false;
+    const layer = activeLayer();
+    if (!layer || layer.locked || layer.node !== transformer.nodes()[0]) return false;
+    const r = stage.container().getBoundingClientRect();
+    const p = { x: evt.clientX - r.left, y: evt.clientY - r.top };
+    const node = layer.node, self = node.getSelfRect();
+    const local = node.getAbsoluteTransform().copy().invert().point(p);
+    const inside = local.x >= self.x && local.x <= self.x + self.width && local.y >= self.y && local.y <= self.y + self.height;
+    if (inside) return false;
+    return CORNERS.some((name) => {
+      const a = transformer.findOne("." + name);
+      if (!a || !a.isVisible()) return false;
+      const c = a.getAbsolutePosition();
+      const d = Math.hypot(p.x - c.x, p.y - c.y);
+      return d > 7 && d < 26;
+    }) ? p : false;
+  }
+
+  function wireCornerRotate() {
+    const el = stage.container();
+    let drag = null, cursorSet = false;
+    const centre = (node) => {
+      const s = node.getSelfRect();
+      return node.getAbsoluteTransform().point({ x: s.x + s.width / 2, y: s.y + s.height / 2 });
+    };
+    el.addEventListener("pointermove", (e) => {
+      if (drag) {
+        const layer = drag.layer, node = layer.node;
+        let deg = drag.rot + (Math.atan2(e.clientY - drag.cy, e.clientX - drag.cx) - drag.a0) * 180 / Math.PI;
+        if (e.shiftKey) deg = Math.round(deg / 15) * 15;
+        deg = ((deg + 180) % 360 + 360) % 360 - 180;
+        const before = centre(node);
+        node.rotation(deg);
+        const after = centre(node), abs = node.absolutePosition();
+        node.absolutePosition({ x: abs.x + before.x - after.x, y: abs.y + before.y - after.y });
+        afterNodeTransform(layer);
+        e.preventDefault(); e.stopPropagation();
+        return;
+      }
+      if (e.buttons) return;
+      const hit = !!cornerRotateHit(e);
+      if (hit) { el.style.cursor = ROTATE_CURSOR; cursorSet = true; }
+      else if (cursorSet) { el.style.cursor = ""; cursorSet = false; }
+    }, true);
+    el.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0 || !cornerRotateHit(e)) return;
+      const layer = activeLayer(), node = layer.node;
+      const r = el.getBoundingClientRect(), c = centre(node);
+      const cx = r.left + c.x, cy = r.top + c.y;
+      drag = { layer, rot: node.rotation(), cx, cy, a0: Math.atan2(e.clientY - cy, e.clientX - cx) };
+      el.setPointerCapture(e.pointerId);
+      e.preventDefault(); e.stopPropagation();
+    }, true);
+    // Konva also listens for the compatibility mouse/touch events.
+    ["mousedown", "mousemove", "touchstart"].forEach((type) => el.addEventListener(type, (e) => {
+      if (drag) { e.preventDefault(); e.stopPropagation(); }
+    }, true));
+    const finish = (e) => {
+      if (!drag) return;
+      const layer = drag.layer;
+      drag = null;
+      el.style.cursor = ""; cursorSet = false;
+      try { el.releasePointerCapture(e.pointerId); } catch (_) {}
+      e.stopPropagation();
+      afterNodeTransform(layer);
+      commitHistory("rotate");
+    };
+    el.addEventListener("pointerup", finish, true);
+    el.addEventListener("pointercancel", finish, true);
   }
 
   function afterNodeTransform(layer) {
@@ -2848,18 +3789,42 @@
     ["al-bottom", "Align bottom to page", ["M3 20h18", "M7 5h4v11H7z", "M13 10h4v6h-4z"]],
   ];
 
-  function togglePosMenu() { if ($("posMenu").classList.contains("show")) closePosMenu(); else openPosMenu(); }
+  // The float bar's two menus (Position, Copy to page) share one element,
+  // anchored under whichever button opened it.
+  let posMenuAnchor = "position";
+  function togglePosMenu() { if ($("posMenu").classList.contains("show") && posMenuAnchor === "position") closePosMenu(); else openPosMenu(); }
+  function toggleCopyMenu() { if ($("posMenu").classList.contains("show") && posMenuAnchor === "copyto") closePosMenu(); else openCopyMenu(); }
+  function openCopyMenu() {
+    const menu = $("posMenu");
+    const others = doc.pages.map((p, i) => i).filter((i) => i !== doc.page);
+    menu.innerHTML = '<div class="menu-note">Copy ' + esc(layersWord(selectedLayers())) + " to the same place on</div>" +
+      others.map((i) => '<button data-copyto="' + i + '">' + icon(I.copyTo) + "Page " + (i + 1) + " · " + esc(pageLabel(doc.pages[i], i)) + "</button>").join("") +
+      '<div class="sep"></div>' + (others.length > 1 ? '<button data-copyto="all">' + icon(I.dup) + "All other pages (" + others.length + ")</button>" : "") +
+      '<button data-copyto="new">' + icon(I.plus) + "A new page</button>";
+    menu.querySelectorAll("[data-copyto]").forEach((b) => {
+      b.onclick = () => {
+        closePosMenu();
+        const v = b.dataset.copyto;
+        if (v === "new") copyLayersToNewPage(); else copyLayersToPages(v === "all" ? others : [Number(v)]);
+      };
+    });
+    posMenuAnchor = "copyto";
+    menu.classList.add("show");
+    placePosMenu();
+    document.addEventListener("mousedown", onPosMenuOutsideClick, { capture: true });
+  }
   function openPosMenu() {
     const menu = $("posMenu");
     menu.innerHTML = POS_ITEMS.map((it) => it ? '<button data-pos="' + it[0] + '">' + icon(it[2]) + it[1] + "</button>" : '<div class="sep"></div>').join("");
     menu.querySelectorAll("[data-pos]").forEach((b) => { b.onclick = () => posMenuAction(b.dataset.pos); });
+    posMenuAnchor = "position";
     menu.classList.add("show");
     placePosMenu();
     document.addEventListener("mousedown", onPosMenuOutsideClick, { capture: true });
   }
   function placePosMenu() {
     const menu = $("posMenu");
-    const button = document.querySelector('#floatBar [data-act="position"]');
+    const button = document.querySelector('#floatBar [data-act="' + posMenuAnchor + '"]');
     if (!button) return;
     const wrap = $("stageWrap").getBoundingClientRect();
     const barRect = $("floatBar").getBoundingClientRect();
@@ -2873,7 +3838,7 @@
   }
   function onPosMenuOutsideClick(event) {
     const menu = $("posMenu");
-    const posButton = document.querySelector('#floatBar [data-act="position"]');
+    const posButton = document.querySelector('#floatBar [data-act="' + posMenuAnchor + '"]');
     if (!menu.contains(event.target) && !(posButton && posButton.contains(event.target))) closePosMenu();
   }
   function posMenuAction(action) {
@@ -3301,6 +4266,7 @@
     doc.layers = []; doc.activeId = null; maskOwner = null;
     if (maskNode) maskNode.visible(false);
     doc.guides = [];
+    doc.pages = []; doc.page = 0; pageThumbs.clear();
     syncGuideNodes();
   }
 
@@ -3314,6 +4280,7 @@
     $("dropVeil").classList.remove("hidden");
     renderArtboard();
     afterDocChange();
+    renderPages();
     setDropCard();
     setDocParam();
     renderSaveState();
@@ -3332,8 +4299,10 @@
     }
     doc.background = "#ffffff"; doc.transparent = false; doc.guides = []; doc.ready = true;
     doc.localSession = newSessionId();
+    doc.pages = [{ id: newPageId(), name: "Page 1" }]; doc.page = 0;
     if (spec.unit) { state.view.unit = spec.unit; saveView(); }
     syncGuideNodes();
+    renderPages();
   }
 
   function ndSpec() {
@@ -4073,9 +5042,12 @@
       purpose: doc.sizing === "print" ? "print" : "digital", size: "original", orient: "auto", place: "fill",
       dpi: doc.sizing === "print" ? doc.dpi : 300, bleed: "doc", marks: doc.bleed > 0, info: true, sheet: "none",
       printFormat: "pdf", digitalFormat: /\.jpe?g$/i.test(state.fileName) ? "jpeg" : "png", quality: 92,
-      digitalSize: "1", customWidth: 2000, place2: "fit", fileName: "",
+      digitalSize: "1", customWidth: 2000, place2: "fit", fileName: "", pages: "all",
     };
   }
+
+  // Which pages an export writes: every page, or just the one in view.
+  const exportPages = (c) => doc.pages.length > 1 && c.pages !== "current" ? doc.pages.map((_, i) => i) : [doc.page];
 
   function computeLayout(c) {
     const dt = trimRect();
@@ -4204,10 +5176,24 @@
     closeViewMenu();
     if (!state.exportCfg) state.exportCfg = defaultExportCfg();
     state.exportCfg.fileName = state.fileName || "design";
+    state.exportOrigin = curPage().id;
     $("exportVeil").classList.add("show");
     renderExport();
   }
-  function closeExport() { $("exportVeil").classList.remove("show"); }
+  // The preview can page through the document (the page under the dialog
+  // switches with it); closing goes back to the page you were on.
+  function closeExport() {
+    $("exportVeil").classList.remove("show");
+    const back = doc.pages.findIndex((p) => p.id === state.exportOrigin);
+    if (back >= 0) switchPage(back);
+  }
+  async function exportShowPage(i) {
+    if (!switchPage(i)) return;
+    renderExport();
+    await imagesReady(4000);
+    await fontsSettled();
+    if ($("exportVeil").classList.contains("show")) renderExportPreview();
+  }
 
   function setExport(key, value) {
     const c = state.exportCfg;
@@ -4224,6 +5210,10 @@
     const seg = (key, options, value) => '<div class="seg">' + options.map(([v, l]) => '<button data-ex="' + key + '" data-v="' + v + '" class="' + (String(value) === String(v) ? "active" : "") + '">' + l + "</button>").join("") + "</div>";
     const sw = (key, label, on) => '<div class="toggle-row">' + label + '<span class="switch' + (on ? " on" : "") + '" data-ext="' + key + '"></span></div>';
     let html = '<label class="mini">Use it for' + seg("purpose", [["print", "Print"], ["digital", "Digital / screen"]], c.purpose) + "</label>";
+    const many = exportPages(c).length > 1;
+    if (doc.pages.length > 1) {
+      html += '<label class="mini">Pages' + seg("pages", [["all", "All " + doc.pages.length + " pages"], ["current", "Page " + (doc.page + 1) + " only"]], c.pages === "current" ? "current" : "all") + "</label>";
+    }
     if (print) {
       const dpis = [150, 300, 600].includes(doc.dpi) ? [150, 300, 600] : [150, 300, 600, doc.dpi].sort((a, b) => a - b);
       html += '<label class="mini">Print size<select data-ex="size">' + opt("original", "Original — " + fmtSize(pxToMm(dt.width), pxToMm(dt.height)) + " (" + pageName() + ")", c.size) + presetOptions(c.size, false) + "</select></label>";
@@ -4266,8 +5256,12 @@
       rows.push(["Size", L.pageW + " × " + L.pageH + " px · " + L.sizeName]);
       rows.push(["If printed at 300 DPI", fmtSize(pxToMm(L.pageW, 300), pxToMm(L.pageH, 300), u)]);
     }
+    if (many) rows.push(["Pages", L.format === "pdf" ? doc.pages.length + " pages in one PDF" : doc.pages.length + " files, one per page (“" + ((c.fileName || "").trim() || "design") + " – page 1” …)"]);
     html += '<div class="ex-summary spec">' + rows.map(([k, v]) => k + " <b>" + esc(v) + "</b>").join("<br />") + "</div>";
     const notes = (L.error ? [{ level: "warn", text: L.error }] : []).concat(L.warnings);
+    if (many && c.size === "original" && doc.pages.some((p, i) => { const q = i === doc.page ? { width: doc.width, height: doc.height } : p; return q.width !== doc.width || q.height !== doc.height; })) {
+      notes.push({ level: "info", text: "Pages differ in size; with Original size each page keeps its own size. Settings shown are for page " + (doc.page + 1) + "." });
+    }
     if (notes.length) html += '<div class="warnings">' + notes.map((n) => '<div class="note ' + (n.level === "warn" ? "warn" : "info") + '">' + esc(n.text) + "</div>").join("") + "</div>";
 
     const side = $("exportSide");
@@ -4283,11 +5277,19 @@
     });
     side.querySelectorAll("[data-ext]").forEach((el) => { el.onclick = () => setExport(el.dataset.ext, !c[el.dataset.ext]); });
 
-    $("exportFoot").innerHTML = '<span class="spec">' + esc(print ? L.sizeName + " · " + fmtSize(L.tmm.w, L.tmm.h, u) + " · " + L.dpi + " DPI" : L.pageW + " × " + L.pageH + " px") + "</span>" +
+    // With several pages the footer pages through them, on the same line as
+    // the page's size and the Export button.
+    const pager = doc.pages.length > 1
+      ? '<span class="ex-pager"><button data-exp="-1" title="Previous page"' + (doc.page <= 0 ? " disabled" : "") + ">" + icon(I.prev) + "</button>" +
+        '<span class="ex-page">Page <b>' + (doc.page + 1) + "</b> of " + doc.pages.length + "</span>" +
+        '<button data-exp="1" title="Next page"' + (doc.page >= doc.pages.length - 1 ? " disabled" : "") + ">" + icon(I.next) + "</button></span>"
+      : "";
+    $("exportFoot").innerHTML = pager + '<span class="spec">' + esc(print ? L.sizeName + " · " + fmtSize(L.tmm.w, L.tmm.h, u) + " · " + L.dpi + " DPI" : L.pageW + " × " + L.pageH + " px") + "</span>" +
       '<span class="spacer"></span><button class="ghost-btn" id="exCancel">Cancel</button>' +
-      '<button class="primary-btn" id="exGo"' + (L.error ? " disabled" : "") + ">" + icon(["M12 3v12", "M7 10l5 5 5-5", "M4 19h16"]) + "Export " + ({ jpeg: "JPEG", tiff: "TIFF" }[L.format] || L.format.toUpperCase()) + "</button>";
+      '<button class="primary-btn" id="exGo"' + (L.error ? " disabled" : "") + ">" + icon(["M12 3v12", "M7 10l5 5 5-5", "M4 19h16"]) + "Export " + ({ jpeg: "JPEG", tiff: "TIFF" }[L.format] || L.format.toUpperCase()) + (many ? " · " + doc.pages.length + " pages" : "") + "</button>";
     $("exCancel").onclick = closeExport;
     $("exGo").onclick = runExport;
+    $("exportFoot").querySelectorAll("[data-exp]").forEach((b) => { b.onclick = () => exportShowPage(doc.page + Number(b.dataset.exp)); });
     renderExportPreview();
   }
 
@@ -4322,29 +5324,61 @@
     }, 60);
   }
 
+  // Each page is composed by renderOutput() on the stage, so a page other
+  // than the one in view is switched in (under the dialog) and back after.
   async function runExport() {
-    const c = state.exportCfg, L = computeLayout(c);
-    if (L.error) { toast(L.error, true); return; }
+    const c = state.exportCfg, L0 = computeLayout(c);
+    if (L0.error) { toast(L0.error, true); return; }
     const go = $("exGo");
     go.disabled = true; go.textContent = "Exporting…";
+    const list = exportPages(c), multi = list.length > 1, shown = doc.page;
+    const base = (c.fileName || "").trim() || "design";
+    state.exporting = true;
     try {
       await sleep(30);
-      const dataUrl = renderOutput(L, 1).toDataURL("image/png");
       if (!doc.localSession) doc.localSession = newSessionId();
-      const session = (doc.layers.find((l) => l.type === "image") || {}).sessionId || doc.localSession;
-      const frame = await py({ action: "save_frame", session_id: session, image_data: dataUrl });
+      // One session folder for every frame: export_pages reads them all from it.
+      const session = multi ? doc.localSession : (doc.layers.find((l) => l.type === "image") || {}).sessionId || doc.localSession;
+      const frames = [];
+      for (const i of list) {
+        if (i !== doc.page) {
+          if (!switchPage(i, { quiet: true })) throw new Error("Page " + (i + 1) + " could not be shown for export");
+          await imagesReady(8000);
+          if (document.fonts && document.fonts.ready) await document.fonts.ready;
+          await fontsSettled();
+          stage.draw();
+        }
+        const L = computeLayout(c);
+        if (L.error) throw new Error((multi ? "Page " + (i + 1) + ": " : "") + L.error);
+        if (multi) go.textContent = "Exporting page " + (frames.length + 1) + " of " + list.length + "…";
+        const frame = await py({ action: "save_frame", session_id: session, image_data: renderOutput(L, 1).toDataURL("image/png") });
+        frames.push({ i, L, path: frame.path, background: doc.background });
+      }
+      if (doc.page !== shown) switchPage(shown, { quiet: true });
       // Written straight into the save folder (~/Pictures/Photo Editor), not
       // handed to the browser as a download.
-      const result = await py({ action: "export", session_id: session, source: frame.path, fmt: L.format, quality: String(c.quality), background: L.print ? "#ffffff" : doc.background, dpi: String(L.dpi), save: "true", file_name: (c.fileName || "").trim() || "design" });
-      const ext = { jpeg: "jpg", tiff: "tif" }[L.format] || L.format;
+      const results = [];
+      if (multi && L0.format === "pdf") {
+        results.push(await py({ action: "export_pages", session_id: session, fmt: "pdf", background: "#ffffff", dpi: String(L0.dpi), file_name: base,
+          values_json: JSON.stringify({ sources: frames.map((f) => f.path) }) }));
+      } else {
+        for (const f of frames) {
+          results.push(await py({ action: "export", session_id: session, source: f.path, fmt: f.L.format, quality: String(c.quality), background: f.L.print ? "#ffffff" : f.background,
+            dpi: String(f.L.dpi), save: "true", file_name: multi ? base + " – page " + (f.i + 1) : base }));
+        }
+      }
       closeExport();
-      const size = result.bytes > 1048576 ? (result.bytes / 1048576).toFixed(1) + " MB" : Math.round(result.bytes / 1024) + " KB";
-      toast("Saved " + baseName(result.path) + " · " + (L.print ? L.sizeName + " " + fmtSize(L.tmm.w, L.tmm.h) + " @ " + L.dpi + " DPI" : L.pageW + " × " + L.pageH + " px") + " · " + size, false,
-        { label: "Show in Finder", run: () => reveal(result.path) });
+      const bytes = results.reduce((n, r) => n + (r.bytes || 0), 0);
+      const size = bytes > 1048576 ? (bytes / 1048576).toFixed(1) + " MB" : Math.round(bytes / 1024) + " KB";
+      const L = frames[0].L, first = results[0].path;
+      const what = results.length > 1 ? results.length + " files (" + baseName(first) + " …)" : baseName(first) + (multi ? " · " + frames.length + " pages" : "");
+      toast("Saved " + what + " · " + (L.print ? L.sizeName + " " + fmtSize(L.tmm.w, L.tmm.h) + " @ " + L.dpi + " DPI" : L.pageW + " × " + L.pageH + " px") + " · " + size, false,
+        { label: "Show in Finder", run: () => reveal(first) });
     } catch (error) {
+      if (doc.page !== shown) switchPage(shown, { quiet: true });
       toast(error.message || String(error), true);
       if ($("exportVeil").classList.contains("show")) renderExport();
-    }
+    } finally { state.exporting = false; }
   }
 
   // ---------------------------------------------------------------- shape drawing
@@ -4472,7 +5506,7 @@
   // ---------------------------------------------------------------- tools
 
   function setTool(id) {
-    if (!TOOLS.some((t) => t && t.id === id)) return;
+    if (!TOOLS.some((t) => t && t.id === id && !t.panel)) return;
     state.tool = id;
     if (id === "brush") {
       state.propsTab = "generative";
@@ -4507,12 +5541,14 @@
   }
 
   function renderToolbar() {
+    // Sign opens a left-panel view rather than a canvas tool; it lights up
+    // while that view is showing.
     $("toolbar").innerHTML = TOOLS.map((t) => t
-      ? '<button class="tool' + (state.tool === t.id ? " active" : "") + '" data-tool="' + t.id + '" title="' + esc(t.label) + '">' + icon(I[t.id]) + '<span class="key">' + t.key + "</span></button>"
+      ? '<button class="tool' + ((t.panel ? store.leftTab === t.panel : state.tool === t.id) ? " active" : "") + '" data-tool="' + t.id + '" title="' + esc(t.label) + '">' + icon(I[t.id]) + (t.key ? '<span class="key">' + t.key + "</span>" : "") + "</button>"
       : '<span class="tool-sep"></span>').join("") +
       '<span class="grow"></span>' +
       '<button class="tool" id="toolImport" title="Place an image as a new layer">' + icon(I.image) + "</button>";
-    $("toolbar").querySelectorAll("[data-tool]").forEach((b) => { b.onclick = () => setTool(b.dataset.tool); });
+    $("toolbar").querySelectorAll("[data-tool]").forEach((b) => { b.onclick = () => b.dataset.tool === "sign" ? toggleSignPane() : setTool(b.dataset.tool); });
     $("toolImport").onclick = () => $("fileInput").click();
   }
 
@@ -4526,7 +5562,9 @@
         const box = layer.node.getClientRect({ relativeTo: layer.konva, skipShadow: true });
         if (!box.width || !box.height) return;
         const ratio = 68 / Math.max(box.width, box.height);
-        layer.thumb = layer.node.toDataURL({ pixelRatio: ratio });
+        const url = layer.node.toDataURL({ pixelRatio: ratio });
+        if (!/^data:image\/png;base64,./.test(url)) return;
+        layer.thumb = url;
         const img = document.querySelector('[data-thumb="' + layer.id + '"]');
         if (img) img.src = layer.thumb;
       } catch (e) { }
@@ -4548,11 +5586,12 @@
     } else if (active) {
       controls.classList.remove("aligning");
       controls.style.display = "";
+      const pct = Math.round(active.opacity * 100);
       controls.innerHTML =
-        '<label>Blend<select class="compact" id="blendSel">' + BLENDS.map((b) => '<option value="' + b + '"' + (active.blend === b ? " selected" : "") + ">" + b.replace("-", " ") + "</option>").join("") + "</select></label>" +
-        '<label>Opacity <span style="float:right;color:var(--ink)">' + Math.round(active.opacity * 100) + '%</span><input type="range" id="layerOpacity" min="0" max="100" value="' + Math.round(active.opacity * 100) + '" style="margin:6px 0 2px" /></label>';
+        '<div class="lc"><label class="lc-head" for="blendSel">Blend</label><select class="compact" id="blendSel">' + BLENDS.map((b) => '<option value="' + b + '"' + (active.blend === b ? " selected" : "") + ">" + b.replace("-", " ") + "</option>").join("") + "</select></div>" +
+        '<div class="lc"><label class="lc-head" for="layerOpacity">Opacity<b id="opacityVal">' + pct + '%</b></label><div class="lc-slider"><input type="range" id="layerOpacity" min="0" max="100" value="' + pct + '" /></div></div>';
       $("blendSel").onchange = (e) => { active.blend = e.target.value; applyLayerStyle(active); commitHistory("blend mode"); };
-      $("layerOpacity").oninput = (e) => { active.opacity = Number(e.target.value) / 100; applyLayerStyle(active); e.target.previousElementSibling.textContent = e.target.value + "%"; commitHistorySoon("opacity"); };
+      $("layerOpacity").oninput = (e) => { active.opacity = Number(e.target.value) / 100; applyLayerStyle(active); $("opacityVal").textContent = e.target.value + "%"; commitHistorySoon("opacity"); };
     } else { controls.style.display = "none"; }
 
     if (!doc.layers.length) {
@@ -4561,7 +5600,7 @@
       list.innerHTML = doc.layers.slice().reverse().map((l) =>
         '<div class="layer-row' + (l.id === doc.activeId ? " active" : "") + (alignSet.has(l.id) ? " picked" : "") + (l.visible ? "" : " hidden-layer") + '" data-id="' + l.id + '" draggable="true">' +
         '<button class="eye' + (l.visible ? "" : " off") + '" title="Toggle visibility">' + icon(l.visible ? I.eye : I.eyeOff) + "</button>" +
-        '<div class="layer-thumb">' + (l.thumb ? '<img data-thumb="' + l.id + '" src="' + l.thumb + '" />' : '<img data-thumb="' + l.id + '" />') + "</div>" +
+        layerThumbHtml(l) +
         '<div class="layer-name" title="Double-click to rename"><span class="label">' + esc(l.name) + '</span><span class="kind">' + kindLabel(l) + "</span></div>" +
         '<button class="lock' + (l.locked ? "" : " off") + '" title="' + (l.locked ? "Unlock" : "Lock") + '">' + icon(l.locked ? I.lock : I.unlock) + "</button>" +
         "</div>").join("");
@@ -4572,6 +5611,13 @@
     $("upLayerBtn").disabled = !has || layerIndex(active) >= doc.layers.length - 1;
     $("downLayerBtn").disabled = !has || layerIndex(active) <= 0;
     $("addLayerBtn").disabled = !doc.ready;
+  }
+
+  // Text and lines read better as a glyph than as a sliver of a thumbnail;
+  // shapes and images show themselves.
+  function layerThumbHtml(l) {
+    if (l.type === "text" || l.type === "line") return '<div class="layer-thumb glyph">' + icon(I[l.type]) + "</div>";
+    return '<div class="layer-thumb"><img data-thumb="' + l.id + '"' + (l.thumb ? ' src="' + l.thumb + '"' : "") + ' alt="" /></div>';
   }
 
   function kindLabel(l) {
@@ -4753,7 +5799,7 @@
       } else if (layer.type === "text") {
         html += section("textContent", "Text",
           '<textarea id="textValue" spellcheck="false">' + esc(n.text()) + "</textarea>" +
-          '<div class="grid2" style="margin-top:8px"><label class="mini">Font<select data-attr="fontFamily">' + FONTS.map((f) => '<option' + (n.fontFamily() === f ? " selected" : "") + ">" + f + "</option>").join("") + "</select></label>" +
+          '<div class="grid2" style="margin-top:8px"><label class="mini">Font<select data-attr="fontFamily">' + fontChoices(n.fontFamily()).map((f) => '<option' + (n.fontFamily() === f ? " selected" : "") + ">" + f + "</option>").join("") + "</select></label>" +
           '<label class="mini">Weight<select data-attr="fontStyle">' + [["400", "Regular"], ["500", "Medium"], ["600", "Semibold"], ["700", "Bold"], ["italic", "Italic"], ["700 italic", "Bold italic"]].map(([v, l]) => '<option value="' + v + '"' + (n.fontStyle() === v ? " selected" : "") + ">" + l + "</option>").join("") + "</select></label></div>" +
           '<div class="grid2" style="margin-top:6px">' + numField("fontSize", "Size", n.fontSize()) + numField("letterSpacing", "Tracking", n.letterSpacing(), 0.5) + numField("lineHeight", "Line height", n.lineHeight(), 0.05) +
           '<label class="mini">Align<div class="seg icons">' + [["left", I.alignL], ["center", I.alignC], ["right", I.alignR]].map(([a, ic]) => '<button data-align="' + a + '" class="' + (n.align() === a ? "active" : "") + '">' + icon(ic) + "</button>").join("") + "</div></label></div>" +
@@ -4930,6 +5976,11 @@
       const box = nodeBox(layer);
       const map = { x: box.x, y: box.y, w: box.width, h: box.height, rotation: layer.node.rotation() };
       Object.keys(map).forEach((k) => { const el = $("propsBody").querySelector('[data-attr="' + k + '"]'); if (el && document.activeElement !== el) el.value = Math.round(map[k]); });
+      if (layer.type === "text") {
+        // Corner-scaling a text layer changes its font size and tracking.
+        const n = layer.node, soft = { fontSize: n.fontSize(), letterSpacing: n.letterSpacing() };
+        Object.keys(soft).forEach((k) => { const el = $("propsBody").querySelector('[data-attr="' + k + '"]'); if (el && document.activeElement !== el) el.value = Math.round(soft[k] * 10) / 10; });
+      }
     }, 40);
   }
 
@@ -4986,7 +6037,7 @@
         else if (key === "rotation") n.rotation(raw);
         else if (key === "cornerRadius") n.cornerRadius(Math.max(0, raw));
         else if (key === "strokeWidth") { n.strokeWidth(Math.max(0, raw)); if (raw > 0 && !n.stroke()) n.stroke("#ffffff"); }
-        else if (key === "fontStyle" || key === "fontFamily") n[key](raw);
+        else if (key === "fontStyle" || key === "fontFamily") { n[key](raw); if (key === "fontFamily") loadWebFont(raw); }
         else n[key](raw);
         afterNodeTransform(layer);
         if (key === "w" || key === "h" || key === "x" || key === "y" || key === "rotation") renderPropsSoft(); else renderProps();
@@ -5131,16 +6182,16 @@
 
     const veil = $("dropVeil"), wrap = $("stageWrap");
     ["dragenter", "dragover"].forEach((type) => wrap.addEventListener(type, (event) => {
-      if (dragId) return;
+      if (dragId || pageDrag != null) return;
       event.preventDefault(); setDropCard(); veil.classList.remove("hidden"); veil.classList.add("dragging");
     }));
     ["dragleave", "drop"].forEach((type) => wrap.addEventListener(type, (event) => {
-      if (dragId) return;
+      if (dragId || pageDrag != null) return;
       event.preventDefault(); veil.classList.remove("dragging");
       if (type === "dragleave" && doc.ready) veil.classList.add("hidden");
     }));
     wrap.addEventListener("drop", (event) => {
-      if (dragId) return;
+      if (dragId || pageDrag != null) return;
       const file = event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0];
       if (file) ingestFile(file); else if (doc.ready) veil.classList.add("hidden");
     });
@@ -5155,11 +6206,18 @@
     $("fileName").onchange = () => renameDoc(state.fileName);
     $("saveState").onclick = saveCopy;
     $("leftTabs").onclick = (e) => { const b = e.target.closest("[data-ltab]"); if (b) setLeftTab(b.dataset.ltab); };
+    $("signClose").onclick = () => setLeftTab("layers");
     document.addEventListener("click", (e) => { const b = e.target.closest("[data-collapse]"); if (b) setPanels(b.dataset.collapse === "left" ? false : panels.left, b.dataset.collapse === "right" ? false : panels.right); });
     $("leftStrip").onclick = () => setPanels(true, panels.right);
     $("rightStrip").onclick = () => setPanels(panels.left, true);
     setPanels(panels.left, panels.right, true);
 
+    $("addPageBtn").onclick = addPage;
+    $("pagesToggle").onclick = () => {
+      pagesUi.collapsed = !pagesUi.collapsed;
+      try { localStorage.setItem("photo_editor.pages", JSON.stringify(pagesUi)); } catch (e) { }
+      renderPages();
+    };
     $("addLayerBtn").onclick = (e) => openAddMenu(e.currentTarget);
     $("dupLayerBtn").onclick = () => { const l = activeLayer(); if (l) duplicateLayer(l); };
     $("upLayerBtn").onclick = () => { const l = activeLayer(); if (l) moveLayer(l, 1); };
@@ -5203,6 +6261,8 @@
       else if (meta && (event.key === "=" || event.key === "+")) { event.preventDefault(); setZoom(state.zoom * 1.25); }
       else if (meta && event.key === "-") { event.preventDefault(); setZoom(state.zoom / 1.25); }
       else if (meta && event.key.toLowerCase() === "d") { event.preventDefault(); if (layer) duplicateLayer(layer); }
+      else if (meta && !event.shiftKey && (event.key.toLowerCase() === "c" || event.key.toLowerCase() === "x") && !String(window.getSelection() || "")) { if (copyLayers(event.key.toLowerCase() === "x")) event.preventDefault(); }
+      else if (meta && !event.shiftKey && event.key.toLowerCase() === "v") { if (pasteLayers()) event.preventDefault(); }
       else if (meta && event.key === "]") { event.preventDefault(); if (layer) moveLayer(layer, 1); }
       else if (meta && event.key === "[") { event.preventDefault(); if (layer) moveLayer(layer, -1); }
       else if (event.key === "Backspace" || event.key === "Delete") {
@@ -5211,6 +6271,7 @@
       }
       else if (event.key === "Escape") { if (alignSet.size) { alignSet.clear(); renderLayers(); } else if (state.tool !== "move") setTool("move"); else selectLayer(null); }
       else if (event.key === " " && !state.spaceDown) { event.preventDefault(); state.spaceDown = true; syncModeToTool(); }
+      else if ((event.key === "PageDown" || event.key === "PageUp") && doc.ready) { event.preventDefault(); switchPage(doc.page + (event.key === "PageDown" ? 1 : -1)); }
       else if (!meta && !event.altKey) {
         const map = { v: "move", h: "hand", r: "rect", o: "ellipse", l: "line", t: "text", b: "brush", e: "eraser", c: "crop" };
         const id = map[event.key.toLowerCase()];
@@ -5240,6 +6301,7 @@
   async function boot() {
     Konva.showWarnings = false;
     buildStage();
+    readFontIndex(true);
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => doc.layers.forEach((l) => l.konva.batchDraw()));
     wireChrome();
     const panel = fused.params.get("panel");
