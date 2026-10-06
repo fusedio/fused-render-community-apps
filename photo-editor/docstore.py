@@ -12,8 +12,9 @@ other did:
             thumbs/000042.png   small render of that revision
             thumb.png           latest thumbnail (the start screen's Recent list)
 
-`snap` is exactly what the page's `snapshot()` produces: page size, background,
-guides and a list of serialised layers. Image layers point at PNGs under
+`snap` is exactly what the page's `snapshot()` produces: the document's pages
+(see "pages" below), each with its size, background, guides and a list of
+serialised layers. Image layers point at PNGs under
 `.fused/data/sessions/` by absolute `workingPath`; the page rebuilds each
 layer's URL from that path, so `src` is never stored.
 
@@ -92,16 +93,68 @@ def _locked(doc_id: str):
             fcntl.flock(handle, fcntl.LOCK_UN)
 
 
-def _clean_snap(snap: dict) -> dict:
-    """Drop what is only meaningful inside one page load (image URLs)."""
-    snap = dict(snap or {})
+def _clean_layers(page: dict) -> dict:
+    page = dict(page or {})
     layers = []
-    for layer in snap.get("layers") or []:
+    for layer in page.get("layers") or []:
         layer = dict(layer)
         layer.pop("src", None)
         layers.append(layer)
-    snap["layers"] = layers
-    return snap
+    page["layers"] = layers
+    return page
+
+
+def _clean_snap(snap: dict) -> dict:
+    """Drop what is only meaningful inside one page load (image URLs)."""
+    snap = dict(snap or {})
+    if isinstance(snap.get("pages"), list):
+        snap["pages"] = [_clean_layers(page) for page in snap["pages"]]
+        return snap
+    return _clean_layers(snap)
+
+
+# ---------------------------------------------------------------- pages
+#
+# A document is one or more pages, each with its own size, print setup,
+# guides and layers: {localSession, page, pages: [{id, name, width, ...}]},
+# where `page` is the index of the page that was in view. A snapshot from
+# before documents had pages keeps those keys at the top level; it reads as
+# one page with id "p1" (index.html's asPages() does the same).
+
+PAGE_KEYS = ("width", "height", "background", "transparent", "activeId", "layers",
+             "dpi", "bleed", "safe", "sizing", "presetId", "guides")
+
+
+def pages_of(snap: dict) -> list[dict]:
+    snap = snap or {}
+    pages = snap.get("pages")
+    if isinstance(pages, list) and pages:
+        return pages
+    return [dict({k: snap[k] for k in PAGE_KEYS if k in snap}, id="p1", name="Page 1")]
+
+
+def page_index(snap: dict) -> int:
+    count = len(pages_of(snap))
+    try:
+        return min(max(int((snap or {}).get("page") or 0), 0), count - 1)
+    except (TypeError, ValueError):
+        return 0
+
+
+def page_at(snap: dict, index: int | None = None) -> dict:
+    """One page (default: the one in view), shaped like a single-page snapshot."""
+    pages = pages_of(snap)
+    return pages[page_index(snap) if index is None else min(max(int(index), 0), len(pages) - 1)]
+
+
+def as_pages(snap: dict) -> dict:
+    """`snap` in the multi-page shape, converting an old single-page one."""
+    snap = snap or {}
+    if isinstance(snap.get("pages"), list) and snap["pages"]:
+        return snap
+    out = {k: v for k, v in snap.items() if k not in PAGE_KEYS}
+    out.update(pages=pages_of(snap), page=0)
+    return out
 
 
 def _decode_png(data_url: str) -> bytes:
@@ -264,9 +317,10 @@ def history(doc_id: str) -> list[dict]:
             continue
         rev = item.get("rev")
         thumb = os.path.join(doc_dir(doc_id), "thumbs", f"{int(rev):06d}.png")
+        pages = pages_of(item.get("snap") or {})
         out.append({"rev": rev, "parent": item.get("parent", int(rev) - 1), "label": item.get("label", ""), "source": item.get("source", ""),
-                    "time": item.get("time"), "layers": len((item.get("snap") or {}).get("layers") or []),
-                    "thumb": thumb if os.path.exists(thumb) else ""})
+                    "time": item.get("time"), "layers": sum(len(p.get("layers") or []) for p in pages),
+                    "pages": len(pages), "thumb": thumb if os.path.exists(thumb) else ""})
     return out
 
 
@@ -312,11 +366,12 @@ def list_documents(limit: int = 50) -> list[dict]:
         except (OSError, ValueError):
             continue
         snap = record.get("snap") or {}
+        page, pages = page_at(snap), pages_of(snap)
         thumb = os.path.join(DOCS_DIR, entry, "thumb.png")
         out.append({"id": record["id"], "name": record.get("name", "Untitled"), "rev": record.get("rev"),
                     "updated_at": record.get("updated_at"), "created_at": record.get("created_at"),
-                    "width": snap.get("width"), "height": snap.get("height"),
-                    "layers": len(snap.get("layers") or []),
+                    "width": page.get("width"), "height": page.get("height"), "pages": len(pages),
+                    "layers": sum(len(p.get("layers") or []) for p in pages),
                     "thumb": thumb if os.path.exists(thumb) else ""})
     out.sort(key=lambda d: d.get("updated_at") or 0, reverse=True)
     return out[: max(1, int(limit))]
@@ -394,7 +449,7 @@ def set_view(changes: dict, source: str, base_seq: str | None = None) -> dict:
     if base_seq is not None and view.get("seq") and view.get("seq") != base_seq and view.get("source") == "agent":
         return dict(view, conflict=True)
     for key, value in (changes or {}).items():
-        if key in VIEW_KEYS or key in ("grid_step", "grid_doc"):
+        if key in VIEW_KEYS or key in ("grid_step", "grid_doc", "page_doc", "page_id"):
             view[key] = value
     view.update(source=source, seq=f"{time.time_ns()}-{secrets.token_hex(2)}", time=time.time())
     _write_json(VIEW_PATH, view)
@@ -412,10 +467,11 @@ SCREENS_DIR = os.path.join(DOCS_DIR, "screens")
 _SCREEN_KEEP = 30
 
 
-def request_screenshot(doc_id: str, rev: int, mode: str, max_size: int) -> str:
+def request_screenshot(doc_id: str, rev: int, mode: str, max_size: int, page_id: str = "") -> str:
     request_id = f"s{time.time_ns()}-{secrets.token_hex(2)}"
     _write_json(REQUEST_PATH, {"id": request_id, "kind": "screenshot", "doc": doc_id, "rev": int(rev),
-                               "mode": mode, "max_size": int(max_size), "time": time.time()})
+                               "mode": mode, "max_size": int(max_size), "page_id": page_id or "",
+                               "time": time.time()})
     return request_id
 
 

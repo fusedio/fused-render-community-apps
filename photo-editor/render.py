@@ -20,6 +20,8 @@ from functools import lru_cache
 
 from PIL import Image, ImageChops, ImageDraw, ImageFont
 
+import docstore
+
 SS = 2  # supersampling for vector shapes and text
 
 _FONT_DIRS = [os.path.expanduser("~/Library/Fonts"), "/Library/Fonts",
@@ -41,6 +43,9 @@ _FAMILY_FILES = {
     "menlo": ["Menlo"],
 }
 _FALLBACK = {"source sans 3": "helvetica neue", "source serif 4": "georgia"}
+# Google families fetched by the agent's install_font (fonts.py): one folder
+# per family under here, searched before the system folders.
+APP_FONT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".fused", "data", "fonts")
 
 
 # ---------------------------------------------------------------- colours
@@ -71,11 +76,41 @@ def parse_color(value, default=None):
 # ---------------------------------------------------------------- fonts
 
 
+def _app_font_faces(family: str):
+    """Faces of an installed Google family: every TTF in its folder. The style
+    comes from the file name (`Family-700i.ttf`), which install_font wrote."""
+    try:
+        import fonts
+    except ImportError:
+        return []
+    folder = fonts.family_dir(family)
+    if not folder:
+        return []
+    names = {100: "Thin", 200: "ExtraLight", 300: "Light", 400: "Regular", 500: "Medium",
+             600: "SemiBold", 700: "Bold", 800: "ExtraBold", 900: "Black"}
+    faces = []
+    for entry in sorted(os.listdir(folder)):
+        if not entry.lower().endswith((".ttf", ".otf")):
+            continue
+        match = re.search(r"-(\d{3})(i?)\.(ttf|otf)$", entry, re.I)
+        if match:
+            style = names.get(int(match.group(1)), "Regular") + (" Italic" if match.group(2) else "")
+        else:
+            try:
+                style = ImageFont.truetype(os.path.join(folder, entry), 12).getname()[1] or "Regular"
+            except OSError:
+                continue
+        faces.append((os.path.join(folder, entry), 0, style))
+    return faces
+
+
 @lru_cache(maxsize=None)
 def _font_faces(family: str):
     """[(path, index, style name)] for every face of `family` found on disk."""
+    faces = _app_font_faces(family)
+    if faces:
+        return faces
     stems = _FAMILY_FILES.get(family.lower(), [family])
-    faces = []
     for directory in _FONT_DIRS:
         if not os.path.isdir(directory):
             continue
@@ -419,7 +454,10 @@ def _draw_text(a):
 
 
 def render(snap: dict, scale: float = 1.0, background: bool = True) -> Image.Image:
-    """The whole page as RGBA at `scale` x its pixel size."""
+    """The whole page as RGBA at `scale` x its pixel size. `snap` is one page;
+    a whole multi-page document draws the page that is in view."""
+    if snap.get("pages"):
+        snap = docstore.page_at(snap)
     width = max(1, int(round((snap.get("width") or 1) * scale)))
     height = max(1, int(round((snap.get("height") or 1) * scale)))
     fill = (0, 0, 0, 0)
@@ -481,6 +519,8 @@ def render(snap: dict, scale: float = 1.0, background: bool = True) -> Image.Ima
 def thumbnail_png(snap: dict, max_side: int = 320) -> bytes:
     import io
 
+    if snap.get("pages"):
+        snap = docstore.page_at(snap)
     longest = max(snap.get("width") or 1, snap.get("height") or 1)
     image = render(snap, scale=min(1.0, max_side / longest))
     buffer = io.BytesIO()
