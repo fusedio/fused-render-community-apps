@@ -82,42 +82,64 @@ def _bucket_region(client, bucket, **_):
     return {"bucket": bucket, "region": _resolve_region(client, bucket)}
 
 
+def _parallel(*fns):
+    """Run independent S3 probes concurrently (botocore clients are thread-safe),
+    so a 4-request panel costs one round-trip of latency instead of four."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    with ThreadPoolExecutor(max_workers=len(fns)) as pool:
+        return [f.result() for f in [pool.submit(fn) for fn in fns]]
+
+
+def _code(e):
+    return e.response.get("Error", {}).get("Code")
+
+
 def _bucket_info(client, bucket, **_):
     """Bucket-level properties, each fetched independently — a denial on one
     (common on locked-down buckets) still lets the others through."""
     from botocore.exceptions import ClientError
 
-    out = {"bucket": bucket, "region": _resolve_region(client, bucket)}
+    def region():
+        return _resolve_region(client, bucket)
 
-    try:
-        v = client.get_bucket_versioning(Bucket=bucket)
-        out["versioning"] = {"status": v.get("Status", "Disabled"), "mfa_delete": v.get("MFADelete")}
-    except ClientError as e:
-        out["versioning"] = {"error": e.response.get("Error", {}).get("Code")}
+    def versioning():
+        try:
+            v = client.get_bucket_versioning(Bucket=bucket)
+            return {"status": v.get("Status", "Disabled"), "mfa_delete": v.get("MFADelete")}
+        except ClientError as e:
+            return {"error": _code(e)}
 
-    try:
-        enc = client.get_bucket_encryption(Bucket=bucket)
-        rule = (enc.get("ServerSideEncryptionConfiguration", {}).get("Rules") or [{}])[0]
-        d = rule.get("ApplyServerSideEncryptionByDefault", {})
-        out["encryption"] = {"algorithm": d.get("SSEAlgorithm"), "kms_key": d.get("KMSMasterKeyID"),
-                             "bucket_key": rule.get("BucketKeyEnabled")}
-    except ClientError as e:
-        code = e.response.get("Error", {}).get("Code")
-        out["encryption"] = {"none": True} if code == "ServerSideEncryptionConfigurationNotFoundError" else {"error": code}
+    def encryption():
+        try:
+            enc = client.get_bucket_encryption(Bucket=bucket)
+        except ClientError as e:
+            code = _code(e)
+            return {"none": True} if code == "ServerSideEncryptionConfigurationNotFoundError" else {"error": code}
+        rules = enc.get("ServerSideEncryptionConfiguration", {}).get("Rules")
+        if not rules:            # S3-compatible stores (Wasabi, MinIO) answer 200 with no rules
+            return {"unsupported": True}
+        d = rules[0].get("ApplyServerSideEncryptionByDefault", {})
+        return {"algorithm": d.get("SSEAlgorithm"), "kms_key": d.get("KMSMasterKeyID"),
+                "bucket_key": rules[0].get("BucketKeyEnabled")}
 
-    try:
-        pab = client.get_public_access_block(Bucket=bucket).get("PublicAccessBlockConfiguration", {})
-        out["public_access_block"] = {
-            "block_public_acls": pab.get("BlockPublicAcls"),
-            "ignore_public_acls": pab.get("IgnorePublicAcls"),
-            "block_public_policy": pab.get("BlockPublicPolicy"),
-            "restrict_public_buckets": pab.get("RestrictPublicBuckets"),
+    def pab():
+        try:
+            cfg = client.get_public_access_block(Bucket=bucket).get("PublicAccessBlockConfiguration", {})
+        except ClientError as e:
+            code = _code(e)
+            return {"none": True} if code == "NoSuchPublicAccessBlockConfiguration" else {"error": code}
+        if not cfg:              # same: an empty 200 means the store doesn't implement it
+            return {"unsupported": True}
+        return {
+            "block_public_acls": cfg.get("BlockPublicAcls"),
+            "ignore_public_acls": cfg.get("IgnorePublicAcls"),
+            "block_public_policy": cfg.get("BlockPublicPolicy"),
+            "restrict_public_buckets": cfg.get("RestrictPublicBuckets"),
         }
-    except ClientError as e:
-        code = e.response.get("Error", {}).get("Code")
-        out["public_access_block"] = {"none": True} if code == "NoSuchPublicAccessBlockConfiguration" else {"error": code}
 
-    return out
+    r, v, enc, pb = _parallel(region, versioning, encryption, pab)
+    return {"bucket": bucket, "region": r, "versioning": v, "encryption": enc, "public_access_block": pb}
 
 
 _PUBLIC_URIS = ("http://acs.amazonaws.com/groups/global/AllUsers",
@@ -129,56 +151,59 @@ def _security_scan(client, bucket, **_):
     finding on AccessDenied rather than failing the whole scan."""
     from botocore.exceptions import ClientError
 
-    findings, public = [], False
-
-    def add(level, title, detail=""):
-        findings.append({"level": level, "title": title, "detail": detail})
-
-    try:
-        pab = client.get_public_access_block(Bucket=bucket).get("PublicAccessBlockConfiguration", {})
+    def pab():
+        try:
+            cfg = client.get_public_access_block(Bucket=bucket).get("PublicAccessBlockConfiguration", {})
+        except ClientError as e:
+            code = _code(e)
+            if code == "NoSuchPublicAccessBlockConfiguration":
+                return [("warn", "No Public Access Block", "")]
+            return [("unknown", "Public Access Block: " + str(code), "")]
+        if not cfg:
+            return [("unknown", "Public Access Block not supported by this store", "")]
         flags = ("BlockPublicAcls", "IgnorePublicAcls", "BlockPublicPolicy", "RestrictPublicBuckets")
-        off = [f for f in flags if not pab.get(f)]
+        off = [f for f in flags if not cfg.get(f)]
         if off:
-            add("warn", "Public Access Block incomplete", "Off: " + ", ".join(off))
-        else:
-            add("ok", "Block Public Access fully enabled")
-    except ClientError as e:
-        code = e.response.get("Error", {}).get("Code")
-        add("warn" if code == "NoSuchPublicAccessBlockConfiguration" else "unknown",
-            "No Public Access Block" if code == "NoSuchPublicAccessBlockConfiguration" else "Public Access Block: " + str(code))
+            return [("warn", "Public Access Block incomplete", "Off: " + ", ".join(off))]
+        return [("ok", "Block Public Access fully enabled", "")]
 
-    try:
-        grants = client.get_bucket_acl(Bucket=bucket).get("Grants", [])
+    def acl():
+        try:
+            grants = client.get_bucket_acl(Bucket=bucket).get("Grants", [])
+        except ClientError as e:
+            return [("unknown", "Bucket ACL: " + str(_code(e)), "")]
         pub = [g for g in grants if g.get("Grantee", {}).get("URI") in _PUBLIC_URIS]
         if pub:
-            public = True
             perms = sorted({g.get("Permission") for g in pub})
-            add("high", "Bucket ACL grants public access", "Public grants: " + ", ".join(perms))
-        else:
-            add("ok", "No public ACL grants")
-    except ClientError as e:
-        add("unknown", "Bucket ACL: " + str(e.response.get("Error", {}).get("Code")))
+            return [("high", "Bucket ACL grants public access", "Public grants: " + ", ".join(perms))]
+        return [("ok", "No public ACL grants", "")]
 
-    try:
-        if client.get_bucket_policy_status(Bucket=bucket).get("PolicyStatus", {}).get("IsPublic"):
-            public = True
-            add("high", "Bucket policy makes the bucket public")
-        else:
-            add("ok", "Bucket policy is not public")
-    except ClientError as e:
-        code = e.response.get("Error", {}).get("Code")
-        add("ok" if code == "NoSuchBucketPolicy" else "unknown",
-            "No bucket policy" if code == "NoSuchBucketPolicy" else "Bucket policy status: " + str(code))
+    def policy():
+        try:
+            if client.get_bucket_policy_status(Bucket=bucket).get("PolicyStatus", {}).get("IsPublic"):
+                return [("high", "Bucket policy makes the bucket public", "")]
+            return [("ok", "Bucket policy is not public", "")]
+        except ClientError as e:
+            code = _code(e)
+            if code == "NoSuchBucketPolicy":
+                return [("ok", "No bucket policy", "")]
+            return [("unknown", "Bucket policy status: " + str(code), "")]
 
-    try:
-        client.get_bucket_encryption(Bucket=bucket)
-        add("ok", "Default encryption enabled")
-    except ClientError as e:
-        code = e.response.get("Error", {}).get("Code")
-        add("warn" if code == "ServerSideEncryptionConfigurationNotFoundError" else "unknown",
-            "No default encryption" if code == "ServerSideEncryptionConfigurationNotFoundError" else "Encryption: " + str(code))
+    def encryption():
+        try:
+            enc = client.get_bucket_encryption(Bucket=bucket)
+        except ClientError as e:
+            code = _code(e)
+            if code == "ServerSideEncryptionConfigurationNotFoundError":
+                return [("warn", "No default encryption", "")]
+            return [("unknown", "Encryption: " + str(code), "")]
+        if not enc.get("ServerSideEncryptionConfiguration", {}).get("Rules"):
+            return [("unknown", "Default encryption not reported by this store", "")]
+        return [("ok", "Default encryption enabled", "")]
 
-    return {"bucket": bucket, "public": public, "findings": findings}
+    findings = [{"level": lvl, "title": t, "detail": d}
+                for part in _parallel(pab, acl, policy, encryption) for lvl, t, d in part]
+    return {"bucket": bucket, "public": any(f["level"] == "high" for f in findings), "findings": findings}
 
 
 def _set_versioning(client, bucket, status, **_):

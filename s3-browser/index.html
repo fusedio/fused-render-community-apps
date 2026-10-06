@@ -488,7 +488,13 @@ function call(action, extra = {}, conn = connParams(), opts = {}) {
     (err) => { if (stale()) return new Promise(() => {}); throw err; }
   );
 }
-async function callPreview(extra = {}) { return fused.runPython("./preview.py", { ...connParams(), ...extra }); }
+// Hand preview.py the listing's ETag and size, so a cached object (or one too
+// large to auto-preview) is answered without any S3 request.
+async function callPreview(extra = {}) {
+  const f = (LAST && LAST.files || []).find((x) => x.key === extra.key);
+  const hint = f ? { etag: f.etag || "", size: String(f.size) } : {};
+  return fused.runPython("./preview.py", { ...connParams(), ...hint, ...extra });
+}
 function embedUrl(localPath) {
   return window.location.origin + "/explorer/embed/" +
     localPath.replace(/^[/\\]+/, "").split(/[/\\]/).filter(Boolean).map(encodeURIComponent).join("/");
@@ -1168,11 +1174,12 @@ function renderBucketInfo(res) {
     if (!anon) { const next = ver.status === "Enabled" ? "Suspended" : "Enabled"; verLine += ` <button class="tbtn" id="verToggle" data-next="${next}" style="padding:3px 9px;">${ver.status === "Enabled" ? "Suspend" : "Enable"}</button>`; }
   }
   const enc = res.encryption || {};
-  const encLine = enc.error ? `<span class="bad">${esc(enc.error)}</span>` : enc.none ? "None (no default SSE)" : `${esc(enc.algorithm || "?")}${enc.kms_key ? " · " + esc(enc.kms_key) : ""}${enc.bucket_key ? " · bucket key" : ""}`;
+  const encLine = enc.error ? `<span class="bad">${esc(enc.error)}</span>` : enc.none ? "None (no default SSE)" : enc.unsupported ? "Not reported by this store" : `${esc(enc.algorithm || "?")}${enc.kms_key ? " · " + esc(enc.kms_key) : ""}${enc.bucket_key ? " · bucket key" : ""}`;
   const pab = res.public_access_block || {};
   let pabLine;
   if (pab.error) pabLine = `<span class="bad">${esc(pab.error)}</span>`;
   else if (pab.none) pabLine = "Not configured";
+  else if (pab.unsupported) pabLine = "Not supported by this store";
   else pabLine = [["block_public_acls", "Block public ACLs"], ["ignore_public_acls", "Ignore public ACLs"], ["block_public_policy", "Block public policy"], ["restrict_public_buckets", "Restrict public buckets"]].map(([k, lbl]) => `${lbl}: <b>${pab[k] ? "on" : "off"}</b>`).join("<br>");
   b.innerHTML = `<dl class="props">
     <dt>Region</dt><dd>${esc(res.region || "—")}</dd>
