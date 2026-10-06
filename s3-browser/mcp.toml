@@ -1,0 +1,146 @@
+# MCP tools for the S3 Browser, served by `fused app serve <this folder>`.
+# Each wraps the page's own backend (s3.py / preview.py / download.py); see tools.py.
+
+[[tool]]
+name = "list_accounts"
+description = "List saved S3 Browser connections (ids, labels, auth type, region; no secrets) and local AWS profiles. Pass a connection's id or label as `account` to the other tools."
+file = "tools.py"
+entrypoint = "list_accounts"
+
+[[tool]]
+name = "list_buckets"
+description = "List the S3 buckets visible to a connection."
+file = "tools.py"
+entrypoint = "list_buckets"
+
+[[tool]]
+name = "bucket_info"
+description = "Bucket region, versioning status, default encryption and public-access-block settings."
+file = "tools.py"
+entrypoint = "bucket_info"
+
+[[tool]]
+name = "security_scan"
+description = "Scan a bucket for public exposure: public ACL grants, public bucket policy, incomplete Block Public Access, missing default encryption."
+file = "tools.py"
+entrypoint = "security_scan"
+
+[[tool]]
+name = "set_versioning"
+description = "Enable or suspend versioning on a bucket (status: Enabled | Suspended)."
+file = "tools.py"
+entrypoint = "set_versioning"
+
+[[tool]]
+name = "get_bucket_config"
+description = "Read a bucket's policy, CORS or lifecycle configuration (config_type: policy | cors | lifecycle)."
+file = "tools.py"
+entrypoint = "get_bucket_config"
+
+[[tool]]
+name = "put_bucket_config"
+description = "Replace a bucket's policy (JSON policy document), CORS (JSON array of CORSRules) or lifecycle (JSON array of Rules) configuration."
+file = "tools.py"
+entrypoint = "put_bucket_config"
+
+[[tool]]
+name = "delete_bucket_config"
+description = "Delete a bucket's policy, CORS or lifecycle configuration."
+file = "tools.py"
+entrypoint = "delete_bucket_config"
+
+[[tool]]
+name = "list_objects"
+description = "List one folder level of a bucket: sub-folders and objects (size, modified, storage class) under a prefix, paginated with a continuation token. Region is auto-resolved."
+file = "tools.py"
+entrypoint = "list_objects"
+
+[[tool]]
+name = "list_keys"
+description = "List every object key under a prefix recursively (capped at 5000)."
+file = "tools.py"
+entrypoint = "list_keys"
+
+[[tool]]
+name = "head_object"
+description = "Get an object's properties: size, content type, last modified, ETag, storage class, encryption, user metadata."
+file = "tools.py"
+entrypoint = "head_object"
+
+[[tool]]
+name = "read_object"
+description = "Download an object to a local cache file and return its path; text objects up to 256 KB are also returned inline. Use to read CSV, JSON, text, or hand a Parquet/image path to other tools."
+file = "tools.py"
+entrypoint = "read_object"
+
+[[tool]]
+name = "upload_file"
+description = "Upload a local file to s3://bucket/key (multipart above 64 MB)."
+file = "tools.py"
+entrypoint = "upload_file"
+
+[[tool]]
+name = "put_text"
+description = "Write a small text object to s3://bucket/key (overwrites)."
+file = "tools.py"
+entrypoint = "put_text"
+
+[[tool]]
+name = "download"
+description = "Download objects (keys) and whole folders (prefixes, recursive) to a local directory, keeping key paths. Default ~/Downloads."
+file = "tools.py"
+entrypoint = "download"
+
+[[tool]]
+name = "create_folder"
+description = "Create an empty folder in a bucket."
+file = "tools.py"
+entrypoint = "create_folder"
+
+[[tool]]
+name = "rename_object"
+description = "Rename or move an object within a bucket (refuses to overwrite)."
+file = "tools.py"
+entrypoint = "rename_object"
+
+[[tool]]
+name = "delete_objects"
+description = "Permanently delete objects by key (up to 1000 per call)."
+file = "tools.py"
+entrypoint = "delete_objects"
+
+[[tool]]
+name = "change_storage_class"
+description = "Change an object's storage class (STANDARD, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, GLACIER_IR, GLACIER, DEEP_ARCHIVE)."
+file = "tools.py"
+entrypoint = "change_storage_class"
+
+[[tool]]
+name = "presign_url"
+description = "Create a shareable (presigned) URL for an object, valid for `expires` seconds; method put gives an upload URL."
+file = "tools.py"
+entrypoint = "presign_url"
+
+[[tool]]
+name = "get_tags"
+description = "Get an object's tags."
+file = "tools.py"
+entrypoint = "get_tags"
+
+[[tool]]
+name = "set_tags"
+description = "Replace an object's tags with a {name: value} map."
+file = "tools.py"
+entrypoint = "set_tags"
+
+[[tool]]
+name = "list_versions"
+description = "List an object's versions and delete markers."
+file = "tools.py"
+entrypoint = "list_versions"
+
+[[tool]]
+name = "restore_version"
+description = "Restore an older version of an object by copying it back as the current version."
+file = "tools.py"
+entrypoint = "restore_version"
