@@ -563,6 +563,12 @@ def main(
                     return ""
             elif "=3D" in txt or re.search(r"=\r?\n", txt):
                 txt = quopri.decodestring(txt.encode("utf-8", "replace")).decode("utf-8", "replace")
+            # Whole comments first: Outlook's <!--[if gte mso 9]><xml>…
+            # <o:PixelsPerInch>96</o:PixelsPerInch>…<![endif]--> otherwise lost
+            # only its opener, and every such newsletter previewed as "96".
+            txt = re.sub(r"(?s)<!--.*?-->", " ", txt)
+            txt = re.sub(r"(?s)<!--.*", " ", txt)   # still open where the fetch stopped
+            is_html = re.search(r"<[a-zA-Z!/][^<>]*>", txt) is not None
             txt = re.sub(r"(?is)<(script|style)[^>]*>.*?</\1>", " ", txt)
             # The fetch is capped at 900 bytes, so a <style> block is usually
             # still OPEN when the text ends — without this, newsletter previews
@@ -570,6 +576,10 @@ def main(
             txt = re.sub(r"(?is)<(script|style)[^>]*>.*", " ", txt)
             txt = re.sub(r"(?is)<!(doctype|--).*?>", " ", txt)
             txt = re.sub(r"<[^>]*>", " ", txt)
+            # A tag cut off by the fetch cap — only in HTML, and only where the
+            # "<" opens a tag: plain text like "a < b" keeps the rest of its line.
+            if is_html:
+                txt = re.sub(r"<[a-zA-Z!/][^<>]*$", " ", txt)
             for ent, ch in (("&nbsp;", " "), ("&amp;", "&"), ("&lt;", "<"),
                             ("&gt;", ">"), ("&quot;", '"'), ("&#39;", "'")):
                 txt = txt.replace(ent, ch)
