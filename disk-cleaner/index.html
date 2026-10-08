@@ -1,0 +1,895 @@
+<!DOCTYPE html>
+<html data-fused-theme="shell">
+<head>
+<meta charset="utf-8" />
+<meta name="fused-app" />
+<meta name="fused-api-version" content="1" />
+<title>Disk Cleaner</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0d0d0d;
+    --surface: #1a1a19;
+    --text: #ffffff;
+    --text-2: #c3c2b7;
+    --muted: #898781;
+    --line: #2c2c2a;
+    --baseline: #383835;
+    --ring: rgba(255,255,255,0.10);
+    --fill: #3987e5;        /* blue 400 — sequential hue, magnitude */
+    --fill-soft: #184f95;   /* blue 600 — darkest step still ≥2:1 on dark */
+    /* Text steps for the share% column: same one-hue ramp as the bar fill,
+       going lighter (more contrast on a dark surface) as the share grows. */
+    --share-low: var(--muted);
+    --share-mid: #5598e7;   /* blue 350 */
+    --share-high: #9ec5f4;  /* blue 200 */
+    /* Categorical slots (identity, fixed order) for the folders breakdown —
+       a validated-adjacent-safe prefix of the 8-slot reference palette. */
+    --cat-1: #3987e5; --cat-2: #d95926; --cat-3: #199e70;
+    --cat-4: #c98500; --cat-5: #d55181; --cat-6: #008300;
+    --cat-other: var(--baseline);
+    --good: #0ca30c;
+    --warning: #fab219;
+    --serious: #ec835a;
+    --critical: #d03b3b;
+    --hover: rgba(255,255,255,0.05);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --bg: #f9f9f7;
+    --surface: #fcfcfb;
+    --text: #0b0b0b;
+    --text-2: #52514e;
+    --muted: #898781;
+    --line: #e1e0d9;
+    --baseline: #c3c2b7;
+    --ring: rgba(11,11,11,0.10);
+    --fill: #2a78d6;        /* blue 450 */
+    --fill-soft: #86b6ef;   /* blue 250 — the lightest step that still clears
+                               2:1 on a light surface (ordinal ramp floor) */
+    /* Text steps for the share% column: same one-hue ramp as the bar fill,
+       going darker (more contrast on a light surface) as the share grows. */
+    --share-low: var(--muted);
+    --share-mid: #256abf;   /* blue 500 */
+    --share-high: #184f95;  /* blue 600 */
+    /* Categorical slots (identity, fixed order) for the folders breakdown —
+       a validated-adjacent-safe prefix of the 8-slot reference palette. */
+    --cat-1: #2a78d6; --cat-2: #eb6834; --cat-3: #1baf7a;
+    --cat-4: #eda100; --cat-5: #e87ba4; --cat-6: #008300;
+    --cat-other: var(--baseline);
+    --good: #0ca30c;
+    --warning: #fab219;
+    --serious: #ec835a;
+    --critical: #d03b3b;
+    --hover: rgba(11,11,11,0.04);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 13px;
+    color: var(--text);
+    background: var(--bg);
+  }
+  main { max-width: 940px; margin: 0 auto; padding: 28px 20px 64px; }
+
+  header { display: flex; align-items: baseline; gap: 12px; margin-bottom: 20px; }
+  h1 { font-size: 17px; font-weight: 600; margin: 0; }
+  .sub { color: var(--muted); font-size: 12px; }
+
+  /* ---- tabs ---- */
+  nav { display: flex; gap: 2px; border-bottom: 1px solid var(--line); margin-bottom: 22px; }
+  nav button {
+    appearance: none; background: none; border: 0; border-bottom: 2px solid transparent;
+    color: var(--text-2); font: inherit; padding: 8px 12px; cursor: pointer; margin-bottom: -1px;
+  }
+  nav button:hover { color: var(--text); background: var(--hover); }
+  nav button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--fill); }
+
+  /* ---- cards ---- */
+  .card {
+    background: var(--surface); border: 1px solid var(--ring); border-radius: 8px;
+    padding: 16px 18px; margin-bottom: 16px;
+  }
+  .card h2 { font-size: 13px; font-weight: 600; margin: 0 0 2px; }
+  .card .hint { color: var(--muted); font-size: 12px; margin: 0 0 14px; }
+  .card.loading { display: flex; align-items: center; gap: 10px; color: var(--text-2); }
+
+  /* ---- spinner ---- */
+  .spinner {
+    width: 15px; height: 15px; border-radius: 50%; flex: none;
+    border: 2px solid var(--baseline); border-top-color: var(--fill);
+    animation: spin .7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ---- volume gauge ---- */
+  .tiles { display: flex; flex-wrap: wrap; gap: 28px; align-items: flex-end; margin-bottom: 16px; }
+  .tile .label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+  .tile .value { font-size: 26px; font-weight: 600; line-height: 1.15; }
+  .tile .value.small { font-size: 17px; font-weight: 500; }
+  .tile .value .unit { font-size: 13px; color: var(--text-2); font-weight: 400; margin-left: 2px; }
+
+  .gauge { height: 12px; border-radius: 4px; background: var(--fill-soft); overflow: hidden; display: flex; }
+  .gauge > span { background: var(--fill); border-radius: 4px 0 0 4px; }
+  .gauge-legend {
+    display: flex; gap: 18px; margin-top: 8px; color: var(--text-2); font-size: 12px;
+  }
+  .gauge-legend span { white-space: nowrap; }
+  .swatch { width: 9px; height: 9px; border-radius: 2px; display: inline-block; margin-right: 6px; }
+
+  /* ---- ranked bar rows ---- */
+  .rows { border-top: 1px solid var(--line); }
+  .row {
+    display: grid; grid-template-columns: 22px 1fr 96px 68px 46px;
+    align-items: center; gap: 10px; padding: 7px 6px;
+    border-bottom: 1px solid var(--line);
+  }
+  .row:hover { background: var(--hover); }
+  .row .icon { color: var(--muted); text-align: center; font-size: 12px; }
+  .row .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row .name .meta { color: var(--muted); font-size: 11px; margin-left: 8px; }
+  .row .bar { height: 8px; background: var(--baseline); border-radius: 4px; overflow: hidden; }
+  .row .bar > span { display: block; height: 100%; background: var(--fill); border-radius: 4px; }
+  .row .size, .row .share {
+    text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap;
+  }
+  .row .size { color: var(--text-2); }
+  .row .share { font-weight: 600; }
+  .row.dim .name, .row.dim .size, .row.dim .share { color: var(--muted); font-weight: 400; }
+
+  /* ---- segmented folder breakdown ---- */
+  .segbar {
+    height: 30px; border-radius: 6px; overflow: hidden; display: flex; background: var(--baseline);
+  }
+  .segbar > span { display: block; height: 100%; }
+  .segbar > span:not(:last-child) { border-right: 2px solid var(--surface); }
+  .seg-legend { margin-top: 12px; }
+  .seg-row {
+    display: grid; grid-template-columns: 12px 1fr 76px 44px;
+    align-items: center; gap: 10px; padding: 5px 2px;
+  }
+  .seg-row .swatch { width: 10px; height: 10px; border-radius: 3px; margin: 0; }
+  .seg-row .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .seg-row .size, .seg-row .share {
+    text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--text-2);
+  }
+  .seg-row.other .name, .seg-row.other .size, .seg-row.other .share { color: var(--muted); }
+
+  /* ---- cleanup list ---- */
+  .group-title {
+    font-size: 11px; text-transform: uppercase; letter-spacing: .04em;
+    color: var(--muted); margin: 18px 0 6px;
+  }
+  .crow {
+    display: grid; grid-template-columns: 20px 1fr 92px 82px;
+    align-items: center; gap: 10px; padding: 8px 6px; border-bottom: 1px solid var(--line);
+  }
+  .crow:hover { background: var(--hover); }
+  .crow label { display: contents; cursor: pointer; }
+  .crow input { margin: 0; accent-color: var(--fill); }
+  .crow .name { min-width: 0; }
+  .crow .size { text-align: right; font-variant-numeric: tabular-nums; color: var(--text-2); }
+  .crow .desc {
+    color: var(--muted); font-size: 11.5px; margin-top: 1px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .crow.missing { opacity: .45; }
+  .risk {
+    display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--text-2);
+    margin-left: 8px; white-space: nowrap;
+  }
+  .risk .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+
+  /* ---- action bar ---- */
+  .actions {
+    position: sticky; bottom: 0; margin-top: 18px; padding: 12px 14px;
+    background: var(--surface); border: 1px solid var(--ring); border-radius: 8px;
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  }
+  .actions .selected { font-weight: 600; }
+  .spacer { flex: 1; }
+  .action-info {
+    position: relative; color: var(--muted); font-size: 15px; line-height: 1;
+    cursor: help; outline: none;
+  }
+  .action-info:hover, .action-info:focus-visible { color: var(--fill); }
+  .action-info .tip {
+    position: absolute; bottom: calc(100% + 10px); right: -8px; width: 280px;
+    padding: 9px 11px; border-radius: 6px; border: 1px solid var(--ring);
+    background: var(--surface); color: var(--text-2); box-shadow: 0 6px 20px rgba(0,0,0,.25);
+    font-size: 11.5px; line-height: 1.45; text-align: left;
+    opacity: 0; visibility: hidden; transition: opacity .12s; pointer-events: none; z-index: 5;
+  }
+  .action-info:hover .tip, .action-info:focus-visible .tip { opacity: 1; visibility: visible; }
+  .action-info .tip strong { color: var(--text); font-weight: 600; }
+  button.btn {
+    appearance: none; font: inherit; padding: 6px 13px; border-radius: 6px; cursor: pointer;
+    border: 1px solid var(--baseline); background: transparent; color: var(--text);
+  }
+  button.btn:hover:not(:disabled) { background: var(--hover); }
+  button.btn.primary { background: var(--fill); border-color: var(--fill); color: #fff; }
+  button.btn.primary:hover:not(:disabled) { filter: brightness(1.08); background: var(--fill); }
+  button.btn.danger { border-color: var(--critical); color: var(--critical); }
+  button.btn:disabled { opacity: .45; cursor: default; }
+  .link {
+    appearance: none; border: 0; background: none; color: var(--fill);
+    font: inherit; cursor: pointer; padding: 0;
+  }
+
+  .note { color: var(--muted); font-size: 11.5px; margin-top: 10px; }
+  .banner {
+    border: 1px solid var(--ring); border-left: 3px solid var(--fill);
+    background: var(--surface); border-radius: 6px; padding: 10px 12px; margin-bottom: 14px;
+    color: var(--text-2); font-size: 12px;
+  }
+  .banner.error { border-left-color: var(--critical); }
+  .banner.done { border-left-color: var(--good); }
+  .banner strong { color: var(--text); }
+  code {
+    font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11.5px; color: var(--text-2);
+  }
+  table.data { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 6px; }
+  table.data th, table.data td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--line); }
+  table.data th { color: var(--muted); font-weight: 500; }
+  table.data td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  details summary { cursor: pointer; color: var(--muted); font-size: 12px; margin-top: 12px; }
+
+  /* ---- confirm modal (native confirm() is blocked inside the sandboxed
+     preview iframe, so this replaces it) ---- */
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+    display: flex; align-items: center; justify-content: center; padding: 24px; z-index: 100;
+  }
+  .modal-overlay[hidden] { display: none; }
+  .modal {
+    background: var(--surface); border: 1px solid var(--ring); border-radius: 10px;
+    max-width: 480px; width: 100%; padding: 18px 20px; max-height: 80vh; overflow: auto;
+  }
+  .modal h3 { margin: 0 0 10px; font-size: 14px; }
+  .modal pre {
+    font-family: inherit; font-size: 12.5px; color: var(--text-2); white-space: pre-wrap;
+    margin: 0 0 16px;
+  }
+  .modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+  /* ---- progress popover ---- */
+  .progress-track {
+    height: 8px; border-radius: 4px; background: var(--baseline); overflow: hidden; margin: 4px 0 10px;
+  }
+  .progress-fill {
+    display: block; height: 100%; background: var(--fill); border-radius: 4px;
+    transition: width .25s ease; width: 0%;
+  }
+  .progress-detail {
+    color: var(--text-2); font-size: 12px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .progress-hint { color: var(--text-2); font-size: 12px; margin: 12px 0 16px; }
+</style>
+</head>
+<body>
+<div class="modal-overlay" id="confirmOverlay" hidden>
+  <div class="modal">
+    <h3 id="confirmTitle"></h3>
+    <pre id="confirmBody"></pre>
+    <div class="modal-actions">
+      <button class="btn" id="confirmCancel">Cancel</button>
+      <button class="btn danger" id="confirmOk"></button>
+    </div>
+  </div>
+</div>
+<div class="modal-overlay" id="progressOverlay" hidden>
+  <div class="modal">
+    <h3 id="progressTitle"></h3>
+    <div class="progress-track"><span class="progress-fill" id="progressFill"></span></div>
+    <div class="progress-detail" id="progressDetail"></div>
+    <p class="progress-hint">Runs in the background — you can leave this page. Progress stays in the activity panel.</p>
+    <div class="modal-actions">
+      <button class="btn" id="progressCancel">Stop</button>
+      <button class="btn primary" id="progressHide">Keep running in background</button>
+    </div>
+  </div>
+</div>
+<main>
+  <header>
+    <h1>Disk Cleaner</h1>
+    <span class="sub" id="subtitle"></span>
+  </header>
+
+  <nav id="tabs" role="tablist">
+    <button role="tab" data-tab="overview">Overview</button>
+    <button role="tab" data-tab="clean">Cleanup</button>
+  </nav>
+
+  <section id="panel">Loading…</section>
+</main>
+
+<script>
+  const RISK = {
+    safe:     { color: "var(--good)",     label: "Safe" },
+    moderate: { color: "var(--warning)",  label: "Rebuilds" },
+    review:   { color: "var(--serious)",  label: "Review" },
+  };
+
+  const panel = document.getElementById("panel");
+  const subtitle = document.getElementById("subtitle");
+
+  // ---- state (params are the state) ---------------------------------------
+  const P = {
+    tab: () => fused.params.get("tab") || "overview",
+    sel: () => (fused.params.get("sel") || "").split(",").filter(Boolean),
+  };
+  const setParam = (k, v) => fused.params.set(k, String(v));
+
+  // ---- formatting ---------------------------------------------------------
+  function bytes(n) {
+    if (!n) return "0 B";
+    const units = ["B", "KB", "MB", "GB", "TB"];
+    let i = 0, v = n;
+    while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+    return (v >= 100 || i === 0 ? Math.round(v) : v.toFixed(1)) + " " + units[i];
+  }
+  function bytesParts(n) {
+    const s = bytes(n).split(" ");
+    return { value: s[0], unit: s[1] };
+  }
+  function ago(seconds) {
+    if (seconds < 60) return "just now";
+    if (seconds < 3600) return Math.round(seconds / 60) + " min ago";
+    return Math.round(seconds / 3600) + " h ago";
+  }
+  function esc(s) {
+    return String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  }
+
+  // window.confirm() is blocked inside the sandboxed preview iframe (it
+  // silently returns false instead of showing a dialog, with no error) — an
+  // in-page modal is the only reliable way to ask before something destructive.
+  function showConfirm(title, body, okLabel) {
+    const overlay = document.getElementById("confirmOverlay");
+    const okBtn = document.getElementById("confirmOk");
+    const cancelBtn = document.getElementById("confirmCancel");
+    document.getElementById("confirmTitle").textContent = title;
+    document.getElementById("confirmBody").textContent = body;
+    okBtn.textContent = okLabel;
+    overlay.hidden = false;
+    return new Promise(resolve => {
+      function done(result) {
+        overlay.hidden = true;
+        okBtn.removeEventListener("click", onOk);
+        cancelBtn.removeEventListener("click", onCancel);
+        overlay.removeEventListener("click", onOverlay);
+        resolve(result);
+      }
+      function onOk() { done(true); }
+      function onCancel() { done(false); }
+      function onOverlay(e) { if (e.target === overlay) done(false); }
+      okBtn.addEventListener("click", onOk);
+      cancelBtn.addEventListener("click", onCancel);
+      overlay.addEventListener("click", onOverlay);
+    });
+  }
+
+  // A determinate progress popover for the background clean job — sits over
+  // the (still-visible) cleanup list. "Keep running" only hides it; "Stop"
+  // asks the worker to stop between items.
+  function showProgress(title) {
+    const stop = document.getElementById("progressCancel");
+    stop.disabled = false;
+    stop.textContent = "Stop";
+    document.getElementById("progressTitle").textContent = title;
+    document.getElementById("progressFill").style.width = "0%";
+    document.getElementById("progressDetail").textContent = "";
+    document.getElementById("progressOverlay").hidden = false;
+  }
+  function updateProgress(pct, detail) {
+    document.getElementById("progressFill").style.width = Math.max(0, Math.min(100, pct)) + "%";
+    document.getElementById("progressDetail").textContent = detail;
+  }
+  function hideProgress() {
+    document.getElementById("progressOverlay").hidden = true;
+  }
+
+  function loadingCard(text) {
+    return `<div class="card loading"><span class="spinner"></span>${esc(text)}</div>`;
+  }
+
+  function bigNumber(label, n, opts) {
+    const p = bytesParts(n);
+    return `<div class="tile">
+      <div class="label">${esc(label)}</div>
+      <div class="value${opts && opts.small ? " small" : ""}">${p.value}<span class="unit">${p.unit}</span></div>
+    </div>`;
+  }
+
+  function gauge(volume) {
+    const pct = volume.percent_used;
+    return `<div class="gauge" role="img"
+        aria-label="${pct}% of the volume is used, ${bytes(volume.free)} free">
+        <span style="width:${pct}%"></span></div>
+      <div class="gauge-legend">
+        <span><i class="swatch" style="background:var(--fill)"></i>Used ${bytes(volume.used)} · ${pct}%</span>
+        <span><i class="swatch" style="background:var(--fill-soft)"></i>Free ${bytes(volume.free)}</span>
+      </div>`;
+  }
+
+  // opts.total is the denominator for the share column — pass the whole
+  // dataset's total when `items` is only the top slice, or the shares lie.
+  function barRows(items, opts) {
+    const max = Math.max(1, ...items.map(i => i.size));
+    const total = opts.total || items.reduce((a, i) => a + i.size, 0) || 1;
+    return `<div class="rows">` + items.map((it) => {
+      const share = Math.round(it.size / total * 100);
+      const meta = it.files ? it.files.toLocaleString() + " files" : "empty";
+      return `<div class="row ${it.size ? "" : "dim"}" title="${esc(it.path)}">
+          <span class="icon">▸</span>
+          <span class="name">${esc(it.name)}<span class="meta">${meta}</span></span>
+          <span class="bar"><span style="width:${Math.max(2, it.size / max * 100)}%"></span></span>
+          <span class="size">${bytes(it.size)}</span>
+          <span class="share" style="color:${shareColor(share)}">${share}%</span>
+        </div>`;
+    }).join("") + `</div>`;
+  }
+
+  // Known-size items first (biggest first), pending ones after (alphabetical)
+  // — so a folder settles into rank as soon as its size lands instead of
+  // jumping around the list on every update.
+  function sortChildren(items) {
+    return [...items].sort((a, b) => {
+      if (a.pending && b.pending) return a.name.localeCompare(b.name);
+      if (a.pending) return 1;
+      if (b.pending) return -1;
+      return b.size - a.size;
+    });
+  }
+
+  // Lists `path` instantly via scan.py, then sizes each pending directory
+  // with its own concurrent call to size_dir.py — capped so a folder with
+  // dozens of children doesn't spawn dozens of subprocesses at once — so
+  // the Overview's first paint happens in well under a second and the rest
+  // fill in as they finish, instead of blocking on the slowest folder in
+  // the whole home directory.
+  async function scanProgressive(path, onUpdate, opts) {
+    const refresh = !!(opts && opts.refresh);
+    const frame = await fused.runPython("./scan.py", { path });
+    onUpdate(frame, false);
+
+    const pending = frame.children.filter(c => c.pending);
+    const CONCURRENCY = 6;
+    let cursor = 0;
+    async function worker() {
+      while (cursor < pending.length) {
+        const child = pending[cursor++];
+        try {
+          const sized = await fused.runPython("./size_dir.py",
+            { path: child.path, refresh: String(refresh) }, { key: child.path });
+          Object.assign(child, {
+            size: sized.size, files: sized.files, truncated: sized.truncated, pending: false,
+          });
+        } catch (err) {
+          Object.assign(child, { size: 0, files: 0, truncated: false, pending: false, error: true });
+        }
+        onUpdate(frame, false);
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, pending.length) }, worker));
+    onUpdate(frame, true);
+    return frame;
+  }
+
+  // Same one-hue ramp as the bar fill — a bigger share of the total reads as
+  // a stronger step of that ramp, never a different hue or a status color.
+  function shareColor(share) {
+    if (share >= 25) return "var(--share-high)";
+    if (share >= 8) return "var(--share-mid)";
+    return "var(--share-low)";
+  }
+
+  // A single segmented bar + legend: the top few known-size children get
+  // their own categorical slot (fixed order, never reassigned by rank
+  // shuffles), everything else folds into a muted "Other" segment. Pending
+  // (not-yet-sized) children are excluded until they resolve, at which point
+  // they naturally compete for a slot or fall into Other.
+  const CAT_SLOTS = 6;
+  function segmentedFolders(children) {
+    const known = sortChildren(children).filter(c => !c.pending);
+    const shown = known.slice(0, CAT_SLOTS);
+    const totalKnown = children.reduce((a, c) => a + (c.size || 0), 0);
+    const otherSize = Math.max(0, totalKnown - shown.reduce((a, c) => a + c.size, 0));
+
+    const segs = shown.map((c, i) => ({ name: c.name, size: c.size, color: `var(--cat-${i + 1})` }));
+    if (otherSize > 0) segs.push({ name: "Other", size: otherSize, color: "var(--cat-other)" });
+    if (!segs.length) return `<p class="hint">Nothing sized yet.</p>`;
+
+    const denom = totalKnown || 1;
+    const bar = segs.map(s =>
+      `<span style="width:${Math.max(s.size / denom * 100, 0.4)}%;background:${s.color}"
+         title="${esc(s.name)} — ${bytes(s.size)}"></span>`
+    ).join("");
+    const legend = segs.map(s => {
+      const share = Math.round(s.size / denom * 100);
+      return `<div class="seg-row ${s.name === "Other" ? "other" : ""}">
+        <i class="swatch" style="background:${s.color}"></i>
+        <span class="name">${esc(s.name)}</span>
+        <span class="size">${bytes(s.size)}</span>
+        <span class="share">${share}%</span>
+      </div>`;
+    }).join("");
+    return `<div class="segbar">${bar}</div><div class="seg-legend">${legend}</div>`;
+  }
+
+  // ---- overview ----------------------------------------------------------
+  // The volume + folders card paints as soon as scan.py's instant listing
+  // lands, then fills in sizes as size_dir.py calls resolve. The caches card
+  // is independent (a separate, still-blocking call) and shows its own
+  // loading state until it resolves, so a slow cache scan never holds up the
+  // now-fast folder view.
+  async function renderOverview() {
+    panel.innerHTML = `<div class="card">Listing your home directory…</div>`;
+    let frame = null;
+    let caches = null;
+
+    function paint() {
+      const reclaimable = caches ? bytes(caches.reclaimable) : "…";
+      const volCard = frame ? `
+        <div class="card">
+          <h2>Volume</h2>
+          <p class="hint">${esc(frame.path)}</p>
+          <div class="tiles">
+            ${bigNumber("Free", frame.volume.free)}
+            ${bigNumber("Used", frame.volume.used, { small: true })}
+            ${bigNumber("Capacity", frame.volume.total, { small: true })}
+            <div class="tile"><div class="label">Reclaimable now</div>
+              <div class="value small">${reclaimable}</div></div>
+          </div>
+          ${gauge(frame.volume)}
+          ${caches && caches.reclaimable > 0 ? `<p class="note">Clearing the safe caches would free about
+            <strong>${bytes(caches.reclaimable)}</strong>. <button class="link" data-tab-go="clean">Review cleanup →</button></p>` : ""}
+        </div>` : `<div class="card">Loading volume info…</div>`;
+
+      let foldersCard = `<div class="card">Listing your home directory…</div>`;
+      if (frame) {
+        const totalKnown = frame.children.reduce((a, c) => a + (c.size || 0), 0);
+        const pendingCount = frame.children.filter(c => c.pending).length;
+        foldersCard = `
+          <div class="card">
+            <h2>Biggest folders in your home directory</h2>
+            <p class="hint">Recursive size, ${bytes(totalKnown)} so far${pendingCount ? ` · sizing ${pendingCount} more…` : ""}.</p>
+            ${segmentedFolders(frame.children)}
+          </div>`;
+      }
+
+      const cachesCard = caches ? `
+        <div class="card">
+          <h2>Biggest caches</h2>
+          <p class="hint">${bytes(caches.total)} across ${caches.entries.filter(e => e.exists).length} locations</p>
+          ${barRows(caches.entries.filter(e => e.exists && e.size > 0).slice(0, 6).map(e => ({ ...e, is_dir: true })),
+            { navigate: false, total: caches.total })}
+          <p class="note"><button class="link" data-tab-go="clean">Select what to clean →</button></p>
+        </div>` : loadingCard("Measuring caches…");
+
+      panel.innerHTML = volCard + foldersCard + cachesCard;
+      if (frame) subtitle.textContent = frame.path;
+    }
+
+    await Promise.all([
+      scanProgressive("~", f => { frame = f; paint(); }),
+      fused.runPython("./caches.py", {}).then(c => { caches = c; paint(); }),
+    ]);
+  }
+
+  // ---- cleanup -----------------------------------------------------------
+  // A full rebuild replaces every checkbox's DOM node — do that only when
+  // the underlying data changes (first visit, Rescan, after a clean). A
+  // checkbox click only changes `sel`, so those re-renders patch the
+  // existing checkboxes/action bar in place instead, which is what actually
+  // stops the whole list flickering on every click.
+  let lastResult = null;
+  let cleanData = null;
+
+  function selectionTotals(data) {
+    const sel = new Set(P.sel());
+    const selEntries = data.entries.filter(e => sel.has(e.id) && e.exists);
+    // A nested entry's bytes already live inside its ancestor's size — if
+    // both ended up selected, only count them once so the total shown here
+    // matches what actually gets freed.
+    const selBytes = selEntries
+      .filter(e => !(e.nested_under && sel.has(e.nested_under)))
+      .reduce((a, e) => a + e.size, 0);
+    return { sel, selEntries, selBytes };
+  }
+
+  function buildCleanDom(data) {
+    const byId = {};
+    data.entries.forEach(e => { byId[e.id] = e; });
+    const groups = {};
+    data.entries.forEach(e => { (groups[e.group] = groups[e.group] || []).push(e); });
+    const { sel, selEntries, selBytes } = selectionTotals(data);
+
+    const groupHtml = Object.keys(groups).map(g => {
+      const rows = groups[g].map(e => {
+        const risk = RISK[e.risk];
+        const nestNote = e.nested_under && byId[e.nested_under]
+          ? ` · counted inside “${esc(byId[e.nested_under].name)}”` : "";
+        return `<div class="crow ${e.exists ? "" : "missing"}">
+          <label>
+            <input type="checkbox" data-id="${e.id}" ${sel.has(e.id) ? "checked" : ""}
+                   ${e.exists && e.size ? "" : "disabled"}>
+            <span class="name">
+              <span>${esc(e.name)}<span class="risk"><i class="dot" style="background:${risk.color}"></i>${risk.label}</span></span>
+              <div class="desc">${esc(e.desc)} · <code>${esc(e.path)}</code>${nestNote}</div>
+            </span>
+            <span class="size">${e.exists ? bytes(e.size) : "not present"}</span>
+            <span class="size">${e.exists && e.files ? e.files.toLocaleString() + " files" : ""}</span>
+          </label>
+        </div>`;
+      }).join("");
+      return `<div class="group-title">${esc(g)}</div>${rows}`;
+    }).join("");
+
+    panel.innerHTML = `
+      ${lastResult ? resultBanner(lastResult) : ""}
+      <div class="card">
+        <h2>Cache locations</h2>
+        <p class="hint">${data.cached ? "Sizes from cache, " + ago(data.age) + " · " : ""}
+          ${bytes(data.total)} total, ${bytes(data.reclaimable)} outside the “Review” group ·
+          <button class="link" data-refresh-caches="1">Rescan</button></p>
+        ${groupHtml}
+        <p class="note">
+          <button class="link" data-select="safe">Select safe</button> ·
+          <button class="link" data-select="all">Select all present</button> ·
+          <button class="link" data-select="none">Clear selection</button>
+        </p>
+      </div>
+      <div class="actions">
+        <span class="selected">${selEntries.length} selected · ${bytes(selBytes)}</span>
+        <span class="spacer"></span>
+        <span class="action-info" tabindex="0" aria-describedby="actionInfoTip">ⓘ
+          <span class="tip" id="actionInfoTip" role="tooltip"><strong>Move to Trash</strong> is reversible until you empty the Trash.
+          <strong>Delete permanently</strong> frees space now and can't be undone.
+          Only the locations listed here can ever be touched.</span></span>
+        <button class="btn primary" data-clean="trash" ${selEntries.length ? "" : "disabled"}>Move to Trash</button>
+        <button class="btn danger" data-clean="delete" ${selEntries.length ? "" : "disabled"}>Delete permanently</button>
+      </div>`;
+  }
+
+  // Sync checkbox states (a quick-select button can check several at once)
+  // and the action bar's count/buttons — no innerHTML writes, so nothing
+  // that's already on screen gets torn down and rebuilt.
+  function patchCleanSelection(data) {
+    const { sel, selEntries, selBytes } = selectionTotals(data);
+    panel.querySelectorAll("input[data-id]").forEach(cb => {
+      cb.checked = sel.has(cb.dataset.id);
+    });
+    const label = panel.querySelector(".actions .selected");
+    if (label) label.textContent = `${selEntries.length} selected · ${bytes(selBytes)}`;
+    panel.querySelectorAll("[data-clean]").forEach(btn => {
+      btn.disabled = !selEntries.length;
+    });
+  }
+
+  async function renderClean(force) {
+    if (!cleanData || force) {
+      panel.innerHTML = loadingCard("Measuring cache locations…");
+      cleanData = await fused.runPython("./caches.py", {});
+      takePendingResult();
+      buildCleanDom(cleanData);
+    } else {
+      patchCleanSelection(cleanData);
+    }
+    subtitle.textContent = bytes(cleanData.total) + " in caches";
+  }
+
+  function resultBanner(res) {
+    const errs = res.errors.length
+      ? `<details><summary>${res.errors.length} item(s) could not be removed</summary>
+           <table class="data">${res.errors.slice(0, 40).map(e => `<tr><td>${esc(e)}</td></tr>`).join("")}</table>
+         </details>`
+      : "";
+    return `<div class="banner done">
+      <strong>${res.mode === "trash" ? "Moved to Trash" : "Deleted"}: ${bytes(res.freed)}</strong>
+      across ${res.removed} item(s).
+      ${res.mode === "trash" ? "Empty the Trash to actually reclaim the space." : ""}
+      ${res.remaining ? `<br>Stopped with ${res.remaining} item(s) left — run it again to finish.` : ""}
+      <table class="data">
+        <tr><th>Location</th><th class="num">Freed</th><th class="num">Items</th></tr>
+        ${res.results.map(r => `<tr><td>${esc(r.name)}</td>
+          <td class="num">${bytes(r.freed)}</td><td class="num">${r.removed}</td></tr>`).join("")}
+      </table>${errs}</div>`;
+  }
+
+  // ---- background clean job ----------------------------------------------
+  // clean_job.py runs the delete in a detached worker, so it survives the
+  // 60 s runPython limit and this page being closed. The page only polls the
+  // worker's status file and mirrors it into the popover and fused.trackJob;
+  // the worker reports to the activity panel itself under the same job id, so
+  // the row keeps moving while the page is gone.
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const jobStatus = () => fused.runPython("./clean_job.py", { action: "status" }, { key: "clean-job" });
+  let watching = null;     // id of the job this page is polling
+  let stopClicked = false;
+  let pendingResult = null; // finished job whose banner hasn't been shown yet
+
+  document.getElementById("progressHide").addEventListener("click", hideProgress);
+  document.getElementById("progressCancel").addEventListener("click", e => {
+    stopClicked = true;
+    e.target.disabled = true;
+    e.target.textContent = "Stopping…";
+  });
+
+  async function watchJob(job) {
+    if (watching === job.id) return;
+    watching = job.id;
+    stopClicked = false;
+    const track = fused.trackJob({
+      id: job.id, title: job.title, kind: "task", unit: "bytes", cancellable: true,
+    });
+    showProgress(job.mode === "trash" ? "Moving to Trash…" : "Deleting…");
+    let stopSent = false, failures = 0;
+    for (;;) {
+      const total = job.total ? Math.max(job.total, job.freed) : 0;
+      updateProgress(total ? job.freed / total * 100 : 0,
+        `${bytes(job.freed)}${total ? " of " + bytes(total) : ""} freed · ${job.detail || ""}`);
+      if (job.state !== "running") break;
+      track.update({ done: job.freed, total: total || undefined, detail: job.detail });
+      if (!stopSent && (stopClicked || track.cancelRequested)) {
+        stopSent = true;
+        fused.runPython("./clean_job.py", { action: "cancel" }, { key: null }).catch(() => {});
+      }
+      await sleep(1000);
+      try {
+        job = await jobStatus();
+        failures = 0;
+      } catch (err) {
+        // The worker keeps running and reporting on its own; just stop
+        // watching after a run of failed status reads.
+        if (++failures >= 5) {
+          watching = null;
+          hideProgress();
+          panel.insertAdjacentHTML("afterbegin",
+            `<div class="banner error"><strong>Lost track of the cleanup</strong> — ${esc(err.message)}.
+             It is still running; follow it in the activity panel.</div>`);
+          return;
+        }
+      }
+    }
+    if (job.state === "done") track.finish(job.detail);
+    else if (job.state === "cancelled") track.cancelled();
+    else track.fail(job.detail || "cleanup failed");
+    watching = null;
+    hideProgress();
+    pendingResult = job;
+    if (P.tab() === "clean") {
+      cleanData = null;          // sizes changed on disk — force a fresh fetch
+      await renderClean(true);   // full rebuild now, with the result banner
+      fused.params.set("sel", ""); // cleanData is warm again, so this only patches
+    }
+  }
+
+  // Called on a full Cleanup rebuild: turn a finished job into the banner once.
+  function takePendingResult() {
+    const job = pendingResult;
+    if (!job) return;
+    pendingResult = null;
+    fused.runPython("./clean_job.py", { action: "ack" }, { key: null }).catch(() => {});
+    if (job.result) lastResult = job.result;
+    else panel.insertAdjacentHTML("afterbegin",
+      `<div class="banner error"><strong>Cleanup failed</strong> — ${esc(job.detail || "unknown error")}</div>`);
+  }
+
+  async function doClean(mode) {
+    const ids = P.sel();
+    if (!ids.length) return;
+    const data = await fused.runPython("./caches.py", {});
+    const chosen = data.entries.filter(e => ids.includes(e.id) && e.exists && e.size > 0);
+    if (!chosen.length) return;
+    const total = chosen.reduce((a, e) => a + e.size, 0);
+
+    const verb = mode === "trash" ? "Move to Trash" : "Permanently delete";
+    const ok = await showConfirm(
+      `${verb} ${chosen.length} location(s), about ${bytes(total)}?`,
+      chosen.map(e => "• " + e.name + "  (" + e.path + ")  " + bytes(e.size)).join("\n") +
+        "\n\nThe directories themselves are kept; only their contents are removed.",
+      verb
+    );
+    if (!ok) return;
+
+    let job;
+    try {
+      job = await fused.runPython("./clean_job.py", {
+        action: "start", ids: chosen.map(e => e.id).join(","), mode, confirm: "true",
+        total, origin: location.origin,
+      }, { key: null });
+    } catch (err) {
+      panel.insertAdjacentHTML("afterbegin",
+        `<div class="banner error"><strong>${esc(err.type || "error")}</strong> — ${esc(err.message)}</div>`);
+      return;
+    }
+    watchJob(job);
+  }
+
+  // ---- routing -----------------------------------------------------------
+  const TABS = { overview: renderOverview, clean: renderClean };
+
+  async function draw() {
+    const tab = TABS[P.tab()] ? P.tab() : "overview";
+    if (tab !== "clean") { lastResult = null; cleanData = null; }   // don't resurrect stale state
+    document.querySelectorAll("#tabs button").forEach(b =>
+      b.setAttribute("aria-selected", b.dataset.tab === tab ? "true" : "false"));
+    subtitle.textContent = "";
+    await TABS[tab]();
+  }
+
+  document.getElementById("tabs").addEventListener("click", e => {
+    const btn = e.target.closest("button[data-tab]");
+    if (btn) setParam("tab", btn.dataset.tab);
+  });
+
+  // One delegated handler for everything the panels render.
+  panel.addEventListener("click", async e => {
+    const go = e.target.closest("[data-tab-go]");
+    if (go) return setParam("tab", go.dataset.tabGo);
+
+    if (e.target.closest("[data-refresh-caches]")) {
+      panel.innerHTML = loadingCard("Rescanning caches…");
+      await fused.runPython("./caches.py", { refresh: "true" });
+      cleanData = null;
+      return renderClean(true);
+    }
+
+    const select = e.target.closest("[data-select]");
+    if (select) {
+      const data = cleanData || await fused.runPython("./caches.py", {});
+      const present = data.entries.filter(e2 => e2.exists && e2.size > 0);
+      const mode = select.dataset.select;
+      const ids = mode === "none" ? []
+        : mode === "safe" ? present.filter(e2 => e2.risk === "safe").map(e2 => e2.id)
+        : present.map(e2 => e2.id);
+      return setParam("sel", ids.join(","));
+    }
+
+    const clean = e.target.closest("[data-clean]");
+    if (clean) return doClean(clean.dataset.clean);
+  });
+
+  panel.addEventListener("change", e => {
+    const box = e.target.closest("input[data-id]");
+    if (!box) return;
+    const sel = new Set(P.sel());
+    box.checked ? sel.add(box.dataset.id) : sel.delete(box.dataset.id);
+    setParam("sel", [...sel].join(","));
+  });
+
+  // Every colour lives in a token and every mark is CSS, so a theme swap needs
+  // no redraw — nothing here hands a colour to JS.
+  fused.params.onChange(draw);
+  draw();
+
+  function isPreview() {
+    if (new URLSearchParams(location.search).get("_preview") === "1") return true;
+    try {
+      let w = window;
+      while (w.parent && w.parent !== w) {
+        w = w.parent;
+        if (new URLSearchParams(w.location.search).get("_preview") === "1") return true;
+      }
+    } catch (e) { /* cross-origin ancestor: the climb ends here */ }
+    return false;
+  }
+
+  // Re-attach to a cleanup started before this page was (re)opened: follow it
+  // if it's still running, or show its result banner if nobody has yet.
+  if (!isPreview()) {
+    jobStatus().then(job => {
+      if (job.state === "running") return watchJob(job);
+      if (job.state !== "none" && !job.acked) {
+        pendingResult = job;
+        if (P.tab() === "clean") { cleanData = null; renderClean(true); }
+      }
+    }).catch(() => {});
+  }
+</script>
+</body>
+</html>
