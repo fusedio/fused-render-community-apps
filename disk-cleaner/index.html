@@ -74,9 +74,16 @@
   }
   main { max-width: 940px; margin: 0 auto; padding: 28px 20px 64px; }
 
-  header { display: flex; align-items: baseline; gap: 12px; margin-bottom: 20px; }
-  h1 { font-size: 17px; font-weight: 600; margin: 0; }
-  .sub { color: var(--muted); font-size: 12px; }
+  /* Themed scrollbars — the default track renders as a white bar here. */
+  html { scrollbar-color: var(--baseline) transparent; scrollbar-width: thin; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; background: transparent; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background: var(--baseline); border-radius: 10px;
+    border: 3px solid transparent; background-clip: padding-box;
+  }
+  ::-webkit-scrollbar-thumb:hover { background-color: var(--muted); }
+  ::-webkit-scrollbar-corner { background: transparent; }
 
   /* ---- tabs ---- */
   nav { display: flex; gap: 2px; border-bottom: 1px solid var(--line); margin-bottom: 22px; }
@@ -293,11 +300,6 @@
   </div>
 </div>
 <main>
-  <header>
-    <h1>Disk Cleaner</h1>
-    <span class="sub" id="subtitle"></span>
-  </header>
-
   <nav id="tabs" role="tablist">
     <button role="tab" data-tab="overview">Overview</button>
     <button role="tab" data-tab="clean">Cleanup</button>
@@ -314,7 +316,6 @@
   };
 
   const panel = document.getElementById("panel");
-  const subtitle = document.getElementById("subtitle");
 
   // ---- state (params are the state) ---------------------------------------
   const P = {
@@ -571,7 +572,6 @@
         </div>` : loadingCard("Measuring caches…");
 
       panel.innerHTML = volCard + foldersCard + cachesCard;
-      if (frame) subtitle.textContent = frame.path;
     }
 
     await Promise.all([
@@ -679,7 +679,6 @@
     } else {
       patchCleanSelection(cleanData);
     }
-    subtitle.textContent = bytes(cleanData.total) + " in caches";
   }
 
   function resultBanner(res) {
@@ -818,7 +817,6 @@
     if (tab !== "clean") { lastResult = null; cleanData = null; }   // don't resurrect stale state
     document.querySelectorAll("#tabs button").forEach(b =>
       b.setAttribute("aria-selected", b.dataset.tab === tab ? "true" : "false"));
-    subtitle.textContent = "";
     await TABS[tab]();
   }
 
