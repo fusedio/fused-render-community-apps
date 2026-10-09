@@ -523,6 +523,7 @@ async function loadAccounts() {
     ACCOUNTS = [
       { id: uid(), label: "Overture Maps (public)", auth: "anonymous", region: "us-west-2", bucket: "overturemaps-us-west-2", endpoint_url: "", profile: "" },
       { id: uid(), label: "NOAA GOES-16 (public)", auth: "anonymous", region: "us-east-1", bucket: "noaa-goes16", endpoint_url: "", profile: "" },
+      { id: uid(), label: "Fused assets (public)", auth: "anonymous", region: "", bucket: "fused-asset", endpoint_url: "", profile: "" },
     ];
     await saveAccounts();
   }
