@@ -1,0 +1,1080 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<!-- Declares this page a fused app's entry — keep it near the top of <head>
+     (detection reads only the first 4 KiB). -->
+<meta name="fused-app" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Receipt Lens — local vision receipt scanner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    color-scheme: dark;
+    --ink: #f4f0e7;
+    --muted: #95998e;
+    --paper: #e9e5da;
+    --lime: #c8f56a;
+    --coral: #ff7557;
+    --bg: #121512;
+    --panel: #191d19;
+    --panel-2: #20251f;
+    --line: #30362f;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    min-width: 320px;
+    min-height: 100vh;
+    color: var(--ink);
+    background:
+      radial-gradient(circle at 8% 4%, rgba(200, 245, 106, 0.08), transparent 28rem),
+      var(--bg);
+    font-family: "Manrope", sans-serif;
+  }
+
+  button, input, select, textarea { font: inherit; }
+  button { color: inherit; }
+
+  .app-shell {
+    width: min(1500px, 100%);
+    margin: 0 auto;
+    padding: 0 28px 34px;
+  }
+
+  header {
+    min-height: 76px;
+    padding: 10px 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .brand { display: flex; align-items: center; gap: 14px; }
+
+  .brand-mark {
+    width: 36px;
+    height: 36px;
+    display: grid;
+    place-items: center;
+    color: #151912;
+    background: var(--lime);
+    border-radius: 10px 10px 10px 2px;
+    font-weight: 800;
+    letter-spacing: -0.1em;
+  }
+
+  .brand-name { font-weight: 700; letter-spacing: -0.03em; }
+  .brand-sub { margin-left: 6px; color: var(--muted); font-size: 12px; font-weight: 500; }
+
+  .model-picker {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+  }
+
+  .model-picker-label {
+    color: var(--muted);
+    font-family: "DM Mono", monospace;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    white-space: nowrap;
+  }
+
+  .status-dot {
+    flex: 0 0 auto;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #d9a43c;
+    box-shadow: 0 0 0 4px rgba(217, 164, 60, 0.1);
+  }
+
+  .status-dot.ready { background: var(--lime); box-shadow: 0 0 0 4px rgba(200, 245, 106, 0.1); }
+  .status-dot.error { background: var(--coral); box-shadow: 0 0 0 4px rgba(255, 117, 87, 0.1); }
+
+  .model-select {
+    max-width: 260px;
+    padding: 7px 10px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    outline: 0;
+    color: var(--ink);
+    background: #151815;
+    font-family: "DM Mono", monospace;
+    font-size: 10px;
+  }
+
+  .model-select:focus { border-color: #536046; }
+
+  .intro {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 32px;
+    padding: 35px 0 29px;
+  }
+
+  .eyebrow {
+    margin: 0 0 9px;
+    color: var(--lime);
+    font-family: "DM Mono", monospace;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+  }
+
+  h1 {
+    max-width: 650px;
+    margin: 0;
+    font-size: clamp(30px, 4vw, 52px);
+    line-height: 1.02;
+    letter-spacing: -0.055em;
+  }
+
+  .intro-note {
+    max-width: 390px;
+    margin: 0 0 3px;
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.6;
+  }
+
+  .workspace {
+    display: grid;
+    grid-template-columns: minmax(360px, 0.9fr) minmax(520px, 1.35fr);
+    gap: 16px;
+    min-height: 650px;
+  }
+
+  .panel {
+    overflow: hidden;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+  }
+
+  .panel-head {
+    height: 58px;
+    padding: 0 18px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .panel-title { display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 650; }
+  .step { color: var(--muted); font-family: "DM Mono", monospace; font-size: 10px; }
+
+  .view-toggle {
+    display: flex;
+    padding: 3px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #151815;
+  }
+
+  .view-toggle button {
+    padding: 5px 9px;
+    border: 0;
+    border-radius: 5px;
+    color: var(--muted);
+    background: transparent;
+    font-family: "DM Mono", monospace;
+    font-size: 9px;
+    text-transform: uppercase;
+    cursor: pointer;
+  }
+
+  .view-toggle button.active { color: var(--ink); background: var(--panel-2); }
+
+  .capture-body {
+    height: calc(100% - 58px);
+    min-height: 590px;
+    padding: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .drop-zone {
+    position: relative;
+    flex: 1;
+    min-height: 430px;
+    overflow: hidden;
+    display: grid;
+    place-items: center;
+    border: 1px dashed #3b4338;
+    border-radius: 12px;
+    background:
+      linear-gradient(45deg, rgba(255,255,255,0.015) 25%, transparent 25%, transparent 75%, rgba(255,255,255,0.015) 75%),
+      #111411;
+    background-size: 20px 20px;
+    transition: border-color 150ms, background 150ms;
+  }
+
+  .drop-zone.dragging { border-color: var(--lime); background-color: rgba(200, 245, 106, 0.04); }
+  .drop-zone.has-image { border-style: solid; }
+
+  .empty-state { max-width: 270px; padding: 24px; text-align: center; }
+
+  .upload-icon {
+    width: 54px;
+    height: 54px;
+    margin: 0 auto 16px;
+    display: grid;
+    place-items: center;
+    color: var(--lime);
+    border: 1px solid #3c4635;
+    border-radius: 15px;
+    background: #1b2119;
+  }
+
+  .empty-state h2 { margin: 0 0 7px; font-size: 16px; letter-spacing: -0.02em; }
+  .empty-state p { margin: 0 0 19px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+
+  .secondary-button, .icon-button {
+    border: 1px solid var(--line);
+    background: var(--panel-2);
+    cursor: pointer;
+  }
+
+  .secondary-button {
+    padding: 9px 13px;
+    border-radius: 8px;
+    font-size: 11px;
+    font-weight: 650;
+  }
+
+  .secondary-button:hover, .icon-button:hover { border-color: #4c554a; background: #262c25; }
+
+  #rawCanvas, #processedCanvas {
+    display: none;
+    max-width: calc(100% - 32px);
+    max-height: calc(100% - 32px);
+    width: auto;
+    height: auto;
+    border-radius: 3px;
+    box-shadow: 0 20px 55px rgba(0, 0, 0, 0.55);
+  }
+
+  .drop-zone.has-image #rawCanvas.active,
+  .drop-zone.has-image #processedCanvas.active { display: block; }
+
+  .scan-line {
+    position: absolute;
+    left: 12%;
+    right: 12%;
+    top: 20%;
+    height: 1px;
+    display: none;
+    background: var(--lime);
+    box-shadow: 0 0 18px var(--lime);
+    animation: scan 1.8s ease-in-out infinite alternate;
+  }
+
+  .drop-zone.scanning .scan-line { display: block; }
+  @keyframes scan { to { top: 80%; } }
+
+  .capture-actions { display: grid; grid-template-columns: 1fr auto; gap: 10px; }
+
+  .model-config {
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: #151815;
+  }
+
+  .model-config summary {
+    padding: 11px 13px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    color: var(--muted);
+    font-size: 10px;
+    font-weight: 650;
+    cursor: pointer;
+    list-style: none;
+  }
+
+  .model-config summary::-webkit-details-marker { display: none; }
+  .model-config summary span { color: var(--lime); font-family: "DM Mono", monospace; font-size: 9px; font-weight: 400; }
+  .model-fields { padding: 0 12px 12px; display: grid; gap: 8px; }
+  .model-fields label { display: grid; grid-template-columns: 92px 1fr; align-items: center; gap: 8px; color: #777c72; font-family: "DM Mono", monospace; font-size: 8px; text-transform: uppercase; }
+  .model-fields select.path-input { grid-template-columns: none; }
+  .model-note { margin: 0; padding: 0 12px 12px; color: var(--muted); font-size: 10px; line-height: 1.5; }
+
+  .path-input {
+    width: 100%;
+    min-width: 0;
+    padding: 7px 9px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    outline: 0;
+    color: var(--ink);
+    background: #111411;
+    font-family: "DM Mono", monospace;
+    font-size: 9px;
+  }
+
+  .path-input:focus { border-color: #536046; }
+  .prompt-input { min-height: 72px; resize: vertical; line-height: 1.5; }
+
+  .primary-button {
+    min-height: 44px;
+    padding: 0 18px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 9px;
+    border: 0;
+    border-radius: 9px;
+    color: #151912;
+    background: var(--lime);
+    font-size: 12px;
+    font-weight: 750;
+    cursor: pointer;
+  }
+
+  .primary-button:disabled { opacity: 0.35; cursor: not-allowed; }
+
+  .icon-button {
+    width: 44px;
+    height: 44px;
+    display: grid;
+    place-items: center;
+    border-radius: 9px;
+  }
+
+  .analysis-panel { display: flex; flex-direction: column; }
+
+  .document-meta {
+    padding: 20px 20px 17px;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 18px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .merchant-name {
+    width: min(350px, 100%);
+    padding: 0;
+    border: 0;
+    outline: 0;
+    color: var(--ink);
+    background: transparent;
+    font-size: 21px;
+    font-weight: 700;
+    letter-spacing: -0.035em;
+  }
+
+  .meta-row { margin-top: 7px; display: flex; flex-wrap: wrap; gap: 8px 16px; color: var(--muted); font-family: "DM Mono", monospace; font-size: 10px; }
+
+  .confidence {
+    flex: 0 0 auto;
+    padding: 7px 10px;
+    color: var(--lime);
+    border: 1px solid rgba(200, 245, 106, 0.25);
+    border-radius: 999px;
+    background: rgba(200, 245, 106, 0.07);
+    font-family: "DM Mono", monospace;
+    font-size: 9px;
+    text-transform: uppercase;
+  }
+
+  .table-wrap { flex: 1; overflow-x: auto; }
+
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  th { height: 40px; color: #767b71; font-family: "DM Mono", monospace; font-size: 9px; font-weight: 500; text-align: left; text-transform: uppercase; letter-spacing: 0.08em; }
+  th, td { padding: 0 12px; border-bottom: 1px solid #292e28; }
+  th:first-child, td:first-child { padding-left: 20px; }
+  th:last-child, td:last-child { padding-right: 20px; }
+  tbody tr { height: 58px; transition: background 120ms; }
+  tbody tr:hover { background: rgba(255, 255, 255, 0.015); }
+
+  .item-input {
+    width: 100%;
+    padding: 6px 7px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    outline: 0;
+    color: var(--ink);
+    background: transparent;
+    font-size: 12px;
+  }
+
+  .item-input:hover, .item-input:focus { border-color: var(--line); background: #151915; }
+  .qty-input { max-width: 48px; text-align: center; font-family: "DM Mono", monospace; }
+  .price-wrap { position: relative; }
+  .price-wrap::before { content: "$"; position: absolute; left: 7px; top: 7px; color: var(--muted); font-family: "DM Mono", monospace; font-size: 11px; }
+  .price-input { padding-left: 18px; text-align: right; font-family: "DM Mono", monospace; }
+
+  .row-confidence { display: flex; align-items: center; gap: 7px; color: var(--muted); font-family: "DM Mono", monospace; font-size: 9px; }
+  .meter { width: 28px; height: 3px; overflow: hidden; border-radius: 3px; background: #343a32; }
+  .meter span { display: block; height: 100%; background: var(--lime); }
+
+  .delete-button { border: 0; color: #6e746a; background: transparent; cursor: pointer; }
+  .delete-button:hover { color: var(--coral); }
+
+  .empty-table { padding: 80px 24px; color: var(--muted); font-size: 12px; text-align: center; }
+
+  .summary {
+    padding: 17px 20px 20px;
+    display: grid;
+    grid-template-columns: 1fr minmax(220px, 260px);
+    gap: 25px;
+    border-top: 1px solid var(--line);
+    background: #171a17;
+  }
+
+  .add-item {
+    align-self: start;
+    justify-self: start;
+    padding: 7px 0;
+    border: 0;
+    color: var(--lime);
+    background: transparent;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .totals { display: grid; gap: 8px; }
+  .total-line { display: flex; align-items: center; justify-content: space-between; color: var(--muted); font-size: 11px; }
+  .total-line output { color: var(--ink); font-family: "DM Mono", monospace; }
+  .grand-total { margin-top: 5px; padding-top: 12px; border-top: 1px solid var(--line); color: var(--ink); font-size: 13px; font-weight: 700; }
+  .grand-total output { color: var(--lime); font-size: 17px; }
+
+  .export-bar {
+    padding: 12px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 15px;
+    border-top: 1px solid var(--line);
+  }
+
+  .processing-copy { min-width: 0; color: var(--muted); font-family: "DM Mono", monospace; font-size: 9px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .export-button { min-height: 36px; flex: 0 0 auto; }
+
+  .raw-extraction {
+    border-top: 1px solid var(--line);
+    background: #121512;
+  }
+
+  .raw-extraction summary {
+    padding: 13px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    color: var(--muted);
+    font-family: "DM Mono", monospace;
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+  }
+
+  .raw-extraction summary::after { content: "+"; color: var(--lime); font-size: 14px; }
+  .raw-extraction[open] summary::after { content: "-"; }
+  .raw-extraction pre {
+    margin: 0;
+    padding: 18px 20px;
+    max-height: 360px;
+    overflow: auto;
+    border-top: 1px solid var(--line);
+    color: #b8c0b3;
+    font: 10px/1.65 "DM Mono", monospace;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .notice {
+    margin: 0 0 14px;
+    padding: 10px 13px;
+    border: 1px solid rgba(255, 117, 87, 0.3);
+    border-radius: 9px;
+    background: rgba(255, 117, 87, 0.08);
+    color: #ffb2a2;
+    font-size: 11px;
+    line-height: 1.5;
+  }
+  .notice.warn { border-color: rgba(217, 164, 60, 0.35); background: rgba(217, 164, 60, 0.08); color: #ecc27a; }
+
+  #fileInput, #sourceCanvas { display: none; }
+
+  @media (max-width: 980px) {
+    .intro { align-items: flex-start; flex-direction: column; }
+    .workspace { grid-template-columns: 1fr; }
+    .capture-body { min-height: 560px; }
+    .analysis-panel { min-height: 620px; }
+  }
+
+  @media (max-width: 620px) {
+    .app-shell { padding: 0 14px 20px; }
+    header { padding: 12px 0; }
+    .brand-sub { display: none; }
+    .model-picker-label { display: none; }
+    .model-select { max-width: 150px; }
+    .intro { padding: 26px 0 22px; }
+    .intro-note { display: none; }
+    .capture-body { min-height: 500px; padding: 12px; }
+    .drop-zone { min-height: 380px; }
+    .document-meta { padding: 17px 14px 15px; }
+    .summary { padding: 15px; grid-template-columns: 1fr; }
+    .add-item { order: 2; }
+    th:first-child, td:first-child { padding-left: 14px; }
+    th:last-child, td:last-child { padding-right: 14px; }
+    .confidence-column { display: none; }
+    table { min-width: 500px; }
+  }
+</style>
+</head>
+<body>
+<div class="app-shell">
+  <header>
+    <div class="brand">
+      <div class="brand-mark">R.</div>
+      <div><span class="brand-name">Receipt Lens</span><span class="brand-sub">local vision model</span></div>
+    </div>
+    <div class="model-picker" title="Which local vision-language model reads the receipt.">
+      <span id="runtimeDot" class="status-dot"></span>
+      <span class="model-picker-label">Vision model</span>
+      <select id="visionSelect" class="model-select" aria-label="Vision model"></select>
+    </div>
+  </header>
+
+  <section class="intro">
+    <div>
+      <p class="eyebrow">Receipt intelligence / 01</p>
+      <h1>Turn a receipt photo into a clean table.</h1>
+    </div>
+    <p class="intro-note">A compact local vision-language model reads the whole receipt and returns structured line items. Pick the model size above — inference stays on your CPU.</p>
+  </section>
+
+  <main class="workspace">
+    <section class="panel">
+      <div class="panel-head">
+        <div class="panel-title"><span class="step">01</span> Receipt image</div>
+        <div class="view-toggle" aria-label="Image view">
+          <button id="originalView" class="active" type="button">Original</button>
+          <button id="cleanView" type="button">Cleaned</button>
+        </div>
+      </div>
+      <div class="capture-body">
+        <div id="dropZone" class="drop-zone">
+          <div id="emptyState" class="empty-state">
+            <div class="upload-icon">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5"/><path d="M5 13v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/></svg>
+            </div>
+            <h2>Drop a receipt here</h2>
+            <p>JPG, PNG, or a camera photo. A flat, well-lit image gives the best result.</p>
+            <button id="chooseButton" class="secondary-button" type="button">Choose image</button>
+          </div>
+          <canvas id="rawCanvas"></canvas>
+          <canvas id="processedCanvas"></canvas>
+          <div class="scan-line"></div>
+        </div>
+        <div class="capture-actions">
+          <button id="analyzeButton" class="primary-button" type="button" disabled>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V4h3M17 4h3v3M20 17v3h-3M7 20H4v-3"/><path d="M8 12h8"/></svg>
+            <span>Extract receipt</span>
+          </button>
+          <button id="sampleButton" class="icon-button" type="button" title="Load a sample receipt" aria-label="Load a sample receipt">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M5 3h14v18l-3-2-4 2-4-2-3 2V3Z"/><path d="M8 8h8M8 12h8M8 16h4"/></svg>
+          </button>
+        </div>
+        <details class="model-config">
+          <summary>Advanced <span id="visionSummary">SmolVLM 256M</span></summary>
+          <div class="model-fields">
+            <label id="customVisionRow" hidden>Model ID<input id="visionModelId" class="path-input" placeholder="org/model-id" /></label>
+            <label>Prompt<textarea id="extractionPrompt" class="path-input prompt-input">Extract the merchant, date, receipt number, every purchased item, subtotal, tax, tip, and total.</textarea></label>
+          </div>
+          <p id="visionNote" class="model-note"></p>
+        </details>
+      </div>
+    </section>
+
+    <section class="panel analysis-panel">
+      <div class="panel-head">
+        <div class="panel-title"><span class="step">02</span> Structured bill</div>
+        <span id="itemCount" class="step">0 items</span>
+      </div>
+      <div id="notices"></div>
+      <div class="document-meta">
+        <div>
+          <input id="merchantName" class="merchant-name" value="Waiting for receipt" aria-label="Merchant name" />
+          <div class="meta-row"><span id="receiptDate">Date not detected</span><span id="receiptId">Receipt --</span></div>
+        </div>
+        <span id="confidence" class="confidence">Not analyzed</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <colgroup><col style="width: 49%"><col style="width: 12%"><col style="width: 18%"><col class="confidence-column" style="width: 15%"><col style="width: 6%"></colgroup>
+          <thead><tr><th>Item</th><th>Qty</th><th style="text-align:right">Amount</th><th class="confidence-column">Read</th><th></th></tr></thead>
+          <tbody id="itemsBody"></tbody>
+        </table>
+        <div id="emptyTable" class="empty-table">Extract a receipt or open the sample to see structured line items.</div>
+      </div>
+      <div class="summary">
+        <button id="addItemButton" class="add-item" type="button">+ Add missing item</button>
+        <div class="totals">
+          <div class="total-line"><span>Subtotal</span><output id="subtotalValue">$0.00</output></div>
+          <div class="total-line"><span>Tax</span><output id="taxValue">$0.00</output></div>
+          <div class="total-line"><span>Tip</span><output id="tipValue">$0.00</output></div>
+          <div class="total-line grand-total"><span>Total</span><output id="totalValue">$0.00</output></div>
+        </div>
+      </div>
+      <div class="export-bar">
+        <span id="processingCopy" class="processing-copy">Local vision model / CPU inference</span>
+        <button id="exportButton" class="primary-button export-button" type="button">Export JSON</button>
+      </div>
+      <details id="rawDetails" class="raw-extraction">
+        <summary>Raw model JSON</summary>
+        <pre id="rawOutput">Run an extraction to inspect the model response.</pre>
+      </details>
+    </section>
+  </main>
+</div>
+
+<input id="fileInput" type="file" accept="image/png,image/jpeg,image/webp" capture="environment" />
+<canvas id="sourceCanvas"></canvas>
+
+<script>
+  /* ===================================================================
+     A local vision-language model reads the receipt image and returns
+     structured JSON directly. fused.ai (the platform's on-device model
+     bridge — the same one the AI Playground drives) has no image-input
+     path today, so this cannot go through it; the model runs in its own
+     Python worker, spawned via uv, exactly like the original example.
+     See readme.md for what proper platform integration would look like.
+     =================================================================== */
+  const state = {
+    backendReady: false,
+    hasImage: false,
+    processed: false,
+    jobId: "",
+    items: [],
+    summary: { subtotal: 0, tax: 0, tip: 0, total: 0 },
+    date: "",
+    receiptId: ""
+  };
+
+  let visionModels = [];       // [{id, label, size_gb, note, downloaded}]
+  let defaultVisionModel = "";
+
+  const $ = (id) => document.getElementById(id);
+  const sourceCanvas = $("sourceCanvas");
+  const rawCanvas = $("rawCanvas");
+  const processedCanvas = $("processedCanvas");
+  const dropZone = $("dropZone");
+  const fileInput = $("fileInput");
+
+  function money(value) {
+    return `$${Number(value || 0).toFixed(2)}`;
+  }
+
+  function gbFmt(n) {
+    return n >= 1 ? `${n.toFixed(1)} GB` : `${Math.round(n * 1024)} MB`;
+  }
+
+  function notice(text, kind, cause) {
+    const key = cause || kind || "warn";
+    const box = $("notices");
+    const prior = box.querySelector(`[data-cause="${key}"]`);
+    if (prior) prior.remove();
+    if (!text) return;
+    const node = document.createElement("div");
+    node.className = `notice ${kind || "warn"}`;
+    node.dataset.cause = key;
+    node.textContent = text;
+    box.appendChild(node);
+  }
+
+  /* ---------- vision model (custom local worker) ---------- */
+
+  function visionModelId() {
+    const sel = $("visionSelect");
+    return sel.value === "custom" ? ($("visionModelId").value.trim() || defaultVisionModel) : sel.value;
+  }
+
+  function syncCustomVisionVisibility() {
+    $("customVisionRow").hidden = $("visionSelect").value !== "custom";
+  }
+
+  function fillVisionSelect(wanted) {
+    const sel = $("visionSelect");
+    sel.innerHTML = "";
+    visionModels.forEach((m) => {
+      const opt = document.createElement("option");
+      opt.value = m.id;
+      opt.textContent = `${m.label} · ${m.downloaded ? "on disk" : gbFmt(m.size_gb) + " first run"}`;
+      sel.appendChild(opt);
+    });
+    const customOpt = document.createElement("option");
+    customOpt.value = "custom";
+    customOpt.textContent = "Custom model…";
+    sel.appendChild(customOpt);
+
+    const known = visionModels.some((m) => m.id === wanted);
+    sel.value = known ? wanted : "custom";
+    if (!known && wanted) $("visionModelId").value = wanted;
+    syncCustomVisionVisibility();
+    updateVisionSummary();
+  }
+
+  function updateVisionSummary() {
+    const id = visionModelId();
+    const hit = visionModels.find((m) => m.id === id);
+    $("visionSummary").textContent = hit ? hit.label : (id || "no model");
+    $("visionNote").textContent = hit && hit.note ? hit.note : "";
+  }
+
+  async function loadVisionCatalog() {
+    try {
+      const data = await fused.runPython("./receipt_lens.py", { action: "models" });
+      visionModels = data.models;
+      defaultVisionModel = data.default;
+    } catch (error) {
+      visionModels = [];
+      defaultVisionModel = "";
+    }
+    fillVisionSelect(fused.params.get("visionModel") || defaultVisionModel);
+  }
+
+  async function refreshVisionStatus() {
+    const modelId = visionModelId();
+    try {
+      const result = await fused.runPython("./receipt_lens.py", { action: "status", model_id: modelId });
+      state.backendReady = result.ready;
+      $("runtimeDot").className = `status-dot ${result.ready ? "ready" : "error"}`;
+      $("processingCopy").textContent = result.message;
+      $("analyzeButton").disabled = !state.hasImage || !result.ready;
+      notice(result.ready ? "" : result.message, "error", "vision-runtime");
+    } catch (error) {
+      state.backendReady = false;
+      $("runtimeDot").className = "status-dot error";
+      $("processingCopy").textContent = error.message;
+      notice(error.message, "error", "vision-runtime");
+    }
+  }
+
+  /* ---------- capture + view ---------- */
+
+  function showView(cleaned) {
+    $("originalView").classList.toggle("active", !cleaned);
+    $("cleanView").classList.toggle("active", cleaned);
+    rawCanvas.classList.toggle("active", !cleaned);
+    processedCanvas.classList.toggle("active", cleaned);
+  }
+
+  function copyCanvas(source, target) {
+    target.width = source.width;
+    target.height = source.height;
+    target.getContext("2d").drawImage(source, 0, 0);
+  }
+
+  function acceptImage(image) {
+    const maxSide = 1600;
+    const scale = Math.min(1, maxSide / Math.max(image.naturalWidth, image.naturalHeight));
+    sourceCanvas.width = Math.round(image.naturalWidth * scale);
+    sourceCanvas.height = Math.round(image.naturalHeight * scale);
+    sourceCanvas.getContext("2d").drawImage(image, 0, 0, sourceCanvas.width, sourceCanvas.height);
+    copyCanvas(sourceCanvas, rawCanvas);
+    loadCanvasState();
+  }
+
+  function loadCanvasState() {
+    state.hasImage = true;
+    state.processed = false;
+    $("emptyState").hidden = true;
+    dropZone.classList.add("has-image");
+    $("analyzeButton").disabled = !state.backendReady;
+    $("processingCopy").textContent = state.backendReady ? "Image ready for extraction" : "Image ready / checking vision backend";
+    showView(false);
+  }
+
+  function loadFile(file) {
+    if (!file || !file.type.startsWith("image/")) return;
+    const url = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => {
+      acceptImage(image);
+      URL.revokeObjectURL(url);
+    };
+    image.src = url;
+  }
+
+  function drawSampleReceipt() {
+    sourceCanvas.width = 960;
+    sourceCanvas.height = 1240;
+    const ctx = sourceCanvas.getContext("2d");
+    ctx.fillStyle = "#313a32";
+    ctx.fillRect(0, 0, sourceCanvas.width, sourceCanvas.height);
+    ctx.save();
+    ctx.translate(165, 65);
+    ctx.rotate(-0.018);
+    ctx.shadowColor = "rgba(0,0,0,.38)";
+    ctx.shadowBlur = 28;
+    ctx.fillStyle = "#f4f0e6";
+    ctx.fillRect(0, 0, 650, 1100);
+    ctx.shadowColor = "transparent";
+    ctx.fillStyle = "#171915";
+    ctx.textAlign = "center";
+    ctx.font = "700 34px Arial";
+    ctx.fillText("NORTHSTAR KITCHEN", 325, 90);
+    ctx.font = "17px monospace";
+    ctx.fillText("14 MARKET LANE  /  PORTLAND", 325, 125);
+    ctx.fillText("07/10/2026   7:42 PM   #1842", 325, 164);
+    ctx.textAlign = "left";
+    ctx.font = "20px monospace";
+    ctx.fillText("------------------------------------------", 52, 205);
+    const lines = [
+      ["1  Charred Broccolini", "12.00"],
+      ["2  House Smash Burger", "34.00"],
+      ["1  Crispy Potatoes", "9.00"],
+      ["1  Ginger Lemonade", "6.50"],
+      ["1  Sparkling Water", "4.00"]
+    ];
+    let y = 258;
+    for (const [name, price] of lines) {
+      ctx.fillText(name, 56, y);
+      ctx.textAlign = "right";
+      ctx.fillText(price, 592, y);
+      ctx.textAlign = "left";
+      y += 66;
+    }
+    ctx.fillText("------------------------------------------", 52, y + 10);
+    y += 68;
+    const totals = [["SUBTOTAL", "65.50"], ["TAX", "5.57"], ["TIP", "13.10"]];
+    for (const [name, price] of totals) {
+      ctx.fillText(name, 292, y);
+      ctx.textAlign = "right";
+      ctx.fillText(price, 592, y);
+      ctx.textAlign = "left";
+      y += 48;
+    }
+    ctx.font = "700 25px monospace";
+    ctx.fillText("TOTAL", 292, y + 14);
+    ctx.textAlign = "right";
+    ctx.fillText("84.17", 592, y + 14);
+    ctx.textAlign = "center";
+    ctx.font = "17px monospace";
+    ctx.fillText("THANK YOU FOR JOINING US", 325, 1015);
+    ctx.restore();
+    copyCanvas(sourceCanvas, rawCanvas);
+    loadCanvasState();
+    setDocument({
+      merchant: "Northstar Kitchen",
+      date: "Jul 10, 2026 / 7:42 PM",
+      receiptId: "#1842",
+      confidence: 98,
+      items: [
+        { name: "Charred Broccolini", qty: 1, amount: 12, confidence: 98 },
+        { name: "House Smash Burger", qty: 2, amount: 34, confidence: 97 },
+        { name: "Crispy Potatoes", qty: 1, amount: 9, confidence: 98 },
+        { name: "Ginger Lemonade", qty: 1, amount: 6.5, confidence: 96 },
+        { name: "Sparkling Water", qty: 1, amount: 4, confidence: 99 }
+      ],
+      summary: { subtotal: 65.5, tax: 5.57, tip: 13.1, total: 84.17 }
+    });
+    $("processingCopy").textContent = "Sample loaded / click Extract receipt to run the local VLM";
+  }
+
+  function drawBase64Image(base64, target, mime = "image/png") {
+    return new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => {
+        target.width = image.naturalWidth;
+        target.height = image.naturalHeight;
+        target.getContext("2d").drawImage(image, 0, 0);
+        resolve();
+      };
+      image.onerror = reject;
+      image.src = `data:${mime};base64,${base64}`;
+    });
+  }
+
+  const sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+
+  async function pollJob(jobId) {
+    while (state.jobId === jobId) {
+      const result = await fused.runPython("./receipt_lens.py", { action: "poll", job_id: jobId });
+      if (result.status === "complete") return result;
+      if (result.status === "error") throw new Error(result.message);
+      const progress = result.progress || 0;
+      $("analyzeButton").querySelector("span").textContent = progress ? `Reading receipt ${progress}%` : "Loading vision model";
+      $("processingCopy").textContent = `${result.stage} / local CPU worker`;
+      await sleep(900);
+    }
+    throw new Error("Extraction was cancelled");
+  }
+
+  function showRawExtraction(rawResponse) {
+    let output = rawResponse || "No raw model response was returned.";
+    try {
+      output = JSON.stringify(JSON.parse(output), null, 2);
+    } catch {}
+    $("rawOutput").textContent = output;
+  }
+
+  async function analyzeReceipt() {
+    if (!state.backendReady || !state.hasImage) return;
+    const button = $("analyzeButton");
+    button.disabled = true;
+    button.querySelector("span").textContent = "Preparing image";
+    $("rawOutput").textContent = "Waiting for model response...";
+    $("rawDetails").open = false;
+    dropZone.classList.add("scanning");
+
+    try {
+      const imageData = sourceCanvas.toDataURL("image/jpeg", 0.92).split(",")[1];
+      const started = await fused.runPython("./receipt_lens.py", {
+        action: "start",
+        image_data: imageData,
+        model_id: visionModelId(),
+        prompt: $("extractionPrompt").value
+      });
+      state.jobId = started.job_id;
+      await drawBase64Image(started.cleaned_image, processedCanvas, started.cleaned_mime);
+      state.processed = true;
+      showView(true);
+      const result = await pollJob(started.job_id);
+      showRawExtraction(result.raw_response);
+      setDocument(result.document);
+      $("processingCopy").textContent = `${result.elapsed_seconds.toFixed(1)}s CPU inference / review fields before export`;
+      $("runtimeDot").className = "status-dot ready";
+    } catch (error) {
+      $("processingCopy").textContent = `Extraction failed: ${error.message}`;
+      $("runtimeDot").className = "status-dot error";
+      notice(error.message, "error", "extract");
+    } finally {
+      dropZone.classList.remove("scanning");
+      button.disabled = false;
+      button.querySelector("span").textContent = "Extract again";
+    }
+  }
+
+  function setDocument(document) {
+    state.items = document.items;
+    state.summary = document.summary;
+    state.date = document.date;
+    state.receiptId = document.receiptId;
+    $("merchantName").value = document.merchant;
+    $("receiptDate").textContent = document.date;
+    $("receiptId").textContent = `Receipt ${document.receiptId}`;
+    $("confidence").textContent = `${document.confidence}% confidence`;
+    renderItems();
+  }
+
+  function renderItems() {
+    const body = $("itemsBody");
+    body.replaceChildren();
+    $("emptyTable").hidden = state.items.length > 0;
+    $("itemCount").textContent = `${state.items.length} ${state.items.length === 1 ? "item" : "items"}`;
+
+    state.items.forEach((item, index) => {
+      const row = document.createElement("tr");
+      row.innerHTML = `
+        <td><input class="item-input" data-field="name" value="${escapeAttribute(item.name)}" aria-label="Item name"></td>
+        <td><input class="item-input qty-input" data-field="qty" type="number" min="1" value="${item.qty}" aria-label="Quantity"></td>
+        <td><div class="price-wrap"><input class="item-input price-input" data-field="amount" type="number" min="0" step="0.01" value="${item.amount.toFixed(2)}" aria-label="Amount"></div></td>
+        <td class="confidence-column"><div class="row-confidence"><div class="meter"><span style="width:${item.confidence}%"></span></div>${item.confidence}%</div></td>
+        <td><button class="delete-button" type="button" aria-label="Delete item">x</button></td>`;
+      row.querySelectorAll("input").forEach((input) => input.addEventListener("input", () => {
+        const field = input.dataset.field;
+        state.items[index][field] = field === "name" ? input.value : Number(input.value);
+        updateTotalsFromItems();
+      }));
+      row.querySelector("button").addEventListener("click", () => {
+        state.items.splice(index, 1);
+        updateTotalsFromItems();
+        renderItems();
+      });
+      body.appendChild(row);
+    });
+    updateTotals();
+  }
+
+  function escapeAttribute(value) {
+    return String(value).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+  }
+
+  function updateTotalsFromItems() {
+    state.summary.subtotal = state.items.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+    state.summary.total = state.summary.subtotal + state.summary.tax + state.summary.tip;
+    updateTotals();
+  }
+
+  function updateTotals() {
+    $("subtotalValue").textContent = money(state.summary.subtotal);
+    $("taxValue").textContent = money(state.summary.tax);
+    $("tipValue").textContent = money(state.summary.tip);
+    $("totalValue").textContent = money(state.summary.total);
+  }
+
+  function addItem() {
+    state.items.push({ name: "New item", qty: 1, amount: 0, confidence: 0 });
+    renderItems();
+  }
+
+  function exportJson() {
+    const payload = {
+      merchant: $("merchantName").value,
+      date: state.date,
+      receipt_id: state.receiptId,
+      currency: "USD",
+      items: state.items.map(({ name, qty, amount }) => ({ name, quantity: qty, amount })),
+      ...state.summary
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = "structured-receipt.json";
+    link.click();
+    URL.revokeObjectURL(link.href);
+  }
+
+  $("chooseButton").addEventListener("click", () => fileInput.click());
+  fileInput.addEventListener("change", () => loadFile(fileInput.files[0]));
+  $("sampleButton").addEventListener("click", drawSampleReceipt);
+  $("analyzeButton").addEventListener("click", analyzeReceipt);
+  $("addItemButton").addEventListener("click", addItem);
+  $("exportButton").addEventListener("click", exportJson);
+  $("originalView").addEventListener("click", () => showView(false));
+  $("cleanView").addEventListener("click", () => showView(true));
+
+  $("visionSelect").addEventListener("change", () => {
+    syncCustomVisionVisibility();
+    updateVisionSummary();
+    fused.params.set("visionModel", visionModelId());
+    refreshVisionStatus();
+  });
+  $("visionModelId").addEventListener("change", () => {
+    updateVisionSummary();
+    fused.params.set("visionModel", visionModelId());
+    refreshVisionStatus();
+  });
+
+  dropZone.addEventListener("dragover", (event) => { event.preventDefault(); dropZone.classList.add("dragging"); });
+  dropZone.addEventListener("dragleave", () => dropZone.classList.remove("dragging"));
+  dropZone.addEventListener("drop", (event) => {
+    event.preventDefault();
+    dropZone.classList.remove("dragging");
+    loadFile(event.dataTransfer.files[0]);
+  });
+
+  drawSampleReceipt();
+  loadVisionCatalog().then(refreshVisionStatus);
+</script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "name": "Receipt Lens",
+  "description": "Scan a receipt with a local vision-language model and get clean, editable line items in a table.",
+  "author": { "name": "Aman", "github": "amanbagrecha" },
+  "tags": ["local-ai", "ocr", "receipts", "vision"],
+  "category": "local-ai",
+  "version": "1.0.0",
+  "requires_python": true
+}
