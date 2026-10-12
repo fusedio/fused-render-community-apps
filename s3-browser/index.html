@@ -113,7 +113,20 @@
 
   /* ---- path + toolbar ---- */
   .pathbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 9px 14px; border-bottom: 1px solid var(--line); background: var(--panel); }
+  .addr { flex: 1; min-width: 220px; display: flex; align-items: center; gap: 7px; background: var(--raised); border: 1px solid var(--line); border-radius: 8px; padding: 0 10px; height: 31px; cursor: text; }
+  .addr:hover { border-color: var(--faint); }
+  .addr:focus-within { border-color: var(--accent); }
+  .addr > svg { width: 13px; height: 13px; flex: none; color: var(--faint); }
+  .addr input { flex: 1; min-width: 0; border: 0; background: none; outline: none; font-family: var(--mono); font-size: 12px; color: var(--ink); padding: 0; }
+  .addr input::placeholder { color: var(--faint); }
+  .addr .s3pre { font-family: var(--mono); font-size: 12px; color: var(--faint); flex: none; }
+  .addr:not(.editing) input { display: none; }
+  .addr.editing .crumbs, .addr.editing .s3pre { display: none; }
   .crumbs { display: flex; align-items: center; gap: 4px; flex: 1; min-width: 0; overflow: hidden; font-family: var(--mono); font-size: 12px; white-space: nowrap; }
+  .crumbs .hint { color: var(--faint); }
+  details.adv { margin: 2px 0 13px; }
+  details.adv summary { cursor: pointer; font-size: 11px; font-weight: 600; color: var(--muted); margin-bottom: 10px; user-select: none; }
+  details.adv summary:hover { color: var(--ink); }
   .crumb { color: var(--accent); cursor: pointer; overflow: hidden; text-overflow: ellipsis; }
   .crumb:hover { text-decoration: underline; }
   .crumb.cur { color: var(--ink); cursor: default; }
@@ -282,7 +295,12 @@
     <!-- main -->
     <div class="main">
       <div class="pathbar">
-        <div class="crumbs" id="crumbs"></div>
+        <div class="addr" id="addr" title="Click to type an S3 path">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg>
+          <span class="s3pre">s3://</span>
+          <div class="crumbs" id="crumbs"></div>
+          <input id="addrInput" aria-label="S3 path" spellcheck="false" autocomplete="off" placeholder="Type a path, e.g. s3://fused-asset/data/ — then press Enter" />
+        </div>
         <div class="tools">
           <button class="tbtn" id="bucketInfoBtn" title="Bucket properties"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><circle cx="12" cy="7.5" r="0.6" fill="currentColor"/></svg>Bucket</button>
           <button class="tbtn" id="upBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v13"/><polyline points="7 8 12 3 17 8"/><path d="M5 21h14"/></svg>Upload</button>
@@ -315,7 +333,10 @@
     <div class="modal" id="modal">
       <h2 id="mTitle">Add connection</h2>
       <div class="sub">Saved locally on this machine. Access keys are stored in a git-ignored file and never sent through the app log.</div>
-      <div class="field"><label>Name</label><input id="mName" placeholder="e.g. Production data" /></div>
+      <div class="field"><label>S3 path</label><input id="mBucket" class="mono" placeholder="s3://my-bucket/some/folder/" spellcheck="false" />
+        <div class="fh">Bucket or folder to open. Leave blank to list every bucket your credentials can see (needs AWS profile or keys).</div>
+      </div>
+      <div class="field"><label>Name <span style="font-weight:400;color:var(--faint)">(optional)</span></label><input id="mName" placeholder="defaults to the bucket name" /></div>
       <div class="field"><label>Authentication</label>
         <div class="seg" id="mAuth">
           <button data-auth="anonymous" class="on">Public</button>
@@ -332,9 +353,12 @@
         <div class="field"><label>Secret Access Key</label><input id="mSecretKey" type="password" autocomplete="off" placeholder="" /></div>
         <div class="field"><label>Session token <span style="font-weight:400;color:var(--faint)">(optional)</span></label><input id="mToken" type="password" autocomplete="off" /></div>
       </div>
-      <div class="field"><label>Region <span style="font-weight:400;color:var(--faint)">(optional)</span></label><input id="mRegion" class="mono" placeholder="auto-detected" spellcheck="false" /></div>
-      <div class="field"><label>Bucket <span style="font-weight:400;color:var(--faint)">(optional — pin this connection to one bucket)</span></label><input id="mBucket" class="mono" placeholder="leave blank to list all buckets" spellcheck="false" /></div>
-      <div class="field"><label>Endpoint URL <span style="font-weight:400;color:var(--faint)">(optional)</span></label><input id="mEndpoint" class="mono" placeholder="for S3-compatible: Wasabi, MinIO, R2…" spellcheck="false" /></div>
+      <details class="adv" id="mAdv">
+        <summary>Advanced</summary>
+        <div class="field"><label>Region <span style="font-weight:400;color:var(--faint)">(optional)</span></label><input id="mRegion" class="mono" placeholder="auto-detected" spellcheck="false" /></div>
+        <div class="field"><label>Endpoint URL <span style="font-weight:400;color:var(--faint)">(only for S3-compatible services)</span></label><input id="mEndpoint" class="mono" placeholder="https://… for MinIO, Wasabi, R2 — not an s3:// path" spellcheck="false" />
+        </div>
+      </details>
       <div class="modalfoot">
         <button class="btn linkdanger" id="mDelete" style="display:none;">Delete</button>
         <button class="btn" id="mCancel">Cancel</button>
@@ -506,8 +530,8 @@ function embedUrl(localPath) {
 const ACCT_CACHE_KEY = "s3_accounts_cache";
 function cacheAccounts() {
   try {
-    const slim = ACCOUNTS.map(({ id, label, auth, region, bucket, endpoint_url, profile }) =>
-      ({ id, label, auth, region, bucket, endpoint_url, profile }));
+    const slim = ACCOUNTS.map(({ id, label, auth, region, bucket, prefix, endpoint_url, profile }) =>
+      ({ id, label, auth, region, bucket, prefix, endpoint_url, profile }));
     localStorage.setItem(ACCT_CACHE_KEY, JSON.stringify(slim));
   } catch {}
 }
@@ -519,6 +543,14 @@ async function loadAccounts() {
     const text = await fused.readFile(ACCOUNTS_FILE);
     ACCOUNTS = JSON.parse(text).accounts || [];
   } catch { ACCOUNTS = []; }
+  // Repair connections saved with an s3:// path in Endpoint URL (it's a bucket path).
+  let fixed = false;
+  ACCOUNTS.forEach((a) => {
+    if (!/^s3:\/\//i.test(a.endpoint_url || "")) return;
+    if (!a.bucket) Object.assign(a, parseS3Path(a.endpoint_url));
+    a.endpoint_url = ""; fixed = true;
+  });
+  if (fixed) await saveAccounts();
   if (!ACCOUNTS.length) {
     ACCOUNTS = [
       { id: uid(), label: "Overture Maps (public)", auth: "anonymous", region: "us-west-2", bucket: "overturemaps-us-west-2", endpoint_url: "", profile: "" },
@@ -561,7 +593,7 @@ function selectConn(a) {
   fused.params.set("acct", a.id);
   fused.params.set("region", a.region || "");
   fused.params.set("bucket", a.bucket || "");
-  fused.params.set("prefix", "");
+  fused.params.set("prefix", a.prefix || "");
 }
 
 // ---- buckets sidebar ----
@@ -570,7 +602,7 @@ async function loadBuckets(force = false) {
   const w = $("bktList");
   if (!a) { w.innerHTML = ""; return; }
   if (a.bucket) { BUCKETS = [a.bucket]; renderBuckets(); return; }  // pinned bucket
-  if (a.auth === "anonymous") { w.innerHTML = `<div class="sidehint">Anonymous connections can't list buckets. Pin a bucket in the connection settings.</div>`; return; }
+  if (a.auth === "anonymous") { BUCKETS = []; renderBuckets(); return; }
   const cached = BUCKET_CACHE.get(a.id);
   if (cached && !force) { BUCKETS = cached; renderBuckets(); return; }
   if (cached) BUCKETS = cached; else w.innerHTML = `<div class="sidehint"><span class="spin"></span> listing…</div>`;
@@ -585,8 +617,14 @@ function renderBuckets() {
   const w = $("bktList");
   document.querySelector(".bktfilter").style.display = BUCKETS.length > 6 ? "block" : "none";
   const filter = ($("bktFilter").value || "").toLowerCase();
-  const items = BUCKETS.filter((b) => b.toLowerCase().includes(filter));
-  if (!items.length) { w.innerHTML = `<div class="sidehint">${BUCKETS.length ? "No match." : "No buckets."}</div>`; return; }
+  // A bucket opened by typing its path shows up here even if it isn't listed.
+  const all = bucket() && !BUCKETS.includes(bucket()) ? [...BUCKETS, bucket()] : BUCKETS;
+  const items = all.filter((b) => b.toLowerCase().includes(filter));
+  if (!items.length) {
+    const a = activeAccount();
+    w.innerHTML = `<div class="sidehint">${all.length ? "No match." : a && a.auth === "anonymous" ? "Public connections can't list buckets — type an s3:// path in the bar above." : "No buckets."}</div>`;
+    return;
+  }
   w.innerHTML = "";
   items.forEach((b) => {
     const el = document.createElement("div");
@@ -603,15 +641,45 @@ function openBucket(name) {
   fused.params.set("prefix", "");
 }
 
-// ---- breadcrumbs ----
+// ---- path bar ----
+// Accepts "s3://bucket/a/b/", "bucket/a/b" or "/bucket/a". The rest of the
+// path is kept verbatim (S3 keys may contain "//") and opened as a folder.
+function parseS3Path(str) {
+  const rest = String(str || "").trim().replace(/^s3:\/\//i, "").replace(/^\/+/, "");
+  const i = rest.indexOf("/");
+  const bkt = i < 0 ? rest : rest.slice(0, i);
+  const key = i < 0 ? "" : rest.slice(i + 1);
+  return { bucket: bkt, prefix: key && !key.endsWith("/") ? key + "/" : key };
+}
+function currentPath() { return bucket() ? "s3://" + bucket() + "/" + prefix() : ""; }
+function goToPath(str) {
+  const { bucket: bkt, prefix: pfx } = parseS3Path(str);
+  if (!bkt) { toast("Type a path like s3://my-bucket/folder/", true); return; }
+  if (!activeAccount()) { toast("Add a connection first", true); return; }
+  SEL.clear(); NEXT = null; resetDock();
+  if (bkt !== bucket()) fused.params.set("region", "");   // new bucket: re-detect its region
+  fused.params.set("bucket", bkt);
+  fused.params.set("prefix", pfx);
+}
+function editPath() {
+  const box = $("addr"), inp = $("addrInput");
+  box.classList.add("editing");
+  inp.value = currentPath();
+  inp.focus(); inp.select();
+}
+function stopEditPath() { if (bucket()) $("addr").classList.remove("editing"); }
+
 function renderCrumbs() {
   const c = $("crumbs"); c.innerHTML = ""; const bkt = bucket();
-  if (!bkt) return;
+  // No bucket open: show the input straight away so it's obvious where to type.
+  $("addr").classList.toggle("editing", !bkt || document.activeElement === $("addrInput"));
+  if (!bkt) { if (document.activeElement !== $("addrInput")) $("addrInput").value = ""; return; }
   const mk = (label, pfx, cur) => { const el = document.createElement("span"); el.className = "crumb" + (cur ? " cur" : ""); el.textContent = label; if (!cur) el.onclick = () => navigate(pfx); return el; };
   const parts = prefix().split("/").filter(Boolean);
   c.appendChild(mk(bkt, "", parts.length === 0));
   let acc = "";
   parts.forEach((p, i) => { const s = document.createElement("span"); s.className = "csep"; s.textContent = "/"; c.appendChild(s); acc += p + "/"; c.appendChild(mk(p, acc, i === parts.length - 1)); });
+  const sep = document.createElement("span"); sep.className = "csep"; sep.textContent = "/"; c.appendChild(sep);
 }
 function navigate(pfx) { SEL.clear(); NEXT = null; resetDock(); fused.params.set("prefix", pfx); }
 
@@ -1255,8 +1323,13 @@ function openModal(a) {
   $("mTitle").textContent = a ? "Edit connection" : "Add connection";
   $("mName").value = a ? a.label : "";
   $("mRegion").value = a ? (a.region || "") : "";
-  $("mBucket").value = a ? (a.bucket || "") : "";
-  $("mEndpoint").value = a ? (a.endpoint_url || "") : "";
+  // An s3:// path typed into Endpoint URL is a bucket path, not an endpoint — move it.
+  let path = a && a.bucket ? "s3://" + a.bucket + "/" + (a.prefix || "") : "";
+  let endpoint = a ? (a.endpoint_url || "") : "";
+  if (/^s3:\/\//i.test(endpoint)) { if (!path) path = endpoint; endpoint = ""; }
+  $("mBucket").value = path;
+  $("mEndpoint").value = endpoint;
+  $("mAdv").open = !!(endpoint || (a && a.region));
   $("mAccessKey").value = a && a.access_key ? a.access_key : "";
   $("mSecretKey").value = ""; $("mSecretKey").placeholder = a && a.secret_key ? "•••••• (unchanged)" : "";
   $("mToken").value = ""; $("mToken").placeholder = a && a.session_token ? "•••••• stored — re-enter the Secret to change or clear" : "";
@@ -1264,7 +1337,7 @@ function openModal(a) {
   $("mDelete").style.display = a ? "block" : "none";
   populateProfiles(a ? a.profile : "");
   $("scrim").classList.add("open");
-  $("mName").focus();
+  $("mBucket").focus();
 }
 function closeModal() { $("scrim").classList.remove("open"); }
 function setAuth(auth) {
@@ -1279,9 +1352,12 @@ async function populateProfiles(sel) {
   (res.profiles || []).forEach((p) => { const o = document.createElement("option"); o.value = p; o.textContent = p; if (p === sel) o.selected = true; el.appendChild(o); });
 }
 async function saveModal() {
-  const name = $("mName").value.trim();
-  if (!name) { toast("Name is required", true); return; }
+  let endpoint = $("mEndpoint").value.trim(), pathStr = $("mBucket").value.trim();
+  if (/^s3:\/\//i.test(endpoint)) { if (!pathStr) pathStr = endpoint; endpoint = ""; }
+  const { bucket: bkt, prefix: pfx } = parseS3Path(pathStr);
   const auth = currentAuth();
+  if (auth === "anonymous" && !bkt) { toast("Public connections need an S3 path, e.g. s3://my-bucket/", true); $("mBucket").focus(); return; }
+  const name = $("mName").value.trim() || bkt || (auth === "profile" ? "AWS " + ($("mProfile").value || "default") : "AWS account");
   const prev = editingId ? ACCOUNTS.find((a) => a.id === editingId) : null;
   // Keep the stored credential set only when editing keys and NOT re-entering the
   // secret. Re-entering the secret takes access/secret/token fresh from the form —
@@ -1289,8 +1365,8 @@ async function saveModal() {
   const keepCreds = auth === "keys" && !$("mSecretKey").value && prev;
   const a = {
     id: editingId || uid(), label: name, auth,
-    region: $("mRegion").value.trim(), bucket: $("mBucket").value.trim().replace(/^s3:\/\//, ""),
-    endpoint_url: $("mEndpoint").value.trim(),
+    region: $("mRegion").value.trim(), bucket: bkt, prefix: pfx,
+    endpoint_url: endpoint,
     profile: auth === "profile" ? $("mProfile").value : "",
     access_key: auth === "keys" ? $("mAccessKey").value.trim() : "",
     secret_key: auth === "keys" ? (keepCreds ? prev.secret_key : $("mSecretKey").value) : "",
@@ -1358,8 +1434,8 @@ async function render(force = false) {
   renderBuckets();
   const bkt = bucket();
   $("bucketInfoBtn").disabled = !bkt;
-  if (!a) { $("listwrap").innerHTML = `<div class="empty"><div class="big">Welcome</div>Pick a connection on the left, or add one.</div>`; $("status").textContent = ""; return; }
-  if (!bkt) { $("listwrap").innerHTML = `<div class="empty"><div class="big">Choose a bucket</div>Select a bucket from the sidebar.</div>`; $("status").textContent = ""; return; }
+  if (!a) { $("listwrap").innerHTML = `<div class="empty"><div class="big">Welcome</div>Pick a connection on the left, or click <b>Add</b> and paste an s3:// path.</div>`; $("status").textContent = ""; return; }
+  if (!bkt) { $("listwrap").innerHTML = `<div class="empty"><div class="big">Open a path</div>Type an s3:// path in the bar above, or pick a bucket on the left.</div>`; $("status").textContent = ""; return; }
   // Paint the target listing up front so switching buckets never leaves the
   // previous bucket's rows on screen.
   paintListing(force);
@@ -1378,6 +1454,14 @@ function refresh() { render(true); loadBuckets(true); }
 $("addConn").onclick = () => { if (!ACCOUNTS_LOADED) { toast("Loading connections…"); return; } openModal(null); };
 $("refreshBtn").onclick = refresh;
 $("bktFilter").oninput = renderBuckets;
+$("addr").onclick = (e) => { if (!e.target.closest(".crumb:not(.cur)") && !$("addr").classList.contains("editing")) editPath(); };
+$("addrInput").onkeydown = (e) => {
+  if (e.isComposing || e.keyCode === 229) return;   // Enter confirming an IME candidate
+  if (e.key === "Enter") { e.preventDefault(); goToPath(e.target.value); e.target.blur(); }
+  else if (e.key === "Escape") { e.target.blur(); }
+};
+$("addrInput").onblur = stopEditPath;
+$("mBucket").onkeydown = (e) => { if (e.key === "Enter" && !e.isComposing && e.keyCode !== 229) saveModal(); };
 $("upBtn").onclick = () => $("fileInput").click();
 $("fileInput").onchange = (e) => { if (e.target.files.length) doUpload([...e.target.files]); e.target.value = ""; };
 $("mkdirBtn").onclick = doMkdir;
