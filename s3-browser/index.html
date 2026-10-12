@@ -299,7 +299,7 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg>
           <span class="s3pre">s3://</span>
           <div class="crumbs" id="crumbs"></div>
-          <input id="addrInput" spellcheck="false" autocomplete="off" placeholder="Type a path, e.g. s3://fused-asset/data/ — then press Enter" />
+          <input id="addrInput" aria-label="S3 path" spellcheck="false" autocomplete="off" placeholder="Type a path, e.g. s3://fused-asset/data/ — then press Enter" />
         </div>
         <div class="tools">
           <button class="tbtn" id="bucketInfoBtn" title="Bucket properties"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><circle cx="12" cy="7.5" r="0.6" fill="currentColor"/></svg>Bucket</button>
@@ -642,13 +642,14 @@ function openBucket(name) {
 }
 
 // ---- path bar ----
-// Accepts "s3://bucket/a/b/", "bucket/a/b" or "/bucket/a". A trailing segment
-// that looks like a file (has an extension) opens its folder.
+// Accepts "s3://bucket/a/b/", "bucket/a/b" or "/bucket/a". The rest of the
+// path is kept verbatim (S3 keys may contain "//") and opened as a folder.
 function parseS3Path(str) {
-  const parts = String(str || "").trim().replace(/^s3:\/\//i, "").split("/").filter(Boolean);
-  const bkt = parts.shift() || "";
-  if (parts.length && /\.[A-Za-z0-9]{1,8}$/.test(parts[parts.length - 1]) && !/\/\s*$/.test(str)) parts.pop();
-  return { bucket: bkt, prefix: parts.length ? parts.join("/") + "/" : "" };
+  const rest = String(str || "").trim().replace(/^s3:\/\//i, "").replace(/^\/+/, "");
+  const i = rest.indexOf("/");
+  const bkt = i < 0 ? rest : rest.slice(0, i);
+  const key = i < 0 ? "" : rest.slice(i + 1);
+  return { bucket: bkt, prefix: key && !key.endsWith("/") ? key + "/" : key };
 }
 function currentPath() { return bucket() ? "s3://" + bucket() + "/" + prefix() : ""; }
 function goToPath(str) {
@@ -672,7 +673,7 @@ function renderCrumbs() {
   const c = $("crumbs"); c.innerHTML = ""; const bkt = bucket();
   // No bucket open: show the input straight away so it's obvious where to type.
   $("addr").classList.toggle("editing", !bkt || document.activeElement === $("addrInput"));
-  if (!bkt) { $("addrInput").value = ""; return; }
+  if (!bkt) { if (document.activeElement !== $("addrInput")) $("addrInput").value = ""; return; }
   const mk = (label, pfx, cur) => { const el = document.createElement("span"); el.className = "crumb" + (cur ? " cur" : ""); el.textContent = label; if (!cur) el.onclick = () => navigate(pfx); return el; };
   const parts = prefix().split("/").filter(Boolean);
   c.appendChild(mk(bkt, "", parts.length === 0));
@@ -1455,11 +1456,12 @@ $("refreshBtn").onclick = refresh;
 $("bktFilter").oninput = renderBuckets;
 $("addr").onclick = (e) => { if (!e.target.closest(".crumb:not(.cur)") && !$("addr").classList.contains("editing")) editPath(); };
 $("addrInput").onkeydown = (e) => {
+  if (e.isComposing || e.keyCode === 229) return;   // Enter confirming an IME candidate
   if (e.key === "Enter") { e.preventDefault(); goToPath(e.target.value); e.target.blur(); }
   else if (e.key === "Escape") { e.target.blur(); }
 };
 $("addrInput").onblur = stopEditPath;
-$("mBucket").onkeydown = (e) => { if (e.key === "Enter") saveModal(); };
+$("mBucket").onkeydown = (e) => { if (e.key === "Enter" && !e.isComposing && e.keyCode !== 229) saveModal(); };
 $("upBtn").onclick = () => $("fileInput").click();
 $("fileInput").onchange = (e) => { if (e.target.files.length) doUpload([...e.target.files]); e.target.value = ""; };
 $("mkdirBtn").onclick = doMkdir;
