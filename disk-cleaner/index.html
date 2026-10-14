@@ -95,6 +95,10 @@
   }
   nav button:hover { color: var(--text); background: var(--hover); }
   nav button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--fill); }
+  /* Narrow: Overview only — no tab bar, no links into Cleanup. */
+  @media (max-width: 640px) {
+    nav, [data-tab-go], .note:has(> [data-tab-go]:only-child) { display: none; }
+  }
 
   /* ---- cards ---- */
   .card {
@@ -320,8 +324,11 @@
   const panel = document.getElementById("panel");
 
   // ---- state (params are the state) ---------------------------------------
+  // Narrow panes only get the Overview; the tab param is left alone so the
+  // Cleanup tab comes back when there's room again.
+  const narrow = matchMedia("(max-width: 640px)");
   const P = {
-    tab: () => fused.params.get("tab") || "overview",
+    tab: () => narrow.matches ? "overview" : fused.params.get("tab") || "overview",
     sel: () => (fused.params.get("sel") || "").split(",").filter(Boolean),
   };
   const setParam = (k, v) => fused.params.set(k, String(v));
@@ -865,6 +872,7 @@
   // Every colour lives in a token and every mark is CSS, so a theme swap needs
   // no redraw — nothing here hands a colour to JS.
   fused.params.onChange(draw);
+  narrow.addEventListener("change", draw);
   draw();
 
   function isPreview() {
