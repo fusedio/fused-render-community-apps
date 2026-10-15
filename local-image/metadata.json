@@ -8,5 +8,6 @@
   "version": "1.4.0",
   "requires_python": true,
   "ai_capabilities": ["text-to-image"],
-  "ai_model_param": "imageModel"
+  "ai_model_param": "imageModel",
+  "featured":true
 }
