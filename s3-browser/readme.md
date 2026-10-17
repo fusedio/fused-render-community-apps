@@ -56,7 +56,7 @@ active connection/bucket/prefix live in URL params so any view is bookmarkable.
 | `download.py` | Chunked recursive local download (`plan` / `step`), for files and folders. |
 | `upload.py` | S3 multipart upload (`start` / `part` / `complete` / `abort`) for large files. |
 | `s3lib.py` | Shared credential resolution, client construction, error envelope. |
-| `tools.py` / `mcp.toml` | MCP tools for Claude (`fused app serve <this folder>`): browse, read, upload, download, tag, version and bucket-config tools over the same backend. |
+| `tools.py` / `mcp.toml` | MCP tools for Claude (`fused app serve <this folder>`): connection add/edit/delete plus browse, read, upload, download, delete (files and folders), tag, version and bucket-config tools over the same backend. Access keys for a connection are read from a local credentials file, never passed as tool params. |
 | `icon.svg` | App icon. |
 
 ## Trust

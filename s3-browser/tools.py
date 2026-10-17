@@ -10,7 +10,8 @@ Every tool addresses a store the same way: `account` is a saved connection
 from the S3 Browser sidebar (its id or its label — see list_accounts), and
 `profile` / `region` / `anonymous` / `endpoint_url` override or replace it.
 With none of them set the default AWS credential chain is used. Raw access
-keys are never accepted as parameters; save them as a connection in the app.
+keys are never accepted as parameters: save_account reads them from a local
+credentials file, so they never pass through a tool call.
 """
 
 from __future__ import annotations
@@ -60,11 +61,153 @@ def _call(action, account="", profile="", region="", anonymous=False, endpoint_u
 
 # ---- connections ------------------------------------------------------------
 
+_PUBLIC_FIELDS = ("id", "label", "auth", "profile", "region", "bucket", "prefix", "endpoint_url")
+
+_KEY_FIELDS = {
+    "access_key": ("aws_access_key_id", "access key id", "access_key_id"),
+    "secret_key": ("aws_secret_access_key", "secret access key", "secret_access_key"),
+    "session_token": ("aws_session_token", "session token", "session_token"),
+}
+
+
+def _public(a: dict) -> dict:
+    return {k: a.get(k) for k in _PUBLIC_FIELDS if a.get(k) not in (None, "")}
+
+
+def _find_account(accounts: list, account: str):
+    return next((i for i, a in enumerate(accounts) if account in (a.get("id"), a.get("label"))), None)
+
+
+def _write_accounts(accounts: list) -> None:
+    import tempfile
+
+    s3lib.accounts_location()
+    fd, tmp = tempfile.mkstemp(dir=s3lib.CACHE_DIR, prefix=".accounts-")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump({"accounts": accounts}, f, indent=2, ensure_ascii=False)
+        os.replace(tmp, s3lib.ACCOUNTS_PATH)
+    except OSError:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+        raise
+
+
+def _uid() -> str:
+    import random
+    import string
+    import time
+
+    digits = string.digits + string.ascii_lowercase
+    n, out = int(time.time() * 1000), ""
+    while n:
+        n, r = divmod(n, 36)
+        out = digits[r] + out
+    return out + "".join(random.choice(digits) for _ in range(5))
+
+
+def _parse_s3_path(path: str) -> tuple[str, str]:
+    rest = path.strip()
+    if rest[:5].lower() == "s3://":
+        rest = rest[5:]
+    bkt, _, key = rest.lstrip("/").partition("/")
+    return bkt, (key + "/" if key and not key.endswith("/") else key)
+
+
+def _read_credentials_file(path: str) -> dict:
+    import csv
+
+    with open(os.path.expanduser(path), encoding="utf-8-sig") as f:
+        text = f.read()
+    rows = list(csv.reader(text.splitlines()))
+    pairs = {}
+    if len(rows) >= 2 and len(rows[0]) > 1 and len(rows[0]) == len(rows[1]):
+        pairs = {k.strip().lower(): v.strip() for k, v in zip(rows[0], rows[1])}
+    else:
+        for line in text.splitlines():
+            k, sep, v = line.partition("=")
+            if sep:
+                pairs[k.strip().removeprefix("export ").strip().lower()] = v.strip().strip("'\"")
+    return {field: next((pairs[n] for n in names if pairs.get(n)), "")
+            for field, names in _KEY_FIELDS.items()}
+
+
+def _err(code: str, message: str) -> dict:
+    return {"error": {"code": code, "message": message}}
+
+
 def list_accounts() -> dict:
     """Saved S3 Browser connections (secrets omitted) and local AWS profiles."""
-    keep = ("id", "label", "auth", "profile", "region", "bucket", "endpoint_url")
-    return {"accounts": [{k: a.get(k) for k in keep if a.get(k) not in (None, "")} for a in _accounts()],
-            "profiles": s3lib.available_profiles()}
+    return {"accounts": [_public(a) for a in _accounts()], "profiles": s3lib.available_profiles()}
+
+
+def save_account(account: str = "", label: str | None = None, auth: str | None = None,
+                 path: str | None = None, region: str | None = None,
+                 endpoint_url: str | None = None, profile: str | None = None,
+                 credentials_file: str = "") -> dict:
+    """Add a connection, or edit the one named by `account` (id or label).
+    When editing, a field left out keeps its stored value and "" clears it."""
+    accounts = _accounts()
+    prev = None
+    if account:
+        idx = _find_account(accounts, account)
+        if idx is None:
+            return _err("NoSuchAccount", f"no saved connection with id or label {account!r}")
+        prev = accounts[idx]
+
+    def pick(value, field):
+        return value if value is not None else (prev or {}).get(field, "") or ""
+
+    auth = pick(auth, "auth") or "anonymous"
+    if auth not in ("anonymous", "profile", "keys"):
+        return _err("InvalidAuth", 'auth must be "anonymous", "profile" or "keys"')
+    endpoint = pick(endpoint_url, "endpoint_url").strip()
+    if endpoint[:5].lower() == "s3://":
+        path = endpoint if path is None else path
+        endpoint = ""
+    if path is not None:
+        bkt, pfx = _parse_s3_path(path)
+    else:
+        bkt, pfx = (prev or {}).get("bucket", ""), (prev or {}).get("prefix", "")
+    if auth == "anonymous" and not bkt:
+        return _err("MissingPath", "public connections need an S3 path, e.g. s3://my-bucket/")
+    prof = pick(profile, "profile") if auth == "profile" else ""
+
+    creds = {"access_key": "", "secret_key": "", "session_token": ""}
+    if auth == "keys":
+        if credentials_file:
+            try:
+                creds = _read_credentials_file(credentials_file)
+            except OSError as e:
+                return _err("CredentialsFileUnreadable", str(e))
+        elif prev and prev.get("auth") == "keys":
+            creds = {k: prev.get(k, "") for k in creds}
+        if not (creds["access_key"] and creds["secret_key"]):
+            return _err("MissingKeys", "key auth needs a credentials_file holding both an access "
+                        "key id and a secret access key")
+
+    name = pick(label, "label").strip() or bkt or (
+        "AWS " + (prof or "default") if auth == "profile" else "AWS account")
+    a = {"id": prev["id"] if prev else _uid(), "label": name, "auth": auth,
+         "region": pick(region, "region").strip(), "bucket": bkt, "prefix": pfx,
+         "endpoint_url": endpoint, "profile": prof, **creds}
+    if prev:
+        accounts[idx] = a
+    else:
+        accounts.append(a)
+    _write_accounts(accounts)
+    return {"saved": _public(a), "created": prev is None}
+
+
+def delete_account(account: str) -> dict:
+    """Remove a saved connection by id or label."""
+    accounts = _accounts()
+    idx = _find_account(accounts, account)
+    if idx is None:
+        return _err("NoSuchAccount", f"no saved connection with id or label {account!r}")
+    gone = accounts.pop(idx)
+    _write_accounts(accounts)
+    return {"deleted": {"id": gone.get("id"), "label": gone.get("label")}}
 
 
 # ---- buckets ----------------------------------------------------------------
@@ -235,11 +378,30 @@ def rename_object(bucket: str, src_key: str, dest_key: str, account: str = "", p
                  bucket=bucket, key=dest_key, src_key=src_key)
 
 
-def delete_objects(bucket: str, keys: list[str], account: str = "", profile: str = "",
-                   region: str = "", anonymous: bool = False, endpoint_url: str = "") -> dict:
-    """Permanently delete objects by key (up to 1000; use list_keys to expand a folder)."""
-    return _call("delete_objects", account, profile, region, anonymous, endpoint_url,
-                 bucket=bucket, keys=json.dumps(keys))
+def delete_objects(bucket: str, keys: list[str] | None = None, prefixes: list[str] | None = None,
+                   account: str = "", profile: str = "", region: str = "",
+                   anonymous: bool = False, endpoint_url: str = "") -> dict:
+    """Permanently delete objects (`keys`) and whole folders (`prefixes`,
+    recursive, up to 5000 objects per folder per call)."""
+    conn = (account, profile, region, anonymous, endpoint_url)
+    targets, truncated = list(keys or []), False
+    for p in prefixes or []:
+        if not p.strip("/"):
+            return _err("RefusedBucketRoot", "refusing to delete a whole bucket; name a folder prefix")
+        r = _call("list_keys", *conn, bucket=bucket, prefix=p if p.endswith("/") else p + "/")
+        if "error" in r:
+            return r
+        targets += r["keys"]
+        truncated = truncated or r["truncated"]
+    targets = list(dict.fromkeys(targets))
+    deleted, errors = 0, []
+    for i in range(0, len(targets), 1000):
+        r = _call("delete_objects", *conn, bucket=bucket, keys=json.dumps(targets[i:i + 1000]))
+        if "error" in r:
+            return {**r, "deleted": deleted}
+        deleted += len(r["deleted"])
+        errors += r["errors"]
+    return {"deleted": deleted, "errors": errors, "truncated": truncated}
 
 
 def change_storage_class(bucket: str, key: str, storage_class: str, account: str = "",
