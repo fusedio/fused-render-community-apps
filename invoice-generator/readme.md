@@ -39,3 +39,12 @@ images needs [pdf.js](https://mozilla.github.io/pdf.js/), which is fetched from
 `cdn.jsdelivr.net` the first time you attach a PDF after opening the app. Your
 PDF is read and rendered locally and is never uploaded anywhere, and image
 attachments need no network at all — but that one script download does happen.
+
+## MCP tools
+
+`tools.py` + `mcp.toml` publish the app to Claude through
+`fused app serve <this folder>`: settings, client and invoice create / read /
+update / delete, duplicate, sent / paid / final status, image attachments and
+FX reference rates — all over the same `invoice.py` backend the page uses, so
+the app shows the changes the next time it loads them. Invoices are found by
+id or by number (`ACME-2026-003`), clients by slug or name.

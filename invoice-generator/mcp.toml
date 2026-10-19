@@ -1,0 +1,107 @@
+# MCP tools for this app, curated in fused-render's MCP panel.
+# `fused app serve <this folder>` publishes one tool per [[tool]] table.
+
+[[tool]]
+name = "get_settings"
+description = "Read the app settings that seed every client's first invoice (fields listed under update_settings). Logo and signature are shown as a size note, not the image."
+file = "tools.py"
+entrypoint = "get_settings"
+signature = "get_settings()"
+
+[[tool]]
+name = "update_settings"
+description = "Update app settings. `changes` holds only the fields to set; nested objects merge, lists replace. Fields: billed_by {name, email, phone, address, custom: [{label, value}]}, home_currency (ISO code), default_terms, payment [{label, value}], logo / signature (local image path, data:image URL, or '' to remove). Affects new clients' first invoices, not existing invoices."
+file = "tools.py"
+entrypoint = "update_settings"
+signature = "update_settings(changes: dict)"
+
+[[tool]]
+name = "list_clients"
+description = "List clients: slug, name, invoice_count, last modified, and outstanding (unpaid total per currency). Pass a client's slug or name as `client` to the other tools."
+file = "tools.py"
+entrypoint = "list_clients"
+signature = "list_clients()"
+
+[[tool]]
+name = "create_client"
+description = "Add a client by name. Its slug is derived from the name and returned. Fails if a client with that name already exists."
+file = "tools.py"
+entrypoint = "create_client"
+signature = "create_client(name: str)"
+
+[[tool]]
+name = "rename_client"
+description = "Rename a client (by slug or name). The slug and its invoices are unchanged; existing invoices keep the billed_to name they were issued with."
+file = "tools.py"
+entrypoint = "rename_client"
+signature = "rename_client(client: str, name: str)"
+
+[[tool]]
+name = "delete_client"
+description = "Permanently delete a client (by slug or name) together with ALL of its invoices and attachments. Cannot be undone."
+file = "tools.py"
+entrypoint = "delete_client"
+signature = "delete_client(client: str)"
+
+[[tool]]
+name = "list_invoices"
+description = "List invoices for one client (slug or name), or for every client when `client` is empty. `show` filters: all (default), outstanding (unpaid), awaiting (sent, unpaid), unsent, paid, draft, final. Each row: client, id, number, issue_date, due_date, status, total, currency, sent/sent_date, paid/paid_date, attachments. Also returns total_by_currency for the rows listed."
+file = "tools.py"
+entrypoint = "list_invoices"
+signature = "list_invoices(client: str='', show: str='all')"
+
+[[tool]]
+name = "get_invoice"
+description = "Read one invoice by id or number (e.g. ACME-2026-003), with computed totals (subtotal, discount, tax, shipping, total, and the converted total when an fx reference is set) and attach_dir, the folder holding its attachment page images. `client` is only needed if the number is used by several clients."
+file = "tools.py"
+entrypoint = "get_invoice"
+signature = "get_invoice(invoice: str, client: str='')"
+
+[[tool]]
+name = "create_invoice"
+description = "Create and save a new invoice for a client (slug or name), numbered automatically. Starts the way the app's New invoice does: from the client's most recent invoice (parties, currency, terms, payment, theme; items cleared) or, for a first invoice, from settings. `changes` then sets fields, same shape as update_invoice, e.g. {items: [{desc: 'Consulting', qty: 10, rate: 150}], due_date: '2026-11-30', tax_pct: 18}. Returns the saved invoice with totals."
+file = "tools.py"
+entrypoint = "create_invoice"
+signature = "create_invoice(client: str, changes: dict=None)"
+
+[[tool]]
+name = "update_invoice"
+description = "Edit an invoice found by id or number. `changes` holds only the fields to set; nested objects merge, lists replace (send the full items list). Fields: number; issue_date, due_date (YYYY-MM-DD); po; currency (ISO code); fx (a currency code such as 'INR' prints a converted reference total at today's rate, null removes it); status ('draft' or 'final': final locks everything except status, sent and paid); sent, paid (true/false: dates default to today, paid implies sent, un-sending un-pays); sent_date, paid_date; billed_by, billed_to {name, email, phone, address, custom: [{label, value}]}; labels {billed_by, billed_to}; items [{desc, qty, rate, hsn, unit}]; item_columns {hsn, unit} (auto-on when items use them); discount {mode: 'pct' or 'flat', value}; tax_pct; shipping; notes; terms; payment [{label, value}]; logo, signature (local image path, data:image URL, or '' to remove); theme ('minimal', 'band', 'boxed'); text_scale (0.9, 1, 1.15, 1.3); attach_list (list attachments on the invoice). `client` is only needed if the number is used by several clients."
+file = "tools.py"
+entrypoint = "update_invoice"
+signature = "update_invoice(invoice: str, changes: dict, client: str='')"
+
+[[tool]]
+name = "duplicate_invoice"
+description = "Copy an invoice (by id or number) into a new draft for the same client with the next number, today's issue date, no due date and sent/paid cleared; attachments are copied. Optional `changes` are applied before saving, same shape as update_invoice. Returns the new invoice."
+file = "tools.py"
+entrypoint = "duplicate_invoice"
+signature = "duplicate_invoice(invoice: str, client: str='', changes: dict=None)"
+
+[[tool]]
+name = "delete_invoice"
+description = "Permanently delete an invoice (by id or number) and its attachment pages. Cannot be undone."
+file = "tools.py"
+entrypoint = "delete_invoice"
+signature = "delete_invoice(invoice: str, client: str='')"
+
+[[tool]]
+name = "attach_file"
+description = "Attach a local image file (png, jpg, webp, gif, svg; up to 10 MB) to an invoice as an extra printed page, e.g. a receipt or bill. `label` is how the invoice lists it (defaults to the file name). PDFs must be added from the app's Attachments panel, which renders them page by page; or attach each page as an image. Refused on a final invoice."
+file = "tools.py"
+entrypoint = "attach_file"
+signature = "attach_file(invoice: str, path: str, label: str='', client: str='')"
+
+[[tool]]
+name = "remove_attachment"
+description = "Remove an attachment from an invoice. `attachment` is its id, its label, or its 1-based position as listed in get_invoice's invoice.attachments. Refused on a final invoice."
+file = "tools.py"
+entrypoint = "remove_attachment"
+signature = "remove_attachment(invoice: str, attachment: str, client: str='')"
+
+[[tool]]
+name = "fx_rate"
+description = "Reference exchange rate from `base` to `quote` currency (ISO codes) via frankfurter (ECB rates), cached per day and falling back to the last cached rate when offline. Returns rate, date, cached."
+file = "tools.py"
+entrypoint = "fx_rate"
+signature = "fx_rate(base: str, quote: str)"

@@ -230,7 +230,7 @@ def _next_number(client_name, docs):
     return f"{prefix}-{date.today().year}-{seq + 1:03d}"
 
 
-def _total(doc):
+def _totals(doc):
     subtotal = sum(float(it.get("qty") or 0) * float(it.get("rate") or 0)
                    for it in doc["items"])
     disc = doc["discount"]
@@ -238,7 +238,9 @@ def _total(doc):
     discount = subtotal * value / 100 if disc.get("mode") == "pct" else value
     taxable = subtotal - discount
     tax = taxable * float(doc.get("tax_pct") or 0) / 100
-    return taxable + tax + float(doc.get("shipping") or 0)
+    shipping = float(doc.get("shipping") or 0)
+    return {"subtotal": subtotal, "discount": discount, "tax": tax,
+            "shipping": shipping, "total": taxable + tax + shipping}
 
 
 # --------------------------------------------------------------------- actions
@@ -267,7 +269,7 @@ def _list_clients():
             outstanding = {}
             for d in _invoices(slug):
                 if not d["paid"]:
-                    outstanding[d["currency"]] = round(outstanding.get(d["currency"], 0) + _total(d), 2)
+                    outstanding[d["currency"]] = round(outstanding.get(d["currency"], 0) + _totals(d)["total"], 2)
             clients.append({"slug": slug, "name": info.get("name", slug),
                             "invoice_count": len(files), "outstanding": outstanding,
                             "modified": datetime.fromtimestamp(mtime).isoformat(timespec="seconds")})
@@ -305,7 +307,7 @@ def _delete_client(client):
 def _list_invoices(client):
     rows = [{"id": d["id"], "number": d["number"], "issue_date": d["issue_date"],
              "due_date": d["due_date"], "sent": d["sent"], "sent_date": d["sent_date"],
-             "status": d["status"], "total": round(_total(d), 2),
+             "status": d["status"], "total": round(_totals(d)["total"], 2),
              "currency": d["currency"], "modified": d["modified"],
              "paid": d["paid"], "paid_date": d["paid_date"],
              "attachments": sum(1 for a in d["attachments"] if a["pages"])}
