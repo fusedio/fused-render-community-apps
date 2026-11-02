@@ -891,7 +891,8 @@
             <span class="each">${bytes(s.size)} each</span>
             <span class="size">${bytes(s.savings)}</span>
           </summary>
-          <ul>${s.paths.map(p => `<li title="${esc(p)}">${esc(p)}</li>`).join("")}</ul>
+          <ul>${s.paths.slice(0, 20).map(p => `<li title="${esc(p)}">${esc(p)}</li>`).join("")}${
+            s.paths.length > 20 ? `<li class="shared">and ${s.paths.length - 20} more</li>` : ""}</ul>
         </details>`;
     }).join("");
   }
