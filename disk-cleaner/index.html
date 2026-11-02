@@ -94,11 +94,6 @@
   /* Narrow: Overview only — no tab bar, no links into Cleanup. */
   @media (max-width: 640px) {
     nav, [data-tab-go], .note:has(> [data-tab-go]:only-child), .reassure { display: none; }
-    .hero { padding: 28px 22px 24px; }
-    .hero-num { font-size: 60px; }
-    .hero-sub { font-size: 15px; margin-bottom: 22px; }
-    .row { grid-template-columns: 14px 1fr 48px 64px 40px; gap: 8px; }
-    .row .name .meta { display: none; }
   }
 
   /* ---- cards ---- */
@@ -280,6 +275,14 @@
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   .progress-hint { color: var(--text-2); font-size: 12px; margin: 12px 0 16px; }
+  /* Compact view: overrides for the rules above, so they must come last. */
+  @media (max-width: 640px) {
+    .hero { padding: 28px 22px 24px; }
+    .hero-num { font-size: 60px; }
+    .hero-sub { font-size: 15px; margin-bottom: 22px; }
+    .row { grid-template-columns: 14px 1fr 48px 64px 40px; gap: 8px; }
+    .row .name .meta { display: none; }
+  }
 </style>
 </head>
 <body>
