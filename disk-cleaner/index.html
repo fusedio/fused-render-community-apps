@@ -436,10 +436,16 @@
     return `<div class="card loading"><span class="spinner"></span>${esc(text)}</div>`;
   }
 
-  // The Overview hero: one number (what Cleanup can free), a gauge showing
-  // free space now → after, and the single action that gets you there.
-  function hero(volume, caches) {
-    const gain = caches ? Math.min(caches.reclaimable, volume.used) : 0;
+  // The Overview hero: one number (caches Cleanup can free, plus extra copies
+  // from the last duplicate scan), a gauge showing free space now → after,
+  // and the action that gets you there.
+  function hero(volume, caches, dupes) {
+    const dup = dupes ? dupes.savings : 0;
+    const gain = caches ? Math.min(caches.reclaimable + dup, volume.used) : 0;
+    const sub = !dup ? "is taken up by caches you can safely clear."
+      : caches && caches.reclaimable > 0
+        ? `could come back: ${bytes(caches.reclaimable)} of caches you can safely clear and ${bytes(dup)} of duplicate files.`
+        : "is taken up by extra copies of the same files.";
     const after = volume.free + gain;
     const pct = n => (n / (volume.total || 1) * 100).toFixed(2);
     const p = bytesParts(gain);
@@ -447,7 +453,7 @@
       ? `<div class="hero-num pending">…</div><p class="hero-sub">Measuring caches you can safely clear…</p>`
       : gain > 0
         ? `<div class="hero-num">${p.value}<span class="unit">${p.unit}</span></div>
-           <p class="hero-sub">is taken up by caches you can safely clear.</p>`
+           <p class="hero-sub">${sub}</p>`
         : `<div class="hero-num">${bytesParts(volume.free).value}<span class="unit">${bytesParts(volume.free).unit}</span></div>
            <p class="hero-sub">free. No caches worth clearing right now.</p>`;
     return `<div class="card hero">
@@ -462,8 +468,9 @@
             ? `<span class="arrow">→</span><strong class="after">${bytes(after)}</strong>` : ""}</span>
           <span>of ${bytes(volume.total)}</span>
         </div>
-        ${gain > 0 ? `<button class="btn cta" data-tab-go="clean">Review ${bytes(gain)} of caches</button>
+        ${caches && caches.reclaimable > 0 ? `<button class="btn cta" data-tab-go="clean">Review ${bytes(caches.reclaimable)} of caches</button>
           <p class="reassure">Only caches apps rebuild on their own. Nothing is touched until you pick it.</p>` : ""}
+        ${dup > 0 ? `<p class="note"><button class="link" data-tab-go="dupes">See the ${bytes(dup)} of duplicates →</button></p>` : ""}
       </div>`;
   }
 
@@ -549,9 +556,10 @@
     panel.innerHTML = `<div class="card">Listing your home directory…</div>`;
     let frame = null;
     let caches = null;
+    let dupes = null;
 
     function paint() {
-      const volCard = frame ? hero(frame.volume, caches) : loadingCard("Loading volume info…");
+      const volCard = frame ? hero(frame.volume, caches, dupes) : loadingCard("Loading volume info…");
 
       let foldersCard = `<div class="card">Listing your home directory…</div>`;
       if (frame) {
@@ -581,6 +589,8 @@
     await Promise.all([
       scanProgressive("~", f => { frame = f; paint(); }),
       fused.runPython("./caches.py", {}).then(c => { caches = c; paint(); }),
+      // Only a finished earlier scan counts; this tab never starts one.
+      dupesResult().then(d => { if (!d.none && d.savings > 0) { dupes = d; paint(); } }).catch(() => {}),
     ]);
   }
 
