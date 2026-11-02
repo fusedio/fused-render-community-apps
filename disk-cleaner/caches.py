@@ -43,11 +43,14 @@ def _save_cached(payload: dict):
     os.replace(tmp, CACHE_FILE)
 
 
-def main(refresh: bool = False, max_age: float = 900.0, budget: float = 45.0):
+def main(refresh: bool = False, max_age: float = 900.0, budget: float = 45.0, cached_only: bool = False):
     if not refresh:
-        cached = _load_cached(max_age)
+        cached = _load_cached(float("inf") if cached_only else max_age)
         if cached:
             return cached
+    if cached_only:
+        # The app-card preview: show the last numbers, never start a walk.
+        return {"none": True}
 
     deadline = time.monotonic() + budget
     started = time.monotonic()

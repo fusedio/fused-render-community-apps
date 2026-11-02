@@ -360,6 +360,7 @@
   // Narrow panes only get the Overview; the tab param is left alone so the
   // Cleanup tab comes back when there's room again.
   const narrow = matchMedia("(max-width: 640px)");
+  const PREVIEW = isPreview();
   const P = {
     tab: () => narrow.matches ? "overview" : fused.params.get("tab") || "overview",
     sel: () => (fused.params.get("sel") || "").split(",").filter(Boolean),
@@ -518,7 +519,9 @@
     const frame = await fused.runPython("./scan.py", { path });
     onUpdate(frame, false);
 
-    const pending = frame.children.filter(c => c.pending);
+    // The app-card preview renders this page unprompted, so it shows only
+    // sizes scan.py already had cached and never starts a walk.
+    const pending = PREVIEW ? [] : frame.children.filter(c => c.pending);
     const CONCURRENCY = 6;
     let cursor = 0;
     async function worker() {
@@ -567,7 +570,7 @@
       let foldersCard = `<div class="card">Listing your home directory…</div>`;
       if (frame) {
         const totalKnown = frame.children.reduce((a, c) => a + (c.size || 0), 0);
-        const pendingCount = frame.children.filter(c => c.pending).length;
+        const pendingCount = PREVIEW ? 0 : frame.children.filter(c => c.pending).length;
         foldersCard = `
           <div class="card">
             <h2>Biggest folders in your home directory</h2>
@@ -591,7 +594,8 @@
 
     await Promise.all([
       scanProgressive("~", f => { frame = f; paint(); }),
-      fused.runPython("./caches.py", {}).then(c => { caches = c; paint(); }),
+      fused.runPython("./caches.py", PREVIEW ? { cached_only: "true" } : {})
+        .then(c => { if (!c.none) { caches = c; paint(); } }),
       // Only a finished earlier scan counts; this tab never starts one.
       dupesResult().then(d => { if (!d.none && d.savings > 0) { dupes = d; paint(); } }).catch(() => {}),
     ]);
