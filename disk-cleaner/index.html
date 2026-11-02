@@ -93,7 +93,12 @@
   nav button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--fill); }
   /* Narrow: Overview only — no tab bar, no links into Cleanup. */
   @media (max-width: 640px) {
-    nav, [data-tab-go], .note:has(> [data-tab-go]:only-child) { display: none; }
+    nav, [data-tab-go], .note:has(> [data-tab-go]:only-child), .reassure { display: none; }
+    .hero { padding: 28px 22px 24px; }
+    .hero-num { font-size: 60px; }
+    .hero-sub { font-size: 15px; margin-bottom: 22px; }
+    .row { grid-template-columns: 14px 1fr 48px 64px 40px; gap: 8px; }
+    .row .name .meta { display: none; }
   }
 
   /* ---- cards ---- */
