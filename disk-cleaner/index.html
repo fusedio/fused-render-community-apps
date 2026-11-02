@@ -24,11 +24,9 @@
     --share-low: var(--muted);
     --share-mid: #5598e7;   /* blue 350 */
     --share-high: #9ec5f4;  /* blue 200 */
-    /* Categorical slots (identity, fixed order) for the folders breakdown —
-       a validated-adjacent-safe prefix of the 8-slot reference palette. */
-    --cat-1: #3987e5; --cat-2: #d95926; --cat-3: #199e70;
-    --cat-4: #c98500; --cat-5: #d55181; --cat-6: #008300;
-    --cat-other: var(--baseline);
+    /* Space you'd get back: the hero's gauge segment, "after" figure and CTA. */
+    --gain: #1f9e78;
+    --gain-text: #4cc79c;
     --good: #0ca30c;
     --warning: #fab219;
     --serious: #ec835a;
@@ -53,11 +51,8 @@
     --share-low: var(--muted);
     --share-mid: #256abf;   /* blue 500 */
     --share-high: #184f95;  /* blue 600 */
-    /* Categorical slots (identity, fixed order) for the folders breakdown —
-       a validated-adjacent-safe prefix of the 8-slot reference palette. */
-    --cat-1: #2a78d6; --cat-2: #eb6834; --cat-3: #1baf7a;
-    --cat-4: #eda100; --cat-5: #e87ba4; --cat-6: #008300;
-    --cat-other: var(--baseline);
+    --gain: #168a67;
+    --gain-text: #127556;
     --good: #0ca30c;
     --warning: #fab219;
     --serious: #ec835a;
@@ -69,11 +64,11 @@
   body {
     margin: 0;
     font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-    font-size: 13px;
+    font-size: 14px;
     color: var(--text);
     background: var(--bg);
   }
-  main { max-width: 940px; margin: 0 auto; padding: 28px 20px 64px; }
+  main { max-width: 760px; margin: 0 auto; padding: 28px 24px 64px; }
 
   /* The viewport scrollbar gutter paints white in the embedded pane, so the
      body is the scroll container instead, with a thin themed scrollbar. */
@@ -103,11 +98,11 @@
 
   /* ---- cards ---- */
   .card {
-    background: var(--surface); border: 1px solid var(--ring); border-radius: 8px;
-    padding: 16px 18px; margin-bottom: 16px;
+    background: var(--surface); border: 1px solid var(--ring); border-radius: 12px;
+    padding: 20px 22px; margin-bottom: 20px;
   }
-  .card h2 { font-size: 13px; font-weight: 600; margin: 0 0 2px; }
-  .card .hint { color: var(--muted); font-size: 12px; margin: 0 0 14px; }
+  .card h2 { font-size: 15px; font-weight: 600; margin: 0 0 3px; }
+  .card .hint { color: var(--muted); font-size: 13px; margin: 0 0 16px; }
   .card.loading { display: flex; align-items: center; gap: 10px; color: var(--text-2); }
 
   /* ---- spinner ---- */
@@ -118,33 +113,48 @@
   }
   @keyframes spin { to { transform: rotate(360deg); } }
 
-  /* ---- volume gauge ---- */
-  .tiles { display: flex; flex-wrap: wrap; gap: 28px; align-items: flex-end; margin-bottom: 16px; }
-  .tile .label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
-  .tile .value { font-size: 26px; font-weight: 600; line-height: 1.15; }
-  .tile .value.small { font-size: 17px; font-weight: 500; }
-  .tile .value .unit { font-size: 13px; color: var(--text-2); font-weight: 400; margin-left: 2px; }
-
-  .gauge { height: 12px; border-radius: 4px; background: var(--fill-soft); overflow: hidden; display: flex; }
-  .gauge > span { background: var(--fill); border-radius: 4px 0 0 4px; }
-  .gauge-legend {
-    display: flex; gap: 18px; margin-top: 8px; color: var(--text-2); font-size: 12px;
+  /* ---- hero: the one number that matters, and the one action ---- */
+  .hero { padding: 40px 48px 32px; border-radius: 16px; text-align: center; margin-bottom: 28px; }
+  .hero-num {
+    font-size: 76px; font-weight: 600; letter-spacing: -0.03em; line-height: 1;
+    font-variant-numeric: tabular-nums;
   }
-  .gauge-legend span { white-space: nowrap; }
-  .swatch { width: 9px; height: 9px; border-radius: 2px; display: inline-block; margin-right: 6px; }
+  .hero-num .unit { font-size: 30px; font-weight: 500; color: var(--text-2); margin-left: 6px; letter-spacing: 0; }
+  .hero-num.pending { color: var(--muted); }
+  .hero-sub { color: var(--text-2); font-size: 17px; margin: 14px 0 28px; }
+  .gauge {
+    height: 10px; border-radius: 5px; background: var(--line); overflow: hidden; display: flex;
+  }
+  .gauge > span { display: block; height: 100%; }
+  .gauge .used { background: var(--baseline); }
+  .gauge .gain { background: var(--gain); }
+  .gauge-legend {
+    display: flex; justify-content: space-between; gap: 18px; margin-top: 10px;
+    color: var(--muted); font-size: 13px; text-align: left;
+  }
+  .gauge-legend strong { color: var(--text); font-weight: 500; font-variant-numeric: tabular-nums; margin-left: 6px; }
+  .gauge-legend .after { color: var(--gain-text); font-weight: 600; margin-left: 0; }
+  .gauge-legend .arrow { margin: 0 6px; }
+  button.btn.cta {
+    margin-top: 28px; padding: 11px 30px; border-radius: 999px; font-size: 16px; font-weight: 600;
+    background: var(--gain); border-color: var(--gain); color: #fff;
+  }
+  button.btn.cta:hover:not(:disabled) { filter: brightness(1.08); background: var(--gain); }
+  .reassure { color: var(--gain-text); font-size: 13px; font-weight: 500; margin: 16px 0 0; }
+  .hero-meta { color: var(--muted); font-size: 12px; margin: 20px 0 0; }
 
   /* ---- ranked bar rows ---- */
   .rows { border-top: 1px solid var(--line); }
   .row {
-    display: grid; grid-template-columns: 22px 1fr 96px 68px 46px;
-    align-items: center; gap: 10px; padding: 7px 6px;
+    display: grid; grid-template-columns: 18px 1fr 120px 72px 46px;
+    align-items: center; gap: 12px; padding: 10px 6px;
     border-bottom: 1px solid var(--line);
   }
   .row:hover { background: var(--hover); }
   .row .icon { color: var(--muted); text-align: center; font-size: 12px; }
   .row .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .row .name .meta { color: var(--muted); font-size: 11px; margin-left: 8px; }
-  .row .bar { height: 8px; background: var(--baseline); border-radius: 4px; overflow: hidden; }
+  .row .name .meta { color: var(--muted); font-size: 12px; margin-left: 8px; }
+  .row .bar { height: 6px; background: var(--baseline); border-radius: 4px; overflow: hidden; }
   .row .bar > span { display: block; height: 100%; background: var(--fill); border-radius: 4px; }
   .row .size, .row .share {
     text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap;
@@ -152,24 +162,6 @@
   .row .size { color: var(--text-2); }
   .row .share { font-weight: 600; }
   .row.dim .name, .row.dim .size, .row.dim .share { color: var(--muted); font-weight: 400; }
-
-  /* ---- segmented folder breakdown ---- */
-  .segbar {
-    height: 30px; border-radius: 6px; overflow: hidden; display: flex; background: var(--baseline);
-  }
-  .segbar > span { display: block; height: 100%; }
-  .segbar > span:not(:last-child) { border-right: 2px solid var(--surface); }
-  .seg-legend { margin-top: 12px; }
-  .seg-row {
-    display: grid; grid-template-columns: 12px 1fr 76px 44px;
-    align-items: center; gap: 10px; padding: 5px 2px;
-  }
-  .seg-row .swatch { width: 10px; height: 10px; border-radius: 3px; margin: 0; }
-  .seg-row .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .seg-row .size, .seg-row .share {
-    text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--text-2);
-  }
-  .seg-row.other .name, .seg-row.other .size, .seg-row.other .share { color: var(--muted); }
 
   /* ---- cleanup list ---- */
   .group-title {
@@ -232,7 +224,7 @@
     font: inherit; cursor: pointer; padding: 0;
   }
 
-  .note { color: var(--muted); font-size: 11.5px; margin-top: 10px; }
+  .note { color: var(--muted); font-size: 13px; margin: 14px 0 0; }
   .banner {
     border: 1px solid var(--ring); border-left: 3px solid var(--fill);
     background: var(--surface); border-radius: 6px; padding: 10px 12px; margin-bottom: 14px;
@@ -407,22 +399,34 @@
     return `<div class="card loading"><span class="spinner"></span>${esc(text)}</div>`;
   }
 
-  function bigNumber(label, n, opts) {
-    const p = bytesParts(n);
-    return `<div class="tile">
-      <div class="label">${esc(label)}</div>
-      <div class="value${opts && opts.small ? " small" : ""}">${p.value}<span class="unit">${p.unit}</span></div>
-    </div>`;
-  }
-
-  function gauge(volume) {
-    const pct = volume.percent_used;
-    return `<div class="gauge" role="img"
-        aria-label="${pct}% of the volume is used, ${bytes(volume.free)} free">
-        <span style="width:${pct}%"></span></div>
-      <div class="gauge-legend">
-        <span><i class="swatch" style="background:var(--fill)"></i>Used ${bytes(volume.used)} · ${pct}%</span>
-        <span><i class="swatch" style="background:var(--fill-soft)"></i>Free ${bytes(volume.free)}</span>
+  // The Overview hero: one number (what Cleanup can free), a gauge showing
+  // free space now → after, and the single action that gets you there.
+  function hero(volume, caches) {
+    const gain = caches ? Math.min(caches.reclaimable, volume.used) : 0;
+    const after = volume.free + gain;
+    const pct = n => (n / (volume.total || 1) * 100).toFixed(2);
+    const p = bytesParts(gain);
+    const number = !caches
+      ? `<div class="hero-num pending">…</div><p class="hero-sub">Measuring caches you can safely clear…</p>`
+      : gain > 0
+        ? `<div class="hero-num">${p.value}<span class="unit">${p.unit}</span></div>
+           <p class="hero-sub">is taken up by caches you can safely clear.</p>`
+        : `<div class="hero-num">${bytesParts(volume.free).value}<span class="unit">${bytesParts(volume.free).unit}</span></div>
+           <p class="hero-sub">free. No caches worth clearing right now.</p>`;
+    return `<div class="card hero">
+        ${number}
+        <div class="gauge" role="img"
+          aria-label="${bytes(volume.free)} free of ${bytes(volume.total)}${gain ? `, ${bytes(after)} after cleanup` : ""}">
+          <span class="used" style="width:${pct(volume.used - gain)}%"></span>
+          <span class="gain" style="width:${pct(gain)}%"></span>
+        </div>
+        <div class="gauge-legend">
+          <span>Free space<strong>${bytes(volume.free)}</strong>${gain > 0
+            ? `<span class="arrow">→</span><strong class="after">${bytes(after)}</strong>` : ""}</span>
+          <span>of ${bytes(volume.total)}</span>
+        </div>
+        ${gain > 0 ? `<button class="btn cta" data-tab-go="clean">Review ${bytes(gain)} of caches</button>
+          <p class="reassure">Only caches apps rebuild on their own. Nothing is touched until you pick it.</p>` : ""}
       </div>`;
   }
 
@@ -498,39 +502,6 @@
     return "var(--share-low)";
   }
 
-  // A single segmented bar + legend: the top few known-size children get
-  // their own categorical slot (fixed order, never reassigned by rank
-  // shuffles), everything else folds into a muted "Other" segment. Pending
-  // (not-yet-sized) children are excluded until they resolve, at which point
-  // they naturally compete for a slot or fall into Other.
-  const CAT_SLOTS = 6;
-  function segmentedFolders(children) {
-    const known = sortChildren(children).filter(c => !c.pending);
-    const shown = known.slice(0, CAT_SLOTS);
-    const totalKnown = children.reduce((a, c) => a + (c.size || 0), 0);
-    const otherSize = Math.max(0, totalKnown - shown.reduce((a, c) => a + c.size, 0));
-
-    const segs = shown.map((c, i) => ({ name: c.name, size: c.size, color: `var(--cat-${i + 1})` }));
-    if (otherSize > 0) segs.push({ name: "Other", size: otherSize, color: "var(--cat-other)" });
-    if (!segs.length) return `<p class="hint">Nothing sized yet.</p>`;
-
-    const denom = totalKnown || 1;
-    const bar = segs.map(s =>
-      `<span style="width:${Math.max(s.size / denom * 100, 0.4)}%;background:${s.color}"
-         title="${esc(s.name)} — ${bytes(s.size)}"></span>`
-    ).join("");
-    const legend = segs.map(s => {
-      const share = Math.round(s.size / denom * 100);
-      return `<div class="seg-row ${s.name === "Other" ? "other" : ""}">
-        <i class="swatch" style="background:${s.color}"></i>
-        <span class="name">${esc(s.name)}</span>
-        <span class="size">${bytes(s.size)}</span>
-        <span class="share">${share}%</span>
-      </div>`;
-    }).join("");
-    return `<div class="segbar">${bar}</div><div class="seg-legend">${legend}</div>`;
-  }
-
   // ---- overview ----------------------------------------------------------
   // The volume + folders card paints as soon as scan.py's instant listing
   // lands, then fills in sizes as size_dir.py calls resolve. The caches card
@@ -543,22 +514,7 @@
     let caches = null;
 
     function paint() {
-      const reclaimable = caches ? bytes(caches.reclaimable) : "…";
-      const volCard = frame ? `
-        <div class="card">
-          <h2>Volume</h2>
-          <p class="hint">${esc(frame.path)}</p>
-          <div class="tiles">
-            ${bigNumber("Free", frame.volume.free)}
-            ${bigNumber("Used", frame.volume.used, { small: true })}
-            ${bigNumber("Capacity", frame.volume.total, { small: true })}
-            <div class="tile"><div class="label">Reclaimable now</div>
-              <div class="value small">${reclaimable}</div></div>
-          </div>
-          ${gauge(frame.volume)}
-          ${caches && caches.reclaimable > 0 ? `<p class="note">Clearing the safe caches would free about
-            <strong>${bytes(caches.reclaimable)}</strong>. <button class="link" data-tab-go="clean">Review cleanup →</button></p>` : ""}
-        </div>` : `<div class="card">Loading volume info…</div>`;
+      const volCard = frame ? hero(frame.volume, caches) : loadingCard("Loading volume info…");
 
       let foldersCard = `<div class="card">Listing your home directory…</div>`;
       if (frame) {
@@ -567,8 +523,9 @@
         foldersCard = `
           <div class="card">
             <h2>Biggest folders in your home directory</h2>
-            <p class="hint">Recursive size, ${bytes(totalKnown)} so far${pendingCount ? ` · sizing ${pendingCount} more…` : ""}.</p>
-            ${segmentedFolders(frame.children)}
+            <p class="hint">${esc(frame.path)} · ${bytes(totalKnown)} so far${pendingCount ? ` · sizing ${pendingCount} more…` : ""}</p>
+            ${barRows(sortChildren(frame.children).filter(c => !c.pending && c.size > 0).slice(0, 8),
+              { navigate: false, total: totalKnown })}
           </div>`;
       }
 
