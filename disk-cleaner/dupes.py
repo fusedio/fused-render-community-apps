@@ -225,9 +225,6 @@ def _scan(root: str, min_size: int, job: dict, lock, stop):
     by_size = {}
     for path, st in _walk(root, min_size, job, stop):
         by_size.setdefault(st.st_size, []).append((path, st))
-        if job["files_seen"] % 2000 == 0:
-            with lock:
-                job["detail"] = "Listing files… %s seen" % format(job["files_seen"], ",")
     groups = [g for g in by_size.values() if len(g) > 1]
     with lock:
         job["candidates"] = sum(len(g) for g in groups)
@@ -446,6 +443,8 @@ def _worker():
 
     def report():
         with lock:
+            if job["state"] == "running" and job["phase"] == "listing":
+                job["detail"] = "Listing files… %s seen" % format(job["files_seen"], ",")
             snap = dict(job)
         _save(JOB_FILE, snap)
         if _post(snap):
