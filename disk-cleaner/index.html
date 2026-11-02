@@ -151,7 +151,7 @@
     border-bottom: 1px solid var(--line);
   }
   .row:hover { background: var(--hover); }
-  .row .icon { color: var(--muted); text-align: center; font-size: 12px; }
+  .row .icon { color: var(--muted); text-align: center; font-size: 11px; }
   .row .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .row .name .meta { color: var(--muted); font-size: 12px; margin-left: 8px; }
   .row .bar { height: 6px; background: var(--baseline); border-radius: 4px; overflow: hidden; }
@@ -165,25 +165,27 @@
 
   /* ---- cleanup list ---- */
   .group-title {
-    font-size: 11px; text-transform: uppercase; letter-spacing: .04em;
-    color: var(--muted); margin: 18px 0 6px;
+    font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em;
+    color: var(--muted); margin: 22px 0 6px;
   }
   .crow {
-    display: grid; grid-template-columns: 20px 1fr 92px 82px;
+    display: grid; grid-template-columns: 20px 1fr 84px 104px;
     align-items: center; gap: 10px; padding: 8px 6px; border-bottom: 1px solid var(--line);
   }
   .crow:hover { background: var(--hover); }
   .crow label { display: contents; cursor: pointer; }
   .crow input { margin: 0; accent-color: var(--fill); }
   .crow .name { min-width: 0; }
-  .crow .size { text-align: right; font-variant-numeric: tabular-nums; color: var(--text-2); }
+  .crow .size { text-align: right; font-variant-numeric: tabular-nums; color: var(--text-2); white-space: nowrap; }
+  .crow .files { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); font-size: 12px; white-space: nowrap; }
+  .crow.missing .size { font-size: 12px; }
   .crow .desc {
-    color: var(--muted); font-size: 11.5px; margin-top: 1px;
+    color: var(--muted); font-size: 12px; margin-top: 2px;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   .crow.missing { opacity: .45; }
   .risk {
-    display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--text-2);
+    display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted);
     margin-left: 8px; white-space: nowrap;
   }
   .risk .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
@@ -205,7 +207,7 @@
     position: absolute; bottom: calc(100% + 10px); right: -8px; width: 280px;
     padding: 9px 11px; border-radius: 6px; border: 1px solid var(--ring);
     background: var(--surface); color: var(--text-2); box-shadow: 0 6px 20px rgba(0,0,0,.25);
-    font-size: 11.5px; line-height: 1.45; text-align: left;
+    font-size: 12px; line-height: 1.45; text-align: left;
     opacity: 0; visibility: hidden; transition: opacity .12s; pointer-events: none; z-index: 5;
   }
   .action-info:hover .tip, .action-info:focus-visible .tip { opacity: 1; visibility: visible; }
@@ -234,9 +236,9 @@
   .banner.done { border-left-color: var(--good); }
   .banner strong { color: var(--text); }
   code {
-    font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11.5px; color: var(--text-2);
+    font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .92em; color: inherit;
   }
-  table.data { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 6px; }
+  table.data { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 6px; }
   table.data th, table.data td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--line); }
   table.data th { color: var(--muted); font-weight: 500; }
   table.data td.num { text-align: right; font-variant-numeric: tabular-nums; }
@@ -253,9 +255,9 @@
     background: var(--surface); border: 1px solid var(--ring); border-radius: 10px;
     max-width: 480px; width: 100%; padding: 18px 20px; max-height: 80vh; overflow: auto;
   }
-  .modal h3 { margin: 0 0 10px; font-size: 14px; }
+  .modal h3 { margin: 0 0 10px; font-size: 15px; }
   .modal pre {
-    font-family: inherit; font-size: 12.5px; color: var(--text-2); white-space: pre-wrap;
+    font-family: inherit; font-size: 13px; color: var(--text-2); white-space: pre-wrap;
     margin: 0 0 16px;
   }
   .modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
@@ -589,7 +591,7 @@
               <div class="desc">${esc(e.desc)} · <code>${esc(e.path)}</code>${nestNote}</div>
             </span>
             <span class="size">${e.exists ? bytes(e.size) : "not present"}</span>
-            <span class="size">${e.exists && e.files ? e.files.toLocaleString() + " files" : ""}</span>
+            <span class="files">${e.exists && e.files ? e.files.toLocaleString() + " files" : ""}</span>
           </label>
         </div>`;
       }).join("");
