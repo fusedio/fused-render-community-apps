@@ -7,14 +7,17 @@
 <meta name="fused-api-version" content="1" />
 <title>Disk Cleaner</title>
 <style>
+  /* Neutrals and status colours follow the fused-render shell's live palette
+     (light/dark and colour preset) via its --fused-* tokens; the literals are
+     fallbacks for a standalone page. The blue ramp is data colour, kept fixed. */
   :root {
     color-scheme: dark;
-    --bg: #0d0d0d;
-    --surface: #1a1a19;
-    --text: #ffffff;
-    --text-2: #c3c2b7;
-    --muted: #898781;
-    --line: #2c2c2a;
+    --bg: var(--fused-bg, #0d0d0d);
+    --surface: var(--fused-bg-panel, #1a1a19);
+    --text: var(--fused-fg, #ffffff);
+    --text-2: var(--fused-fg-muted, #c3c2b7);
+    --muted: var(--fused-fg-faint, #898781);
+    --line: var(--fused-border, #2c2c2a);
     --baseline: #383835;
     --ring: rgba(255,255,255,0.10);
     --fill: #3987e5;        /* blue 400 — sequential hue, magnitude */
@@ -27,20 +30,20 @@
     /* Space you'd get back: the hero's gauge segment, "after" figure and CTA. */
     --gain: var(--fill);
     --gain-text: var(--share-high);
-    --good: #0ca30c;
-    --warning: #fab219;
+    --good: var(--fused-success, #0ca30c);
+    --warning: var(--fused-warning, #fab219);
     --serious: #ec835a;
-    --critical: #d03b3b;
-    --hover: rgba(255,255,255,0.05);
+    --critical: var(--fused-error, #d03b3b);
+    --hover: var(--fused-sel, rgba(255,255,255,0.05));
   }
   :root[data-theme="light"] {
     color-scheme: light;
-    --bg: #f9f9f7;
-    --surface: #fcfcfb;
-    --text: #0b0b0b;
-    --text-2: #52514e;
-    --muted: #898781;
-    --line: #e1e0d9;
+    --bg: var(--fused-bg, #f9f9f7);
+    --surface: var(--fused-bg-panel, #fcfcfb);
+    --text: var(--fused-fg, #0b0b0b);
+    --text-2: var(--fused-fg-muted, #52514e);
+    --muted: var(--fused-fg-faint, #898781);
+    --line: var(--fused-border, #e1e0d9);
     --baseline: #c3c2b7;
     --ring: rgba(11,11,11,0.10);
     --fill: #2a78d6;        /* blue 450 */
@@ -53,11 +56,11 @@
     --share-high: #184f95;  /* blue 600 */
     --gain: var(--fill);
     --gain-text: var(--share-mid);
-    --good: #0ca30c;
-    --warning: #fab219;
+    --good: var(--fused-success, #0ca30c);
+    --warning: var(--fused-warning, #fab219);
     --serious: #ec835a;
-    --critical: #d03b3b;
-    --hover: rgba(11,11,11,0.04);
+    --critical: var(--fused-error, #d03b3b);
+    --hover: var(--fused-sel, rgba(11,11,11,0.04));
   }
 
   * { box-sizing: border-box; }
@@ -286,7 +289,7 @@
     align-items: center; padding: 10px 6px; margin: 0; color: var(--text); font-size: 14px;
   }
   details.dset > summary::-webkit-details-marker { display: none; }
-  details.dset > summary:hover { background: var(--hover, rgba(127,127,127,.06)); }
+  details.dset > summary:hover { background: var(--hover); }
   details.dset .icon { color: var(--muted); transition: transform .15s ease; }
   details.dset[open] .icon { transform: rotate(90deg); }
   details.dset .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
