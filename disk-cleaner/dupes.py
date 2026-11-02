@@ -313,7 +313,9 @@ def _summarise(root: str, sets: list, job: dict) -> dict:
         for p in paths[1:]:
             rel = os.path.relpath(p, root)
             top = rel.split(os.sep, 1)[0] if os.sep in rel else "(files in %s)" % os.path.basename(root)
-            folders[top] = folders.get(top, 0) + share
+            f = folders.setdefault(top, [0.0, 0, os.path.join(root, top)])
+            f[0] += share
+            f[1] += 1
     sets.sort(key=lambda s: -s["savings"])
     fs = _fs_type(root)
     return {
@@ -329,8 +331,8 @@ def _summarise(root: str, sets: list, job: dict) -> dict:
         "fs": fs,
         "foldable": fs in FOLD_METHOD,
         "fold_method": FOLD_METHOD.get(fs),
-        "folders": sorted(({"name": k, "savings": round(v)} for k, v in folders.items() if v > 0),
-                          key=lambda f: -f["savings"]),
+        "folders": sorted(({"name": k, "savings": round(v[0]), "copies": v[1], "path": v[2]}
+                           for k, v in folders.items() if v[0] > 0), key=lambda f: -f["savings"]),
         "sets": [s for s in sets if s["savings"] > 0][:MAX_SETS],
     }
 

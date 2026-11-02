@@ -275,6 +275,30 @@
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   .progress-hint { color: var(--text-2); font-size: 12px; margin: 12px 0 16px; }
+  .hero .progress-track { margin: 0 0 12px; }
+  .hero .progress-detail { text-align: center; }
+
+  /* ---- duplicate sets: one expandable row per set of identical files ---- */
+  details.dset { border-bottom: 1px solid var(--line); }
+  details.dset:last-of-type { border-bottom: 0; }
+  details.dset > summary {
+    list-style: none; display: grid; grid-template-columns: 18px 1fr 120px 72px; gap: 12px;
+    align-items: center; padding: 10px 6px; margin: 0; color: var(--text); font-size: 14px;
+  }
+  details.dset > summary::-webkit-details-marker { display: none; }
+  details.dset > summary:hover { background: var(--hover, rgba(127,127,127,.06)); }
+  details.dset .icon { color: var(--muted); transition: transform .15s ease; }
+  details.dset[open] .icon { transform: rotate(90deg); }
+  details.dset .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  details.dset .name .meta { display: block; color: var(--muted); font-size: 12px; }
+  details.dset .each { color: var(--muted); font-size: 12px; text-align: right; font-variant-numeric: tabular-nums; }
+  details.dset .size { text-align: right; font-variant-numeric: tabular-nums; }
+  details.dset ul { list-style: none; margin: 0 0 10px 36px; padding: 0; }
+  details.dset li {
+    font-size: 12px; color: var(--text-2); padding: 3px 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  details.dset li .shared { color: var(--muted); }
   /* Compact view: overrides for the rules above, so they must come last. */
   @media (max-width: 640px) {
     main { padding: 8px 8px 16px; }
@@ -314,6 +338,7 @@
   <nav id="tabs" role="tablist">
     <button role="tab" data-tab="overview">Overview</button>
     <button role="tab" data-tab="clean">Cleanup</button>
+    <button role="tab" data-tab="dupes">Duplicates</button>
   </nav>
 
   <section id="panel">Loading…</section>
@@ -449,7 +474,7 @@
     const total = opts.total || items.reduce((a, i) => a + i.size, 0) || 1;
     return `<div class="rows">` + items.map((it) => {
       const share = Math.round(it.size / total * 100);
-      const meta = it.files ? it.files.toLocaleString() + " files" : "empty";
+      const meta = it.files ? it.files.toLocaleString() + " " + (opts.unit || "files") : "empty";
       return `<div class="row ${it.size ? "" : "dim"}" title="${esc(it.path)}">
           <span class="icon">▸</span>
           <span class="name">${esc(it.name)}<span class="meta">${meta}</span></span>
@@ -788,8 +813,140 @@
     watchJob(job);
   }
 
+  // ---- duplicates --------------------------------------------------------
+  // dupes.py walks the home folder in a detached worker (a full scan takes
+  // minutes), so this tab works like the clean job: start it, then poll its
+  // status file. The worker reports to the activity panel itself, so the
+  // scan keeps showing progress there after this page closes. Read-only: no
+  // file is changed, this only measures what is stored more than once.
+  const dupesStatus = () => fused.runPython("./dupes.py", { action: "status" }, { key: "dupes-job" });
+  const dupesResult = () => fused.runPython("./dupes.py", { action: "result" }, { key: "dupes-result" });
+  let dupesPolling = false;
+
+  function dupesHero(job, res) {
+    if (job && job.state === "running") {
+      const pct = job.total ? Math.min(100, job.done / job.total * 100) : 0;
+      const detail = job.phase === "listing"
+        ? `${job.files_seen.toLocaleString()} files looked at`
+        : `${bytes(job.done)} of ${bytes(job.total)} compared · ${job.detail || ""}`;
+      return `<div class="card hero">
+          <div class="hero-num pending">…</div>
+          <p class="hero-sub">Looking for files stored more than once…</p>
+          <div class="progress-track"><span class="progress-fill" style="width:${pct.toFixed(1)}%"></span></div>
+          <div class="progress-detail">${esc(detail)}</div>
+          <p class="hero-meta"><button class="link" data-dupes="cancel">Stop</button> ·
+            Keeps running if you leave; progress stays in the activity panel.</p>
+        </div>`;
+    }
+    if (!res) {
+      return `<div class="card hero">
+          <div class="hero-num pending">?</div>
+          <p class="hero-sub">How much of your disk holds the same file twice?</p>
+          <button class="btn cta" data-dupes="start">Find duplicate files</button>
+          <p class="hero-meta">Reads files in your home folder (1 MB and up) and compares them.
+            Nothing is changed or deleted.</p>
+        </div>`;
+    }
+    const p = bytesParts(res.savings);
+    const fold = res.foldable
+      ? `This disk (${esc(res.fs.toUpperCase())}) can let copies share one set of blocks — the space comes back without deleting any file.`
+      : `This disk (${esc(res.fs)}) can't share blocks between files, so the space only comes back by removing copies.`;
+    const shared = res.already_shared > 0
+      ? ` ${bytes(res.already_shared)} of copies already share space and aren't counted.` : "";
+    return `<div class="card hero">
+        <div class="hero-num">${p.value}<span class="unit">${p.unit}</span></div>
+        <p class="hero-sub">${res.savings > 0 ? "is taken up by extra copies of the same files." : "No duplicate files worth mentioning."}</p>
+        ${res.savings > 0 ? `<p class="hint">${fold}${shared}</p>` : ""}
+        <p class="hero-meta">${res.sets_total.toLocaleString()} sets of identical files ·
+          ${res.files_seen.toLocaleString()} files checked · scanned ${ago(Date.now() / 1000 - res.scanned_at)} ·
+          <button class="link" data-dupes="start">Scan again</button></p>
+      </div>`;
+  }
+
+  function dupeSets(sets) {
+    return sets.map(s => {
+      const name = s.paths[0].split("/").pop();
+      const others = s.paths.length - s.stored;
+      return `<details class="dset">
+          <summary>
+            <span class="icon">▸</span>
+            <span class="name">${esc(name)}<span class="meta">${s.paths.length} copies${others ? ` · ${others} already sharing space` : ""}</span></span>
+            <span class="each">${bytes(s.size)} each</span>
+            <span class="size">${bytes(s.savings)}</span>
+          </summary>
+          <ul>${s.paths.map(p => `<li title="${esc(p)}">${esc(p)}</li>`).join("")}</ul>
+        </details>`;
+    }).join("");
+  }
+
+  async function renderDupes(keep) {
+    if (!keep) panel.innerHTML = loadingCard("Checking for an earlier scan…");
+    let job, res;
+    try {
+      [job, res] = await Promise.all([dupesStatus(), dupesResult()]);
+    } catch (err) {
+      panel.innerHTML = `<div class="banner error"><strong>${esc(err.type || "error")}</strong> — ${esc(err.message)}</div>`;
+      return;
+    }
+    if (P.tab() !== "dupes") return;
+    if (res && res.none) res = null;
+    const failed = job.state === "error"
+      ? `<div class="banner error"><strong>The duplicate scan stopped</strong> — ${esc(job.detail)}</div>` : "";
+    let body = "";
+    if (res && res.savings > 0 && job.state !== "running") {
+      const shown = res.folders.slice(0, 8).map(f => ({
+        name: f.name, size: f.savings, files: f.copies, path: f.path,
+      }));
+      body = `
+        <div class="card">
+          <h2>Where the extra copies are</h2>
+          <p class="hint">Savings credited to the folder holding each extra copy</p>
+          ${barRows(shown, { navigate: false, total: res.savings, unit: "extra copies" })}
+        </div>
+        <div class="card">
+          <h2>Biggest sets of identical files</h2>
+          <p class="hint">${res.sets.length < res.sets_total ? `Top ${res.sets.length} of ${res.sets_total.toLocaleString()} · ` : ""}open a row to see every copy</p>
+          ${dupeSets(res.sets.slice(0, 100))}
+        </div>`;
+    }
+    panel.innerHTML = failed + dupesHero(job, res) + body;
+    if (job.state === "running") pollDupes();
+  }
+
+  // Repaints only the hero while the scan runs, so an open set list (or the
+  // scroll position) isn't thrown away every second.
+  async function pollDupes() {
+    if (dupesPolling) return;
+    dupesPolling = true;
+    try {
+      for (;;) {
+        await sleep(1000);
+        if (P.tab() !== "dupes") return;
+        let job;
+        try { job = await dupesStatus(); } catch { continue; }
+        if (P.tab() !== "dupes") return;
+        if (job.state !== "running") return renderDupes(true);
+        const heroEl = panel.querySelector(".hero");
+        if (heroEl) heroEl.outerHTML = dupesHero(job, null);
+      }
+    } finally {
+      dupesPolling = false;
+    }
+  }
+
+  async function dupesAction(action) {
+    try {
+      await fused.runPython("./dupes.py", { action, origin: location.origin }, { key: null });
+    } catch (err) {
+      panel.insertAdjacentHTML("afterbegin",
+        `<div class="banner error"><strong>${esc(err.type || "error")}</strong> — ${esc(err.message)}</div>`);
+      return;
+    }
+    renderDupes(true);
+  }
+
   // ---- routing -----------------------------------------------------------
-  const TABS = { overview: renderOverview, clean: renderClean };
+  const TABS = { overview: renderOverview, clean: renderClean, dupes: renderDupes };
 
   async function draw() {
     const tab = TABS[P.tab()] ? P.tab() : "overview";
@@ -829,6 +986,12 @@
 
     const clean = e.target.closest("[data-clean]");
     if (clean) return doClean(clean.dataset.clean);
+
+    const dupes = e.target.closest("[data-dupes]");
+    if (dupes) {
+      dupes.disabled = true;
+      return dupesAction(dupes.dataset.dupes);
+    }
   });
 
   panel.addEventListener("change", e => {
