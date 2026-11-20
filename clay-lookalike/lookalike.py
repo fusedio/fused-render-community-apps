@@ -112,14 +112,19 @@ def _scene_path(scene: str) -> str:
 
 
 def _load_scene(scene: str):
-    """(emb, bounds) from the cache, or None when missing or unreadable."""
+    """(emb, bounds) from the cache, or None when missing or unreadable.
+
+    Any failure to read the file counts as a miss (truncated or empty zip,
+    bad pickle, wrong keys or shapes); `fetch` then downloads it again.
+    """
+    path = _scene_path(scene)
     try:
-        with np.load(_scene_path(scene)) as z:
+        with np.load(path) as z:
             emb, bounds = z["emb"], z["bounds"]
         if emb.ndim != 2 or bounds.shape != (len(emb), 4):
             return None
         return emb, bounds
-    except (OSError, ValueError, KeyError):
+    except Exception:
         return None
 
 
@@ -145,8 +150,11 @@ def _status() -> dict:
     ready = all(os.path.exists(os.path.join(CACHE, f)) for f in ("emb.npy", "bounds.bin", "meta.json"))
     n = None
     if ready:
-        with open(os.path.join(CACHE, "meta.json")) as f:
-            n = json.load(f)["n"]
+        try:
+            with open(os.path.join(CACHE, "meta.json")) as f:
+                n = int(json.load(f)["n"])
+        except Exception:  # unreadable index metadata: rebuild on the next fetch
+            ready, n = False, None
     return {"ready": ready, "cached": len(SCENES) - len(missing), "total": len(SCENES),
             "missing": missing, "n": n}
 

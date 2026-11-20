@@ -159,3 +159,33 @@ def test_fetch_redownloads_when_cached_npz_is_corrupt(cache, monkeypatch):
 def test_fetch_rejects_unknown_scene(cache):
     with pytest.raises(ValueError):
         L.main(action="fetch", scene="../etc/passwd")
+
+
+def test_fetch_redownloads_when_cached_npz_is_truncated(cache, monkeypatch):
+    scene = L.SCENES[0]
+    path = os.path.join(cache, "scenes", scene + ".npz")
+    os.makedirs(os.path.dirname(path))
+    np.savez(path, emb=np.zeros((2, 4), np.float32), bounds=np.zeros((2, 4), np.float32))
+    good = open(path, "rb").read()
+    with open(path, "wb") as f:
+        f.write(good[: len(good) // 2])
+    x0, y0, _, _ = L.nominal_quarter(scene)
+    data = parquet_bytes([square(x0 + 0.01, y0 + 0.01)], [[1.0, 0.0, 0.0, 0.0]])
+    monkeypatch.setattr(L, "_download", lambda url: data)
+    assert L.main(action="fetch", scene=scene)["downloaded"] is True
+
+
+def test_status_treats_empty_npz_as_missing(cache):
+    scene = L.SCENES[0]
+    os.makedirs(os.path.join(cache, "scenes"))
+    with open(os.path.join(cache, "scenes", scene + ".npz"), "wb"):
+        pass
+    st = L.main(action="status")
+    assert st["cached"] == 0 and scene in st["missing"]
+
+
+def test_status_not_ready_when_meta_is_corrupt(cache):
+    write_index(cache, np.eye(3))
+    with open(os.path.join(cache, "meta.json"), "w") as f:
+        f.write("{not json")
+    assert L.main(action="status")["ready"] is False

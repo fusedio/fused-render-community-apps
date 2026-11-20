@@ -10,8 +10,10 @@ Foundation publishes on Source Cooperative, one 1024-number vector per chip.
 ## How to use it
 
 1. **First run:** press *Fetch San Francisco*. The app downloads the 19 scene
-   files that cover the city (about 150 MB), keeps them in its own `.fused/cache/`,
-   and builds one in-memory index of 31,010 chips. The download shows up in
+   files that cover the city (about 150 MB downloaded, kept as roughly 260 MB of
+   numpy arrays in the app’s own `.fused/cache/`),
+   and builds one index of 31,010 chips that every query memory-maps. The
+   download shows up in
    fused-render's download manager and can be cancelled and resumed.
 2. **Zoom in and click a chip** that shows what you want more of: a ball
    field, a marina, a cemetery, a parking structure. Click more chips to widen
@@ -51,4 +53,4 @@ shared with anyone who has the app and the cache.
 - `index.html` — the page: deck.gl map, selection, download flow, thumbnails.
 - `lookalike.py` — fetch, build and query; see `SKILL.md` for the bot-callable
   interface.
-- `test_lookalike.py` — unit tests (`uv run --no-project --with pytest --with numpy --with pyarrow --with requests pytest test_lookalike.py`).
+- `test_lookalike.py` — unit tests, run locally with `uv run --no-project --with pytest --with numpy --with pyarrow --with requests pytest test_lookalike.py` (the showcase CI skips them: this folder is scripts, not an installable package).

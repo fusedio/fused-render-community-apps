@@ -65,6 +65,7 @@
   .thumb.neg { border-color: var(--neg); }
   .thumb .x { position: absolute; top: 4px; right: 4px; width: 20px; height: 20px; border-radius: 50%; border: 0; background: rgba(0,0,0,0.6); color: #fff; font-size: 13px; line-height: 20px; padding: 0; cursor: pointer; display: none; }
   .thumb:hover .x { display: block; }
+  .thumb .x.neg { background: var(--neg); color: #1a0008; }
   .thumb .idx { position: absolute; top: 4px; left: 6px; font-size: 10.5px; font-weight: 600; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,0.8); font-variant-numeric: tabular-nums; }
 
   .legend { display: flex; align-items: center; gap: 6px; margin: 6px 0 12px; font-size: 11.5px; color: var(--muted); }
@@ -286,6 +287,11 @@
     fused.params.set("pos", pos.filter((x) => x !== id).join(","));
     fused.params.set("neg", neg.filter((x) => x !== id).join(","));
   }
+  function markNeg(id) {
+    if (neg.includes(id)) return;
+    fused.params.set("pos", pos.filter((x) => x !== id).join(","));
+    fused.params.set("neg", neg.concat(id).join(","));
+  }
 
   // ---- thumbnails ---------------------------------------------------------
   const tiles = new Map();
@@ -322,8 +328,10 @@
     const c = document.createElement("canvas"); c.width = THUMB_PX; c.height = THUMB_PX; fig.appendChild(c);
     if (badge) { const b = document.createElement("span"); b.className = "idx"; b.textContent = badge; fig.appendChild(b); }
     if (caption) { const cap = document.createElement("figcaption"); cap.textContent = caption; fig.appendChild(cap); }
-    const x = document.createElement("button"); x.className = "x"; x.textContent = "×"; x.title = "Remove";
-    x.addEventListener("click", (e) => { e.stopPropagation(); remove(id); });
+    const isResult = cls === "";
+    const x = document.createElement("button"); x.className = isResult ? "x neg" : "x"; x.textContent = "×";
+    x.title = isResult ? "Not this" : "Remove";
+    x.addEventListener("click", (e) => { e.stopPropagation(); (isResult ? markNeg : remove)(id); });
     fig.appendChild(x);
     fig.addEventListener("click", () => flyTo(id));
     drawThumb(c, id);
@@ -437,7 +445,15 @@
         $("stat").textContent = st.cached ? st.cached + " of " + st.total + " scenes cached" : "no data yet";
         if (st.cached) $("fetch").textContent = "Resume fetch · " + (st.total - st.cached) + " scenes left";
       }
-    } catch (e) { showError(e); }
+    } catch (e) { bootFailed(e); }
+  }
+  function bootFailed(e) {
+    showError(e);
+    $("setup").hidden = false;
+    $("fetch").textContent = "Retry";
+    $("fetch").disabled = false;
+    $("progText").textContent = "Could not load the cache: " + (e && e.message ? e.message : e) + ". Retry re-checks the scenes and rebuilds the index.";
+    $("stat").textContent = "not ready";
   }
   const s = document.createElement("script");
   s.src = DECK_SRC; s.onload = boot; s.onerror = () => showError(new Error("Could not load deck.gl from unpkg"));
