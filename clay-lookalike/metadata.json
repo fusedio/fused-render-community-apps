@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "name": "Clay Lookalike",
+  "description": "Click chips on an aerial map of San Francisco and see every chip that looks alike, using precomputed Clay v1.5 NAIP embeddings.",
+  "author": { "name": "Sina" },
+  "tags": ["maps", "embeddings", "naip", "similarity", "clay"],
+  "category": "geospatial",
+  "version": "1.0.0",
+  "min_fused_render": "0.7.0",
+  "requires_python": true
+}

@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta name="fused-app" />
+<meta name="fused-api-version" content="1" />
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Clay Lookalike</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0b0d10;
+    --panel: rgba(12, 15, 19, 0.9);
+    --inset: rgba(255, 255, 255, 0.045);
+    --border: #2a313b;
+    --fg: #e9eef3;
+    --muted: #9aa6b3;
+    --faint: #5f6b78;
+    --accent: #ffb224;
+    --accent-ink: #1a1200;
+    --neg: #ff5c8a;
+    --ok: #3ddc97;
+    --err: #ff6b6b;
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--bg); color: var(--fg); font: 14px/1.45 var(--font); overflow: hidden; }
+  button { font: inherit; color: inherit; }
+  #map { position: absolute; inset: 0; background: var(--bg); }
+  #map canvas { outline: none; }
+
+  #panel {
+    position: absolute; top: 16px; left: 16px; bottom: 16px; width: 344px;
+    display: flex; flex-direction: column;
+    background: var(--panel); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
+    border: 1px solid var(--border); border-radius: 14px; overflow: hidden;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  }
+  #panel header { padding: 18px 18px 12px; border-bottom: 1px solid var(--border); }
+  h1 { margin: 0; font-size: 19px; font-weight: 700; letter-spacing: -0.01em; }
+  .sub { margin: 4px 0 0; color: var(--muted); font-size: 12.5px; }
+  #body { flex: 1; overflow-y: auto; padding: 6px 18px 14px; }
+  section { padding: 12px 0; border-bottom: 1px solid var(--border); }
+  section:last-child { border-bottom: 0; }
+  .row-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 8px; }
+  .row-head span:first-child { font-size: 11.5px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+  .num { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 12.5px; }
+  .link { background: none; border: 0; padding: 0; color: var(--muted); font-size: 12.5px; cursor: pointer; }
+  .link:hover { color: var(--fg); }
+  .hint { margin: 8px 0 0; color: var(--muted); font-size: 12.5px; }
+  .hint b { color: var(--fg); font-weight: 600; }
+  kbd { font: 11px var(--font); padding: 1px 5px; border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 4px; color: var(--fg); background: var(--inset); }
+
+  .thumbs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .thumbs:empty { display: none; }
+  .thumb { position: relative; margin: 0; aspect-ratio: 1; border-radius: 8px; overflow: hidden; background: var(--inset); border: 1px solid var(--border); cursor: pointer; }
+  .thumb canvas { display: block; width: 100%; height: 100%; }
+  .thumb figcaption { position: absolute; left: 0; right: 0; bottom: 0; padding: 2px 6px; font-size: 11px; font-variant-numeric: tabular-nums; background: linear-gradient(transparent, rgba(0,0,0,0.75)); color: #fff; }
+  .thumb.pos { border-color: var(--accent); }
+  .thumb.neg { border-color: var(--neg); }
+  .thumb .x { position: absolute; top: 4px; right: 4px; width: 20px; height: 20px; border-radius: 50%; border: 0; background: rgba(0,0,0,0.6); color: #fff; font-size: 13px; line-height: 20px; padding: 0; cursor: pointer; display: none; }
+  .thumb:hover .x { display: block; }
+  .thumb .idx { position: absolute; top: 4px; left: 6px; font-size: 10.5px; font-weight: 600; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,0.8); font-variant-numeric: tabular-nums; }
+
+  .legend { display: flex; align-items: center; gap: 6px; margin: 6px 0 12px; font-size: 11.5px; color: var(--muted); }
+  .legend .sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-left: 8px; }
+  .legend .sw:first-child { margin-left: 0; }
+  .sw.hi { background: var(--accent); }
+  .sw.lo { background: rgba(255, 178, 36, 0.35); }
+  .sw.neg { background: var(--neg); }
+  input[type=range] { width: 100%; accent-color: var(--accent); margin: 4px 0 0; }
+
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 10px 14px; border-radius: 9px; border: 1px solid transparent; cursor: pointer; font-weight: 600; }
+  .btn.primary { background: var(--accent); color: var(--accent-ink); }
+  .btn.primary:hover { filter: brightness(1.06); }
+  .btn.ghost { background: var(--inset); border-color: var(--border); color: var(--fg); }
+  .btn:disabled { opacity: 0.5; cursor: default; }
+  .progress { height: 6px; border-radius: 3px; background: var(--inset); overflow: hidden; margin: 12px 0 6px; }
+  .progress > i { display: block; height: 100%; width: 0; background: var(--accent); transition: width 0.3s; }
+  #setup p { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  #setup p b { color: var(--fg); }
+
+  footer { padding: 10px 18px; border-top: 1px solid var(--border); color: var(--faint); font-size: 11px; line-height: 1.4; }
+  footer span { color: var(--muted); }
+  #err { position: absolute; left: 50%; bottom: 20px; transform: translateX(-50%); max-width: 60%; padding: 10px 14px; border-radius: 9px; background: #2a1215; border: 1px solid var(--err); color: #ffd3d3; font-size: 12.5px; display: none; }
+  #err.on { display: block; }
+  .preview #map { background: radial-gradient(ellipse at 60% 40%, #1a2a1e, #0b0d10 70%); }
+  .preview #map::after { content: ""; position: absolute; inset: 0; background-image: linear-gradient(rgba(255,178,36,0.14) 1px, transparent 1px), linear-gradient(90deg, rgba(255,178,36,0.14) 1px, transparent 1px); background-size: 28px 28px; }
+  .empty-note { color: var(--faint); font-size: 12.5px; margin: 0; }
+</style>
+</head>
+<body>
+  <div id="map"></div>
+  <aside id="panel">
+    <header>
+      <h1>Clay Lookalike</h1>
+      <p class="sub">Click what you want more of. San Francisco · NAIP 2020 · Clay v1.5 embeddings</p>
+    </header>
+    <div id="body">
+      <section id="setup" hidden>
+        <p><b>First run:</b> this fetches the 19 NAIP scenes that cover San Francisco, about 150 MB of precomputed Clay embeddings, and keeps them in the app’s cache. Nothing is computed by a model here; the vectors already exist.</p>
+        <button id="fetch" class="btn primary">Fetch San Francisco · 19 scenes</button>
+        <div class="progress" id="prog" hidden><i></i></div>
+        <p id="progText" class="empty-note"></p>
+      </section>
+      <section id="picks">
+        <div class="row-head"><span>Like these</span><button id="clear" class="link" hidden>Clear all</button></div>
+        <div id="pos" class="thumbs"></div>
+        <p class="hint" id="hint">Zoom in and <b>click a chip</b>, one 154 m square, that shows something you want more of: a ball field, a marina, a cemetery. <kbd>⇧</kbd> + click a chip to say <b>not this</b>.</p>
+        <div class="row-head" id="negHead" hidden><span>Not these</span></div>
+        <div id="neg" class="thumbs"></div>
+      </section>
+      <section id="matches" hidden>
+        <div class="row-head"><span>Matches</span><span id="kLabel" class="num"></span></div>
+        <input id="k" type="range" min="20" max="2000" step="10" />
+        <div class="legend"><i class="sw hi"></i>closest <i class="sw lo"></i>weaker <i class="sw neg"></i>not this</div>
+        <div id="results" class="thumbs"></div>
+        <p id="more" class="empty-note"></p>
+      </section>
+    </div>
+    <footer>Imagery © Esri, Maxar, Earthstar Geographics · Embeddings: Clay v1.5 via Source Cooperative, CC‑BY · <span id="stat"></span></footer>
+  </aside>
+  <div id="err"></div>
+
+<script>
+(function () {
+  "use strict";
+  const PY = "./lookalike.py";
+  const TILE = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
+  const DECK_SRC = "https://unpkg.com/deck.gl@9.1.10/dist.min.js";
+  const SF = { longitude: -122.44, latitude: 37.765, zoom: 12.2, pitch: 0, bearing: 0 };
+  const KMAX = 2000, KDEFAULT = 200, THUMBS = 24, THUMB_PX = 112, THUMB_Z = 17;
+  const $ = (id) => document.getElementById(id);
+
+  // ---- preview gate -------------------------------------------------------
+  function isPreview() {
+    if (new URLSearchParams(location.search).get("_preview") === "1") return true;
+    try {
+      let w = window;
+      while (w.parent && w.parent !== w) {
+        w = w.parent;
+        if (new URLSearchParams(w.location.search).get("_preview") === "1") return true;
+      }
+    } catch (e) { /* cross-origin ancestor */ }
+    return false;
+  }
+  if (isPreview() || typeof fused === "undefined") {
+    document.body.classList.add("preview");
+    $("stat").textContent = "preview";
+    return;
+  }
+
+  // ---- state --------------------------------------------------------------
+  let n = 0, bounds = null, chipIds = null;   // chip bounds: Float32Array n*4 [minx,miny,maxx,maxy]
+  let top = [];                               // [[id, score], ...] best first, up to KMAX
+  let rank = null, scores = null;
+  let pos = [], neg = [], k = KDEFAULT;
+  let queryKey = null, stamp = 0, stroked = false, ready = false;
+  let deckgl = null, viewState = { ...SF };
+  let viewTimer = null, kTimer = null;
+
+  const ids = (s) => (s || "").split(",").map((x) => parseInt(x, 10)).filter((x) => Number.isInteger(x) && x >= 0);
+  const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+  const fmt = (x) => x.toLocaleString("en-US");
+
+  function readParams() {
+    pos = ids(fused.params.get("pos"));
+    neg = ids(fused.params.get("neg"));
+    const kk = parseInt(fused.params.get("k"), 10);
+    k = clamp(Number.isInteger(kk) ? kk : KDEFAULT, 20, KMAX);
+    const v = (fused.params.get("v") || "").split(",").map(Number);
+    if (v.length === 3 && v.every(Number.isFinite)) viewState = { ...viewState, longitude: v[0], latitude: v[1], zoom: v[2] };
+  }
+
+  function showError(e) {
+    const el = $("err");
+    el.textContent = (e && e.message) ? e.message : String(e);
+    el.classList.add("on");
+    clearTimeout(showError.t);
+    showError.t = setTimeout(() => el.classList.remove("on"), 8000);
+    console.error(e);
+  }
+
+  // ---- colours ------------------------------------------------------------
+  const posSet = new Set(), negSet = new Set();
+  function fillColor(id) {
+    if (posSet.has(id)) return [255, 178, 36, 200];
+    if (negSet.has(id)) return [255, 92, 138, 190];
+    const r = rank[id];
+    if (r < 0 || r >= k) return [0, 0, 0, 0];
+    const t = 1 - r / k;
+    return [255, 160 + Math.round(70 * t), 36 + Math.round(40 * (1 - t)), 45 + Math.round(130 * t)];
+  }
+  function lineColor(id) {
+    if (posSet.has(id) || negSet.has(id)) return [255, 255, 255, 255];
+    const r = rank[id];
+    if (r >= 0 && r < k) return [255, 200, 90, 200];
+    return stroked ? [255, 255, 255, 38] : [0, 0, 0, 0];
+  }
+  function lineWidth(id) {
+    if (posSet.has(id) || negSet.has(id)) return 2.5;
+    const r = rank[id];
+    return (r >= 0 && r < k) ? 1.2 : 0.6;
+  }
+
+  // ---- deck.gl ------------------------------------------------------------
+  function layers() {
+    const L = [
+      new deck.TileLayer({
+        id: "esri", data: TILE, minZoom: 0, maxZoom: 19, tileSize: 256,
+        renderSubLayers: (p) => {
+          const bb = p.tile.boundingBox;
+          return new deck.BitmapLayer(p, { data: null, image: p.data, bounds: [bb[0][0], bb[0][1], bb[1][0], bb[1][1]] });
+        },
+      }),
+    ];
+    if (bounds) {
+      L.push(new deck.PolygonLayer({
+        id: "chips", data: chipIds, pickable: true, filled: true, stroked: true,
+        getPolygon: (d) => { const o = d * 4; return [[bounds[o], bounds[o + 1]], [bounds[o + 2], bounds[o + 1]], [bounds[o + 2], bounds[o + 3]], [bounds[o], bounds[o + 3]]]; },
+        getFillColor: fillColor, getLineColor: lineColor, getLineWidth: lineWidth,
+        lineWidthUnits: "pixels", lineWidthMinPixels: 0.5,
+        autoHighlight: true, highlightColor: [255, 255, 255, 80],
+        updateTriggers: { getFillColor: stamp, getLineColor: stamp, getLineWidth: stamp },
+      }));
+    }
+    return L;
+  }
+  function render() { stamp++; if (deckgl) deckgl.setProps({ layers: layers() }); }
+
+  function tooltip(info) {
+    if (!info.layer || info.layer.id !== "chips" || info.index < 0) return null;
+    const id = info.index;
+    let text = "chip #" + id;
+    if (posSet.has(id)) text += " · example";
+    else if (negSet.has(id)) text += " · not this";
+    else if (rank[id] >= 0 && rank[id] < k) text += " · match " + (rank[id] + 1) + " · " + scores[id].toFixed(3);
+    return { text, style: { background: "#11151a", color: "#e9eef3", fontSize: "12px", padding: "6px 8px", borderRadius: "6px", border: "1px solid #2a313b" } };
+  }
+  function onClick(info, ev) {
+    if (!info.layer || info.layer.id !== "chips" || info.index < 0) return;
+    toggle(info.index, !!(ev && ev.srcEvent && ev.srcEvent.shiftKey));
+  }
+  function onViewChange({ viewState: vs }) {
+    viewState = vs;
+    deckgl.setProps({ viewState: vs });
+    const s = vs.zoom >= 13.5;
+    if (s !== stroked) { stroked = s; render(); }
+    clearTimeout(viewTimer);
+    viewTimer = setTimeout(() => {
+      fused.params.set("v", vs.longitude.toFixed(5) + "," + vs.latitude.toFixed(5) + "," + vs.zoom.toFixed(2));
+    }, 400);
+  }
+  function flyTo(id) {
+    const o = id * 4;
+    viewState = {
+      ...viewState, longitude: (bounds[o] + bounds[o + 2]) / 2, latitude: (bounds[o + 1] + bounds[o + 3]) / 2,
+      zoom: Math.max(viewState.zoom, 16.5), transitionDuration: 900, transitionInterpolator: new deck.FlyToInterpolator(),
+    };
+    deckgl.setProps({ viewState });
+  }
+  function initDeck() {
+    stroked = viewState.zoom >= 13.5;
+    deckgl = new deck.DeckGL({
+      container: "map", viewState, controller: true, layers: layers(),
+      onViewStateChange: onViewChange, getTooltip: tooltip, onClick,
+      getCursor: ({ isHovering, isDragging }) => isDragging ? "grabbing" : (isHovering ? "pointer" : "grab"),
+    });
+  }
+
+  // ---- selection ----------------------------------------------------------
+  function toggle(id, asNeg) {
+    const P = new Set(pos), N = new Set(neg);
+    if (asNeg) { if (N.has(id)) N.delete(id); else { N.add(id); P.delete(id); } }
+    else { if (P.has(id)) P.delete(id); else { P.add(id); N.delete(id); } }
+    fused.params.set("pos", [...P].join(","));
+    fused.params.set("neg", [...N].join(","));
+  }
+  function remove(id) {
+    fused.params.set("pos", pos.filter((x) => x !== id).join(","));
+    fused.params.set("neg", neg.filter((x) => x !== id).join(","));
+  }
+
+  // ---- thumbnails ---------------------------------------------------------
+  const tiles = new Map();
+  function tile(z, x, y) {
+    const url = TILE.replace("{z}", z).replace("{x}", x).replace("{y}", y);
+    if (!tiles.has(url)) tiles.set(url, new Promise((res, rej) => {
+      const im = new Image(); im.crossOrigin = "anonymous";
+      im.onload = () => res(im); im.onerror = () => rej(new Error("tile " + url));
+      im.src = url;
+    }));
+    return tiles.get(url);
+  }
+  function world(lon, lat, z) {
+    const s = 256 * Math.pow(2, z), r = lat * Math.PI / 180;
+    return [(lon + 180) / 360 * s, (1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * s];
+  }
+  function drawThumb(canvas, id) {
+    const o = id * 4, z = THUMB_Z;
+    const [ax, ay] = world(bounds[o], bounds[o + 3], z);      // top-left (west, north)
+    const [bx, by] = world(bounds[o + 2], bounds[o + 1], z);  // bottom-right
+    const scale = canvas.width / Math.max(bx - ax, by - ay);
+    const ctx = canvas.getContext("2d");
+    const jobs = [];
+    for (let tx = Math.floor(ax / 256); tx <= Math.floor((bx - 1e-6) / 256); tx++) {
+      for (let ty = Math.floor(ay / 256); ty <= Math.floor((by - 1e-6) / 256); ty++) {
+        jobs.push(tile(z, tx, ty).then((im) => ctx.drawImage(im, (tx * 256 - ax) * scale, (ty * 256 - ay) * scale, 256 * scale, 256 * scale)).catch(() => {}));
+      }
+    }
+    return Promise.all(jobs);
+  }
+  function thumb(id, cls, caption, badge) {
+    const fig = document.createElement("figure");
+    fig.className = "thumb " + cls; fig.title = "chip #" + id + " · click to fly there";
+    const c = document.createElement("canvas"); c.width = THUMB_PX; c.height = THUMB_PX; fig.appendChild(c);
+    if (badge) { const b = document.createElement("span"); b.className = "idx"; b.textContent = badge; fig.appendChild(b); }
+    if (caption) { const cap = document.createElement("figcaption"); cap.textContent = caption; fig.appendChild(cap); }
+    const x = document.createElement("button"); x.className = "x"; x.textContent = "×"; x.title = "Remove";
+    x.addEventListener("click", (e) => { e.stopPropagation(); remove(id); });
+    fig.appendChild(x);
+    fig.addEventListener("click", () => flyTo(id));
+    drawThumb(c, id);
+    return fig;
+  }
+  function renderPicks() {
+    const P = $("pos"), N = $("neg");
+    P.replaceChildren(...pos.map((id) => thumb(id, "pos", "", "")));
+    N.replaceChildren(...neg.map((id) => thumb(id, "neg", "", "")));
+    $("negHead").hidden = neg.length === 0;
+    $("clear").hidden = pos.length + neg.length === 0;
+    $("hint").hidden = pos.length > 0;
+  }
+  function renderResults() {
+    const shown = Math.min(k, top.length);
+    $("matches").hidden = pos.length === 0;
+    $("kLabel").textContent = "top " + fmt(k);
+    $("k").value = String(k);
+    const strip = top.slice(0, Math.min(THUMBS, shown));
+    $("results").replaceChildren(...strip.map((t, i) => thumb(t[0], "", t[1].toFixed(3), String(i + 1))));
+    $("more").textContent = shown > strip.length ? "+ " + fmt(shown - strip.length) + " more highlighted on the map" : (pos.length && !top.length ? "Scoring…" : "");
+  }
+
+  // ---- data ---------------------------------------------------------------
+  function syncSets() { posSet.clear(); pos.forEach((x) => posSet.add(x)); negSet.clear(); neg.forEach((x) => negSet.add(x)); }
+  async function loadBounds(st) {
+    const r = await fetch(fused.rawUrl(".fused/cache/v1/bounds.bin"), { cache: "no-store" });
+    if (!r.ok) throw new Error("bounds.bin: HTTP " + r.status);
+    bounds = new Float32Array(await r.arrayBuffer());
+    n = bounds.length / 4;
+    chipIds = Uint32Array.from({ length: n }, (_, i) => i);
+    rank = new Int32Array(n).fill(-1); scores = new Float32Array(n);
+    ready = true;
+    $("stat").textContent = fmt(n) + " chips";
+    $("setup").hidden = true;
+  }
+  async function query() {
+    const key = pos.join(",") + "|" + neg.join(",");
+    if (key === queryKey) return;
+    queryKey = key;
+    if (!pos.length) { top = []; rank.fill(-1); render(); renderResults(); return; }
+    try {
+      const r = await fused.runPython(PY, { action: "query", pos: pos.join(","), neg: neg.join(","), k: String(KMAX) }, { key: "query" });
+      top = r.top; rank.fill(-1);
+      for (let i = 0; i < top.length; i++) { rank[top[i][0]] = i; scores[top[i][0]] = top[i][1]; }
+      render(); renderResults();
+    } catch (e) { queryKey = null; showError(e); }
+  }
+  async function download() {
+    const btn = $("fetch"); btn.disabled = true;
+    $("prog").hidden = false;
+    const job = fused.trackJob({ id: "clay-lookalike-sf", title: "Clay Lookalike · San Francisco embeddings", kind: "download", cancellable: true });
+    const setProg = (done, total, text) => { $("prog").firstElementChild.style.width = (100 * done / total) + "%"; $("progText").textContent = text; };
+    try {
+      const st = await fused.runPython(PY, { action: "status" }, { key: "load" });
+      let done = st.total - st.missing.length;
+      for (const scene of st.missing) {
+        if (job.cancelRequested) { job.cancelled(); setProg(done, st.total, "Cancelled. Press fetch to resume."); btn.disabled = false; return; }
+        setProg(done, st.total, "Scene " + (done + 1) + " of " + st.total + " · " + scene);
+        job.update({ done, total: st.total, detail: scene });
+        await fused.runPython(PY, { action: "fetch", scene }, { key: "load" });
+        done++;
+      }
+      setProg(done, st.total, "Building the index…");
+      job.update({ done, total: st.total, detail: "building index" });
+      const b = await fused.runPython(PY, { action: "build" }, { key: "load" });
+      job.finish(fmt(b.n) + " chips ready");
+      setProg(st.total, st.total, fmt(b.n) + " chips ready");
+      await loadBounds();
+      render(); renderPicks(); query();
+    } catch (e) {
+      job.fail(e); btn.disabled = false; showError(e);
+      $("progText").textContent = "Failed: " + (e.message || e) + ". Press fetch to retry.";
+    }
+  }
+
+  // ---- wiring -------------------------------------------------------------
+  function onParams() {
+    const before = { pos: pos.join(","), neg: neg.join(","), k };
+    readParams(); syncSets();
+    if (!ready) return;
+    const selChanged = before.pos !== pos.join(",") || before.neg !== neg.join(",");
+    if (selChanged) { renderPicks(); render(); query(); }
+    else if (before.k !== k) { render(); renderResults(); }
+  }
+  $("k").addEventListener("input", (e) => {
+    $("kLabel").textContent = "top " + fmt(parseInt(e.target.value, 10));
+    clearTimeout(kTimer);
+    kTimer = setTimeout(() => fused.params.set("k", String(e.target.value)), 120);
+  });
+  $("clear").addEventListener("click", () => { fused.params.set("pos", ""); fused.params.set("neg", ""); });
+  $("fetch").addEventListener("click", download);
+  fused.params.onChange(onParams);
+
+  async function boot() {
+    readParams(); syncSets();
+    initDeck();
+    try {
+      const st = await fused.runPython(PY, { action: "status" }, { key: "status" });
+      if (st.ready) {
+        await loadBounds(st);
+        render(); renderPicks(); query();
+      } else {
+        $("setup").hidden = false;
+        $("stat").textContent = st.cached ? st.cached + " of " + st.total + " scenes cached" : "no data yet";
+        if (st.cached) $("fetch").textContent = "Resume fetch · " + (st.total - st.cached) + " scenes left";
+      }
+    } catch (e) { showError(e); }
+  }
+  const s = document.createElement("script");
+  s.src = DECK_SRC; s.onload = boot; s.onerror = () => showError(new Error("Could not load deck.gl from unpkg"));
+  document.head.appendChild(s);
+})();
+</script>
+</body>
+</html>
