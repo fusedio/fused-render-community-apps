@@ -15,7 +15,8 @@ Foundation publishes on Source Cooperative, one 1024-number vector per chip.
    fused-render's download manager and can be cancelled and resumed.
 2. **Zoom in and click a chip** that shows what you want more of: a ball
    field, a marina, a cemetery, a parking structure. Click more chips to widen
-   the idea. Each click is an example, not a label.
+   the idea. Each click is an example, not a label. The quick-start links under
+   the hint (ball fields, marinas, beaches) load a verified example in one click.
 3. **Shift-click** a chip to say *not this*. Its lookalikes are pushed down.
 4. The **matches** are coloured amber on the map, closest first, and the top
    24 are shown as real aerial crops in the panel. Click a thumbnail to fly

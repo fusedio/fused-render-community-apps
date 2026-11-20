@@ -3,6 +3,7 @@
 <head>
 <meta name="fused-app" />
 <meta name="fused-api-version" content="1" />
+<meta name="fused-app-id" content="clay-lookalike-fe226efe" />
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Clay Lookalike</title>
@@ -51,6 +52,8 @@
   .link:hover { color: var(--fg); }
   .hint { margin: 8px 0 0; color: var(--muted); font-size: 12.5px; }
   .hint b { color: var(--fg); font-weight: 600; }
+  .try { color: var(--accent); font-weight: 600; }
+  .try:hover { color: #ffd27a; }
   kbd { font: 11px var(--font); padding: 1px 5px; border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 4px; color: var(--fg); background: var(--inset); }
 
   .thumbs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
@@ -109,6 +112,7 @@
         <div class="row-head"><span>Like these</span><button id="clear" class="link" hidden>Clear all</button></div>
         <div id="pos" class="thumbs"></div>
         <p class="hint" id="hint">Zoom in and <b>click a chip</b>, one 154 m square, that shows something you want more of: a ball field, a marina, a cemetery. <kbd>⇧</kbd> + click a chip to say <b>not this</b>.</p>
+        <p class="hint" id="try" hidden>Or try <button class="link try" data-pos="8488">ball fields</button> · <button class="link try" data-pos="8285,9055">marinas</button> · <button class="link try" data-pos="4796,10347">beaches</button></p>
         <div class="row-head" id="negHead" hidden><span>Not these</span></div>
         <div id="neg" class="thumbs"></div>
       </section>
@@ -332,6 +336,7 @@
     $("negHead").hidden = neg.length === 0;
     $("clear").hidden = pos.length + neg.length === 0;
     $("hint").hidden = pos.length > 0;
+    $("try").hidden = pos.length > 0;
   }
   function renderResults() {
     const shown = Math.min(k, top.length);
@@ -412,6 +417,11 @@
   });
   $("clear").addEventListener("click", () => { fused.params.set("pos", ""); fused.params.set("neg", ""); });
   $("fetch").addEventListener("click", download);
+  document.querySelectorAll(".try").forEach((b) => b.addEventListener("click", () => {
+    fused.params.set("neg", "");
+    fused.params.set("pos", b.dataset.pos);
+    flyTo(parseInt(b.dataset.pos, 10));
+  }));
   fused.params.onChange(onParams);
 
   async function boot() {
