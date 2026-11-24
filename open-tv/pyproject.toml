@@ -10,3 +10,9 @@ dependencies = [
 # and install. Without this uv would try to build the "project" itself and fail.
 [tool.uv]
 package = false
+
+# proxy.py is the folder's background daemon: fused-render starts it when
+# index.html calls fused.daemon.start() on the first play, and keeps it alive
+# across page reloads (it serves the HLS proxy on 127.0.0.1:8787).
+[tool.fused-render.app]
+daemon = "proxy.py"

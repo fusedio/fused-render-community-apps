@@ -2,10 +2,10 @@
 <html>
 <head>
   <meta name="fused-app">
+  <meta name="fused-app-id" content="open-tv-7c3e91a4">
   <meta name="fused-api-version" content="1" />
 <meta charset="utf-8" />
 <title>OpenTV</title>
-<script src="https://cdn.jsdelivr.net/npm/hls.js@1.6.7/dist/hls.min.js"></script>
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
@@ -76,6 +76,7 @@
     text-overflow: ellipsis;
   }
   .channel .group { font-size: 11px; color: #9aa0a6; }
+  .channel .group .kind { color: #c9a227; }
   #player-pane {
     flex: 1;
     display: flex;
@@ -200,7 +201,7 @@
     <video id="video" controls autoplay playsinline></video>
     <div id="status"></div>
     <div id="health-bar">
-      <button id="health-btn">Run health check</button>
+      <button id="health-btn">Run signal check</button>
       <button id="thumbs-btn">Get thumbnails</button>
       <button id="cancel-btn" style="display:none">Cancel</button>
       <div id="health-progress"><div class="fill"></div></div>
@@ -217,51 +218,150 @@
     const statusEl = document.getElementById("status");
 
     let channels = [];
-    let hls = null;
+    let hls = null;        // current hls.js instance
+    let playToken = 0;     // bumps on every play(); stale async work checks it
+    let bridgeId = null;   // ffmpeg bridge running on the proxy for the current channel
+    let watchdog = null;
+    // What the ffmpeg bridge must output for this engine: "h264" (copy when
+    // possible), or "vp9" for a Chromium whose Media Source Extensions have
+    // no H.264/AAC at all — then EVERY stream goes through the bridge.
+    let bridgeTarget = "h264";
+    let caps = null;
 
-    const PROXY_BASE = "http://127.0.0.1:8787/proxy?url=";
+    const PROXY = "http://127.0.0.1:8787";
+    const PROXY_BASE = PROXY + "/proxy?url=";
+    const KIND_LABEL = {
+      "hls-master": "HLS", "hls-media": "HLS", ts: "raw MPEG-TS", mp4: "MP4",
+      dash: "DASH", html: "web page", empty: "empty response", gzip: "gzip blob",
+      other: "unknown data", dead: "no response",
+    };
 
     function setStatus(msg, isError = false) {
       statusEl.textContent = msg;
       statusEl.className = isError ? "error" : "";
     }
 
-    function loadHls(url, ch, viaProxy) {
-      if (hls) { hls.destroy(); hls = null; }
-      hls = new Hls({
-        enableWebVTT: false,
-        enableIMSC1: false,
-        enableCEA708Captions: false,
-      });
-      hls.loadSource(url);
-      hls.attachMedia(video);
-      hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        setStatus(viaProxy ? "Playing via local proxy." : "");
-        video.play().catch(() => {});
-      });
-      hls.on(Hls.Events.ERROR, (_, data) => {
-        if (!data.fatal) return;
-        if (!viaProxy && data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-          setStatus("Direct load failed — retrying through local proxy…");
-          loadHls(PROXY_BASE + encodeURIComponent(ch.url), ch, true);
-          return;
-        }
-        let msg = `Stream error: ${data.details}`;
-        if (data.details === "manifestLoadError") {
-          if (viaProxy) {
-            // Distinguish "proxy not running" from a genuinely dead stream.
-            fetch(PROXY_BASE.replace("/proxy?url=", "/proxy"), { method: "OPTIONS" })
-              .then(() => setStatus("Stream failed via proxy too — it's likely dead or geo-blocked.", true))
-              .catch(() => setStatus("Local proxy isn't running — start it with: python3 proxy.py", true));
-            return;
-          }
-          msg = "Couldn't load stream. Start the proxy for another attempt: python3 proxy.py";
-        }
-        setStatus(msg, true);
-      });
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+    function fetchJson(url, timeoutMs = 10000) {
+      const ctl = new AbortController();
+      const t = setTimeout(() => ctl.abort(), timeoutMs);
+      return fetch(url, { cache: "no-store", signal: ctl.signal })
+        .then(r => r.json())
+        .finally(() => clearTimeout(t));
     }
 
-    function play(ch, el) {
+    // hls.js: the vendored copy first (works offline, never stalls the page on
+    // a CDN), the CDN as a fallback. Resolves to whether window.Hls exists.
+    const hlsReady = (async () => {
+      if (window.Hls) return true;
+      try {
+        const src = await fused.readFile("vendor/hls.min.js");
+        const s = document.createElement("script");
+        s.textContent = src;
+        document.head.appendChild(s);
+        if (window.Hls) return true;
+      } catch (e) { /* no vendored copy; try the CDN */ }
+      return new Promise(resolve => {
+        const s = document.createElement("script");
+        s.src = "https://cdn.jsdelivr.net/npm/hls.js@1.7.4/dist/hls.min.js";
+        s.onload = () => resolve(!!window.Hls);
+        s.onerror = () => resolve(false);
+        document.head.appendChild(s);
+      });
+    })();
+    const mseOk = () => !!(window.Hls && Hls.isSupported());
+    const nativeOk = () => !!video.canPlayType("application/vnd.apple.mpegurl");
+
+    // What this engine can actually decode. Hls.isSupported() is true as soon
+    // as ANY of H.264 / VP9 / AV1 works in Media Source Extensions, so a build
+    // without H.264 passes it and then fails every stream with
+    // bufferAddCodecError — this tells the two apart.
+    function playerCaps() {
+      const ms = window.MediaSource;
+      const t = c => !!(ms && ms.isTypeSupported && ms.isTypeSupported(c));
+      return {
+        mse: !!ms,
+        h264: t('video/mp4;codecs="avc1.42E01E"'),
+        h264High: t('video/mp4;codecs="avc1.64001f"'),
+        aac: t('audio/mp4;codecs="mp4a.40.2"'),
+        mp3: t('audio/mp4;codecs="mp4a.40.34"'),
+        ac3: t('audio/mp4;codecs="ac-3"'),
+        hevc: t('video/mp4;codecs="hvc1.1.6.L93.B0"'),
+        vp9: t('video/mp4;codecs="vp09.00.10.08"'),
+        av1: t('video/mp4;codecs="av01.0.01M.08"'),
+        opus: t('audio/mp4;codecs="opus"'),
+        nativeHls: video.canPlayType("application/vnd.apple.mpegurl"),
+        nativeMp4: video.canPlayType('video/mp4; codecs="avc1.42E01E, mp4a.40.2"'),
+        webm: video.canPlayType('video/webm; codecs="vp9, opus"'),
+        hlsjs: !!window.Hls && Hls.version,
+        ua: navigator.userAgent,
+      };
+    }
+
+    // ---------------------------------------------------------------- proxy
+
+    // Is the local proxy answering on 8787? A no-cors GET resolves (opaque)
+    // on any HTTP answer and rejects only when nothing is listening.
+    async function proxyUp() {
+      try {
+        await fetch(PROXY + "/health", { mode: "no-cors", cache: "no-store" });
+        return true;
+      } catch { return false; }
+    }
+
+    // Make sure the proxy is listening. proxy.py is this folder's fused-render
+    // background daemon (pyproject.toml), so the page can start it itself.
+    let proxyStarting = null;
+    async function ensureProxy() {
+      if (await proxyUp()) return true;
+      if (!proxyStarting) {
+        proxyStarting = (async () => {
+          const daemon = window.fused && fused.daemon;
+          if (!daemon || !daemon.start) {
+            setStatus("Local proxy isn't running — start it with: python3 proxy.py", true);
+            return false;
+          }
+          setStatus("Starting local proxy…");
+          try {
+            await daemon.start();
+          } catch (e) {
+            setStatus("Couldn't start the local proxy: " + (e && e.message || e), true);
+            return false;
+          }
+          for (let i = 0; i < 40; i++) {
+            if (await proxyUp()) return true;
+            await sleep(250);
+          }
+          setStatus("Local proxy started but port 8787 isn't answering — is another proxy.py holding it?", true);
+          return false;
+        })().finally(() => { proxyStarting = null; });
+      }
+      return proxyStarting;
+    }
+
+    // ------------------------------------------------------------- playback
+
+    function stopPlayback() {
+      if (watchdog) { clearTimeout(watchdog); watchdog = null; }
+      if (hls) { hls.destroy(); hls = null; }
+      video.onerror = null;
+      if (video.getAttribute("src")) { video.removeAttribute("src"); video.load(); }
+      if (bridgeId) {
+        fetch(`${PROXY}/bridge/stop?id=${bridgeId}`, { keepalive: true, cache: "no-store" }).catch(() => {});
+        bridgeId = null;
+      }
+    }
+    window.addEventListener("pagehide", stopPlayback);
+
+    function describeVia(via, detail) {
+      if (via === "proxy") return "HLS via local proxy";
+      if (via === "bridge") return "ffmpeg bridge (" + detail + ")";
+      return "direct";
+    }
+
+    async function play(ch, el) {
+      const token = ++playToken;
       document.querySelectorAll(".channel.active").forEach(e => e.classList.remove("active"));
       if (el) el.classList.add("active");
       nowPlaying.innerHTML = "";
@@ -275,18 +375,249 @@
       link.style.cssText = "color:#8a919c;font-size:13px;font-weight:300;word-break:break-all;text-decoration:none;";
       span.appendChild(link);
       nowPlaying.appendChild(span);
-      setStatus("Loading stream…");
+      stopPlayback();
+      setStatus("Checking signal…");
 
-      if (window.Hls && Hls.isSupported()) {
-        loadHls(ch.url, ch, false);
-      } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
-        video.src = ch.url;
-        video.play().catch(() => {});
-        setStatus("");
+      await hlsReady;
+      if (token !== playToken) return;
+      const up = await ensureProxy();
+      if (token !== playToken) return;
+      if (!up) {
+        // Last resort without a proxy: most public streams refuse cross-origin loads.
+        if (mseOk()) {
+          setStatus("No local proxy — trying to play directly (most streams refuse this)…");
+          startHls(ch.url, { via: "direct", ch, token });
+        } else {
+          playNative(ch.url, token, "direct");
+        }
+        return;
+      }
+
+      // The signal check: one small server-side GET tells us within a few
+      // seconds whether anything is there and what it is, so a dead channel
+      // reports as dead instead of spinning through hls.js retries.
+      let check = null;
+      try {
+        check = await fetchJson(`${PROXY}/check?deep=1&url=${encodeURIComponent(ch.url)}`, 25000);
+      } catch (e) { /* proxy hiccup: load blind below */ }
+      if (token !== playToken) return;
+      if (!check || check.error && !check.kind) {
+        setStatus("Proxy didn't answer the signal check — loading anyway…");
+        startHls(PROXY_BASE + encodeURIComponent(ch.url), { via: "proxy", ch, token });
+        return;
+      }
+      if (!check.ok) {
+        const secs = (check.ms / 1000).toFixed(1);
+        setStatus(`No signal — ${check.error} · checked in ${secs} s`, true);
+        return;
+      }
+      const label = check.label || KIND_LABEL[check.kind] || check.kind;
+      if (bridgeTarget === "vp9") {
+        startBridge(ch, token, "transcode",
+          `Signal OK (${label}) — this engine can't decode H.264, converting to VP9 with ffmpeg…`);
+        return;
+      }
+      if (check.kind === "hls-master" || check.kind === "hls-media") {
+        const n = check.segments;
+        setStatus(`Signal OK (${label}${check.live === false ? ", recorded" : ""}` +
+                  (n ? `, ${n} segment${n === 1 ? "" : "s"}` : "") + ") — loading…");
+        const url = PROXY_BASE + encodeURIComponent(ch.url);
+        if (mseOk()) startHls(url, { via: "proxy", ch, token });
+        else playNative(url, token, "proxy");
       } else {
-        setStatus("HLS not supported in this browser.", true);
+        startBridge(ch, token, "auto",
+          `Signal OK (${label}) — the browser can't play this directly, converting with ffmpeg…`);
       }
     }
+
+    // The signal check already proved the playlist is there: fail fast
+    // instead of hls.js's default retry ladders (30 s+ before a fatal error).
+    const policy = (retries, firstByteMs, loadMs) => ({ default: {
+      maxTimeToFirstByteMs: firstByteMs, maxLoadTimeMs: loadMs,
+      timeoutRetry: { maxNumRetry: 1, retryDelayMs: 0, maxRetryDelayMs: 0 },
+      errorRetry: { maxNumRetry: retries, retryDelayMs: 500, maxRetryDelayMs: 3000 },
+    } });
+
+    function startHls(url, opts) {
+      const { via, ch, token } = opts;
+      const h = new Hls({
+        enableWebVTT: false,
+        enableIMSC1: false,
+        enableCEA708Captions: false,
+        backBufferLength: 60,
+        manifestLoadPolicy: policy(1, 12000, 20000),
+        playlistLoadPolicy: policy(2, 12000, 20000),
+        fragLoadPolicy: policy(3, 12000, 60000),
+      });
+      hls = h;
+      let recoveries = 0, playing = false;
+      const stale = () => token !== playToken || hls !== h;
+      armWatchdog(token, () => !playing, via, ch);
+
+      h.on(Hls.Events.MANIFEST_PARSED, (_, data) => {
+        if (stale()) return;
+        const n = data.levels.length;
+        setStatus(`Buffering (${n} quality level${n === 1 ? "" : "s"}, ${describeVia(via, opts.detail)})…`);
+        video.play().catch(() => {});
+      });
+      h.on(Hls.Events.FRAG_BUFFERED, () => {
+        if (stale() || playing) return;
+        playing = true;
+        if (watchdog) { clearTimeout(watchdog); watchdog = null; }
+        setStatus(`Playing — ${describeVia(via, opts.detail)}`);
+      });
+      h.on(Hls.Events.ERROR, (_, data) => {
+        if (stale()) return;
+        if (!data.fatal) {
+          // Direct loads: a blocked segment shows up here long before hls.js gives up.
+          if (via === "direct" && data.type === Hls.ErrorTypes.NETWORK_ERROR) switchToProxy();
+          return;
+        }
+        const code = data.response && data.response.code;
+        const where = data.details.replace(/Error$/, "").replace(/([A-Z])/g, " $1").trim().toLowerCase();
+        const http = code ? `, HTTP ${code}` : "";
+        if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+          if (via === "direct") return switchToProxy();
+          if (!code || code === 502 || code === 504) {
+            proxyUp().then(up => {
+              if (stale()) return;
+              setStatus(up ? `Stream stopped answering (${where}${http}).`
+                           : "Local proxy stopped answering — pick the channel again to restart it.", true);
+            });
+          } else {
+            setStatus(`Stream failed (${where}${http}) — it's likely dead or geo-blocked.`, true);
+          }
+          return;
+        }
+        if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+          const codec = /IncompatibleCodecs|bufferAddCodec/i.test(data.details);
+          if (codec && via !== "bridge") {
+            return startBridge(ch, token, "auto", "Codecs this browser can't decode — converting with ffmpeg…");
+          }
+          if (codec && via === "bridge" && bridgeTarget === "h264") {
+            // Even ffmpeg's H.264/AAC output is refused: this engine has no
+            // H.264 in MSE. Switch to VP9/Opus for this and every later stream.
+            bridgeTarget = "vp9";
+            return startBridge(ch, token, "transcode", "This engine can't decode H.264 — converting to VP9 with ffmpeg…");
+          }
+          if (recoveries === 0) {
+            recoveries++;
+            setStatus("Media error — recovering…");
+            h.recoverMediaError();
+            return;
+          }
+          if (recoveries === 1) {
+            recoveries++;
+            h.swapAudioCodec();
+            h.recoverMediaError();
+            return;
+          }
+          if (via !== "bridge") {
+            return startBridge(ch, token, "transcode", "Browser can't decode this stream — transcoding with ffmpeg…");
+          }
+          setStatus(`Media error: ${data.details}`, true);
+          return;
+        }
+        if (via !== "bridge") {
+          return startBridge(ch, token, "auto", `${where} — converting with ffmpeg…`);
+        }
+        setStatus(`Stream error: ${data.details}`, true);
+      });
+
+      function switchToProxy() {
+        setStatus("Direct load blocked — retrying through local proxy…");
+        h.destroy();
+        if (hls === h) hls = null;
+        ensureProxy().then(ok => {
+          if (token !== playToken) return;
+          if (ok) startHls(PROXY_BASE + encodeURIComponent(ch.url), { via: "proxy", ch, token });
+        });
+      }
+
+      h.loadSource(url);
+      h.attachMedia(video);
+    }
+
+    function armWatchdog(token, stillWaiting, via, ch) {
+      if (watchdog) clearTimeout(watchdog);
+      watchdog = setTimeout(() => {
+        if (token !== playToken || !stillWaiting()) return;
+        setStatus("Still waiting for video data (slow stream)…");
+        watchdog = setTimeout(() => {
+          if (token !== playToken || !stillWaiting()) return;
+          if (via !== "bridge") startBridge(ch, token, "auto", "No video after 40 s — trying ffmpeg instead…");
+          else setStatus("No video arrived in 40 s — the stream looks stalled.", true);
+        }, 20000);
+      }, 20000);
+    }
+
+    // ffmpeg on the proxy turns anything hls.js can't play (raw MPEG-TS,
+    // DASH, HEVC / AC-3 / MP2 …) into a local HLS stream it can.
+    async function startBridge(ch, token, mode, msg) {
+      if (watchdog) { clearTimeout(watchdog); watchdog = null; }
+      if (hls) { hls.destroy(); hls = null; }
+      if (bridgeId) {
+        fetch(`${PROXY}/bridge/stop?id=${bridgeId}`, { cache: "no-store" }).catch(() => {});
+        bridgeId = null;
+      }
+      setStatus(msg || "Converting stream with ffmpeg…");
+      let start;
+      try {
+        start = await fetchJson(`${PROXY}/bridge/start?mode=${mode}&target=${bridgeTarget}&url=${encodeURIComponent(ch.url)}`, 10000);
+      } catch (e) {
+        if (token === playToken) setStatus("Couldn't reach the local proxy to start ffmpeg: " + (e.message || e), true);
+        return;
+      }
+      if (start.error) { setStatus("ffmpeg bridge: " + start.error, true); return; }
+      if (token !== playToken) {
+        fetch(`${PROXY}/bridge/stop?id=${start.id}`, { cache: "no-store" }).catch(() => {});
+        return;
+      }
+      bridgeId = start.id;
+      const t0 = Date.now();
+      while (Date.now() - t0 < 45000) {
+        await sleep(500);
+        if (token !== playToken || bridgeId !== start.id) return;
+        let st;
+        try { st = await fetchJson(`${PROXY}/bridge/status?id=${start.id}`, 5000); }
+        catch (e) { continue; }
+        if (st.state === "failed") {
+          setStatus(`ffmpeg couldn't play this stream: ${st.error}`, true);
+          return;
+        }
+        if (st.playlist_ready && (st.segments >= 2 || st.state === "ended")) {
+          const v = st.video === "copy" ? "video copied"
+            : st.video === "libvpx-vp9" ? "video → VP9"
+            : st.video ? `video → H.264 (${st.video})` : "no video";
+          const a = st.audio === "copy" ? "audio copied" : st.audio === "libopus" ? "audio → Opus" : "audio → AAC";
+          const detail = `${v}, ${a}`;
+          if (mseOk()) startHls(PROXY + st.playlist, { via: "bridge", ch, token, detail });
+          else playNative(PROXY + st.playlist, token, "bridge");
+          return;
+        }
+        const what = st.state === "probing" ? "Probing codecs" : st.state === "starting" ? "Starting ffmpeg" : "Converting";
+        const codecs = st.codecs && st.codecs.video ? ` (${st.codecs.video} / ${st.codecs.audio || "no audio"})` : "";
+        setStatus(`${what} with ffmpeg${codecs}… ${st.segments} segment${st.segments === 1 ? "" : "s"} ready`);
+      }
+      if (token === playToken) setStatus("ffmpeg produced no video in 45 s — giving up on this stream.", true);
+    }
+
+    // Engines without Media Source Extensions (Safari-style) play HLS natively.
+    function playNative(url, token, via) {
+      if (!nativeOk()) {
+        setStatus("This browser can't play HLS: no Media Source Extensions with H.264 and no native HLS.", true);
+        return;
+      }
+      video.onerror = () => {
+        if (token === playToken) setStatus("The browser's native player couldn't play this stream.", true);
+      };
+      video.src = url;
+      video.play()
+        .then(() => { if (token === playToken) setStatus(`Playing — native player, ${via}`); })
+        .catch(() => {});
+    }
+
+    // ------------------------------------------------------------ channel list
 
     function render(filter = "") {
       const q = filter.trim().toLowerCase();
@@ -325,10 +656,14 @@
         name.textContent = ch.name;
         const group = document.createElement("div");
         group.className = "group";
-        group.textContent =
-          location.protocol === "https:" && ch.url.startsWith("http://")
-            ? ch.group + " · http (may be blocked)"
-            : ch.group;
+        group.textContent = ch.group;
+        const rec = healthMap.get(ch.url);
+        if (rec && rec.kind && !rec.kind.startsWith("hls") && KIND_LABEL[rec.kind] && rec.responsive_now) {
+          const kind = document.createElement("span");
+          kind.className = "kind";
+          kind.textContent = ` · ${KIND_LABEL[rec.kind]} (ffmpeg)`;
+          group.appendChild(kind);
+        }
         meta.append(name, group);
         row.append(img, meta);
         const star = document.createElement("div");
@@ -349,7 +684,6 @@
           else render(searchEl.value);
         });
         row.appendChild(star);
-        const rec = healthMap.get(ch.url);
         if (rec) {
           const wrap = document.createElement("div");
           wrap.className = "dot-wrap";
@@ -363,7 +697,10 @@
           dot.className = "dot " + cls;
           const tip = document.createElement("div");
           tip.className = "tip";
-          tip.textContent = `${rec.tries - rec.fails}/${rec.tries}`;
+          let text = `${rec.tries - rec.fails}/${rec.tries} checks OK`;
+          if (rec.kind && KIND_LABEL[rec.kind]) text += ` · ${KIND_LABEL[rec.kind]}`;
+          if (!rec.responsive_now && rec.last_error) text += ` · ${rec.last_error}`;
+          tip.textContent = text;
           wrap.append(dot, tip);
           row.appendChild(wrap);
         }
@@ -375,11 +712,13 @@
 
     searchEl.addEventListener("input", () => render(searchEl.value));
 
+    // ------------------------------------------------------- background jobs
+
     const healthBtn = document.getElementById("health-btn");
     const thumbsBtn = document.getElementById("thumbs-btn");
     const healthSummary = document.getElementById("health-summary");
     const healthMap = new Map(); // url -> record from health.parquet
-    const thumbMap = new Map();  // url -> thumbs/<hash>.jpg (from live run)
+    const thumbMap = new Map();  // url -> data URI (from a live run)
 
     // Health % over the channels currently shown (selected category).
     function updateHealthSummary() {
@@ -415,16 +754,9 @@
       healthProgress.style.display = "block";
       const pct = state.total ? (100 * state.finished / state.total) : 0;
       healthFill.style.width = `${pct.toFixed(1)}%`;
-      if (jobType === "thumbs" && state.retry_total) {
-        healthFill.style.width =
-          `${(100 * state.retry_done / state.retry_total).toFixed(1)}%`;
-        healthSummary.textContent =
-          `Retrying failed… ${state.retry_done}/${state.retry_total} (${state.ok} grabbed)`;
-      } else {
-        healthSummary.textContent = jobType === "thumbs"
-          ? `Thumbnails… ${state.finished}/${state.total} (${state.ok} grabbed)`
-          : `Checking… ${state.finished}/${state.total} (${state.failed} failing)`;
-      }
+      healthSummary.textContent = jobType === "thumbs"
+        ? `Thumbnails… ${state.finished}/${state.total} (${state.ok} grabbed)`
+        : `Checking… ${state.finished}/${state.total} (${state.failed} failing)`;
     }
 
     const cancelBtn = document.getElementById("cancel-btn");
@@ -433,7 +765,7 @@
     function stopPolling() {
       if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
       healthBtn.disabled = false;
-      healthBtn.textContent = "Run health check";
+      healthBtn.textContent = "Run signal check";
       thumbsBtn.disabled = false;
       thumbsBtn.textContent = "Get thumbnails";
       cancelBtn.style.display = "none";
@@ -453,19 +785,16 @@
     });
 
     function applyThumbEvents(events) {
-      let changed = false;
       for (const e of events) {
-        if ((e.type === "job_end" || e.type === "job_retry") && e.msg && e.msg.thumb) {
+        if (e.type === "job_end" && e.msg && e.msg.thumb) {
           thumbMap.set(e.msg.url, e.msg.thumb);
           const img = listEl.querySelector(`img[data-url="${CSS.escape(e.msg.url)}"]`);
           if (img) {
             img.src = thumbMap.get(e.msg.url);
             img.style.visibility = "visible";
           }
-          changed = true;
         }
       }
-      return changed;
     }
 
     async function poll(runId, jobType) {
@@ -491,6 +820,7 @@
               setStatus(`Thumbnails: ${sum.grabbed}/${sum.checked} grabbed`);
             } else {
               renderHealth(sum);
+              setStatus(`Signal check: ${sum.responsive_now}/${sum.checked} channels have a signal`);
             }
           } else {
             setStatus(`Run failed: ${sum?.error || "unknown"}`, true);
@@ -520,8 +850,9 @@
       healthBtn.disabled = true;
       thumbsBtn.disabled = true;
       try {
-        const { run_id } = await fused.runPython("./runner.py",
+        const { run_id, error } = await fused.runPython("./runner.py",
           { action: "start", job: jobType, category: currentCategory });
+        if (error) throw new Error(error);
         fused.params.set("bg_run", `${jobType}:${run_id}`);
         watchRun(run_id, jobType);
       } catch (e) {
@@ -539,6 +870,8 @@
       const [jobType, runId] = existingRun.split(":");
       watchRun(runId, jobType);
     }
+
+    // ------------------------------------------------------------ categories
 
     const categoryEl = document.getElementById("category");
     const favSet = new Set();
@@ -609,6 +942,22 @@
         if (saved.checked) renderHealth(saved);
       } catch (e) { /* no saved stats yet */ }
       refreshInBackground();
+      const haveHls = await hlsReady;
+      caps = playerCaps();
+      console.log("[opentv] player caps", JSON.stringify(caps));
+      fused.runPython("./diag.py", { caps: JSON.stringify(caps) }).catch(() => {});
+      if (!haveHls && !nativeOk()) {
+        setStatus("hls.js failed to load (vendor/hls.min.js missing and no CDN) — streams can't play.", true);
+      } else if (!mseOk() && !nativeOk()) {
+        setStatus("This browser can't play HLS: no Media Source Extensions and no native HLS.", true);
+      } else if (mseOk() && !(caps.h264 && caps.aac) && !nativeOk()) {
+        if (caps.vp9 && caps.opus) {
+          bridgeTarget = "vp9";
+          setStatus("This engine can't decode H.264/AAC in its video stack — every stream will be converted to VP9/Opus by ffmpeg (needs ffmpeg, uses CPU, ~5 s to start).");
+        } else {
+          setStatus("This engine's video stack decodes neither H.264 nor VP9 — streams can't play here.", true);
+        }
+      }
     }
 
     // Serve the cached list instantly, refetch stale playlists (>24h) quietly.

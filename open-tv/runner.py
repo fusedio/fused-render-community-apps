@@ -1,4 +1,5 @@
-"""Background runner for the channel health check (html-background-runner pattern).
+"""Background runner for the signal check and thumbnail jobs
+(html-background-runner pattern).
 
 The HTML calls main(action="start") which spawns a DETACHED worker process and
 returns immediately, then polls main(action="status", run_id=..., since=N).
@@ -26,6 +27,11 @@ _HERE = (os.path.dirname(os.path.abspath(__file__)) if "__file__" in globals()
 DIR = _HERE
 RUNS_DIR = paths.RUNS_DIR
 
+# Signal checks are a few tiny HTTP requests each — dead hosts just sit in
+# connect(), so go wide. Thumbnail grabs download up to 1.5 MB and decode a
+# frame each; 128 of those at once starved each other into timeouts.
+CONCURRENCY = {"health": 192, "thumbs": 24}
+
 
 def _now():
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -48,6 +54,8 @@ def main(action: str = "start", run_id: str = "", since: int = 0,
 
 def _start(job: str = "health", category: str = "sports",
            job_id: str = "") -> dict:
+    if job not in ("health", "thumbs"):
+        return {"error": f"unknown job {job!r}"}
     if job_id:
         if "/" in job_id or job_id.startswith("."):
             return {"error": "bad job_id"}
@@ -94,7 +102,7 @@ def _derive_state(events):
         elif t == "job_end":
             state["finished"] += 1
             state["ok" if e.get("status") == "ok" else "failed"] += 1
-        elif t == "retry_start":
+        elif t == "retry_start":  # older runs had a retry pass
             state["retry_total"] = e.get("msg", {}).get("total", 0)
         elif t == "job_retry":
             state["retry_done"] += 1
@@ -141,9 +149,10 @@ def _list() -> dict:
 # -------------------------------------------------------------------- worker
 
 def _worker(run_dir: str):
-    import healthcheck
-    import thumbnails
     import channels
+    import healthcheck
+    import streams
+    import thumbnails
 
     with open(os.path.join(run_dir, "spec.json")) as f:
         spec = json.load(f)
@@ -165,29 +174,29 @@ def _worker(run_dir: str):
     def cancelled():
         return os.path.exists(cancel_flag)
 
-    if category == "favorites":
-        import favorites
-        chans = favorites.main()["channels"]
-    else:
-        chans = channels.main(category)["channels"]
-    if job_type == "thumbs":
-        # fail loudly rather than reporting every grab as a dead stream
-        try:
+    try:
+        if category == "favorites":
+            import favorites
+            chans = favorites.main()["channels"]
+        else:
+            chans = channels.main(category)["channels"]
+        if job_type == "thumbs":
+            # fail loudly rather than reporting every grab as a dead stream
             thumbnails._ffmpeg()
-        except RuntimeError as e:
-            emit("run_end", status="failed", msg={"error": str(e)})
-            log_f.close()
-            return
-        # skip channels that have never responded in any health check
-        recs = healthcheck._load_records()
-        chans = sorted(
-            (ch for ch in chans
-             if not (r := recs.get(ch["url"])) or r["tries"] > r["fails"]),
-            key=lambda ch: ch["name"].lower())
+            # skip channels that have never responded in any check
+            recs = healthcheck._load_records()
+            chans = sorted(
+                (ch for ch in chans
+                 if not (r := recs.get(ch["url"])) or r["tries"] > r["fails"]),
+                key=lambda ch: ch["name"].lower())
+    except Exception as e:
+        emit("run_end", status="failed", msg={"error": str(e)})
+        log_f.close()
+        return
     emit("run_start", msg={"total": len(chans), "job": job_type})
 
     results = []
-    concurrency = 128
+    concurrency = CONCURRENCY.get(job_type, 24)
     sem = asyncio.Semaphore(concurrency)
 
     async def one(ch):
@@ -196,21 +205,20 @@ def _worker(run_dir: str):
                 return
             emit("job_start", job=ch["name"])
             t0 = time.monotonic()
-            msg = None
             try:
                 if job_type == "thumbs":
-                    ok = await thumbnails.grab_async(
-                        ch["url"],
-                        log=lambda m: emit("log", job=ch["name"], msg=m))
-                    if ok:
-                        msg = {"url": ch["url"],
-                               "thumb": thumbnails.thumb_data_uri(ch["url"])}
+                    info = await asyncio.to_thread(thumbnails.grab, ch["url"])
+                    msg = {"url": ch["url"], "kind": info["kind"], "note": info["note"]}
+                    if info["ok"]:
+                        msg["thumb"] = thumbnails.thumb_data_uri(ch["url"])
                 else:
-                    ok = await asyncio.to_thread(healthcheck._probe, ch["url"])
-            except Exception:
-                ok = False
-            results.append((ch, ok))
-            emit("job_end", job=ch["name"], status="ok" if ok else "failed",
+                    info = await asyncio.to_thread(healthcheck.probe, ch["url"])
+                    msg = {"url": ch["url"], "kind": info["kind"], "error": info["error"]}
+            except Exception as e:
+                info = {"ok": False, "kind": "", "error": f"{type(e).__name__}: {e}"}
+                msg = {"url": ch["url"], "error": info["error"]}
+            results.append((ch, info))
+            emit("job_end", job=ch["name"], status="ok" if info["ok"] else "failed",
                  msg=msg, seconds=round(time.monotonic() - t0, 2))
 
     async def run_all():
@@ -220,39 +228,21 @@ def _worker(run_dir: str):
             ThreadPoolExecutor(max_workers=concurrency))
         await asyncio.gather(*(one(ch) for ch in chans))
 
-    async def retry_thumbs(failed):
-        sem2 = asyncio.Semaphore(32)
-
-        async def again(ch):
-            async with sem2:
-                if cancelled():
-                    return None
-                ok = await thumbnails.grab_async(ch["url"], 30)
-                msg = None
-                if ok:
-                    msg = {"url": ch["url"],
-                           "thumb": thumbnails.thumb_data_uri(ch["url"])}
-                emit("job_retry", job=ch["name"],
-                     status="ok" if ok else "failed", msg=msg)
-                return (ch, ok)
-
-        emit("retry_start", msg={"total": len(failed)})
-        return [r for r in await asyncio.gather(*(again(ch) for ch in failed))
-                if r is not None]
-
     try:
         asyncio.run(run_all())
         if job_type == "health":
             summary = healthcheck.update_records(results)
         else:
-            failed = [ch for ch, ok in results if not ok]
-            retried = asyncio.run(retry_thumbs(failed)) if failed else []
-            retry_ok = {ch["url"]: ok for ch, ok in retried}
-            # a grabbed frame counts as responsive for the health stats too
-            final = [(ch, retry_ok.get(ch["url"], ok)) for ch, ok in results]
-            ok_n = sum(1 for _, ok in final if ok)
+            # For the health stats a channel is alive when it served media,
+            # even if no frame could be decoded from it.
+            health = [(ch, {"ok": info["kind"] in streams.ALIVE_KINDS,
+                            "kind": info["kind"],
+                            "error": "" if info["kind"] in streams.ALIVE_KINDS
+                            else info.get("note", "")})
+                      for ch, info in results]
+            ok_n = sum(1 for _, info in results if info["ok"])
             summary = {"job": "thumbs", "checked": len(results), "grabbed": ok_n,
-                       "health": healthcheck.update_records(final)}
+                       "health": healthcheck.update_records(health)}
         if cancelled():
             summary["cancelled"] = True
         emit("run_end", status="ok", msg=summary)
